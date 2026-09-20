@@ -54,6 +54,7 @@ pub fn run() {
             commands::connection_diagnostics,
             commands::list_schemas,
             commands::list_tables,
+            commands::list_database_objects,
             commands::list_columns,
             commands::list_foreign_keys,
             commands::list_indexes,
