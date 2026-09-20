@@ -863,14 +863,18 @@ export const useStore = create<AppStore>((set, get) => ({
 
   createTable: async (name, columns) => {
     const id = get().activeConnectionId;
-    if (!id) return;
-    if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
+    if (!id) throw new Error("No active connection");
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      throw new Error("Connection is read-only");
+    }
     try {
       await backend.createTable(id, name, columns);
       const tables = await backend.listTables(id);
-      set({ schema: { tables, columnsByTable: {} } });
+      set({ schema: { tables, columnsByTable: {} }, error: null });
     } catch (e) {
       set({ error: normalizeError(e) });
+      throw e;
     }
   },
 
