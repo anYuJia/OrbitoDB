@@ -319,7 +319,7 @@ function HistoryView() {
   };
   const star = (sql: string) => {
     saveFavorite(norm(sql).slice(0, 48), sql);
-    toast("Added to favorites", "success");
+    toast("Added to Starred", "success");
   };
 
   return (
@@ -349,7 +349,7 @@ function HistoryView() {
                 <button title="Re-run" onClick={() => rerun(h.sql)}>
                   <IconPlayerPlay size={13} stroke={1.8} />
                 </button>
-                <button className={fav ? "on" : ""} title={fav ? "In favorites" : "Add to favorites"} onClick={() => star(h.sql)}>
+                <button className={fav ? "on" : ""} title={fav ? "Starred" : "Add to Starred"} onClick={() => star(h.sql)}>
                   <IconStar size={13} stroke={1.8} />
                 </button>
               </span>
