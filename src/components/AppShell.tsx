@@ -5,6 +5,7 @@ import { CreateTableModal } from "./CreateTableModal";
 import { installSmoothScroll } from "../lib/smoothScroll";
 import { useStore } from "../state/store";
 import { DataView } from "./bud/DataView";
+import { CrossTableSearch } from "./bud/CrossTableSearch";
 import { DialogHost } from "./bud/DialogHost";
 import { ErDiagram } from "./bud/ErDiagram";
 import { ImportCsvModal } from "./bud/ImportCsvModal";
@@ -100,6 +101,7 @@ export function AppShell() {
       <ErDiagram />
       <ImportCsvModal />
       <SchemaDiff />
+      <CrossTableSearch />
       <ToastHost />
       <DialogHost />
     </div>
