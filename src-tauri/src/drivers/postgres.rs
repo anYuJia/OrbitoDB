@@ -296,7 +296,7 @@ impl Driver for PgDriver {
         }));
 
         let routines = sqlx::query(
-            "SELECT p.proname, p.prokind::text AS prokind, \
+            "SELECT p.proname, p.prokind::text AS prokind, n.nspname AS schema_name, \
                     pg_get_function_identity_arguments(p.oid) AS signature, \
                     pg_get_functiondef(p.oid) AS definition \
              FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace \
@@ -310,7 +310,7 @@ impl Driver for PgDriver {
             DatabaseObjectInfo {
                 name: row.try_get("proname").unwrap_or_default(),
                 kind: if prokind == "p" { "procedure".into() } else { "function".into() },
-                schema: Some("current_schema".into()).and_then(|_| None),
+                schema: row.try_get("schema_name").ok(),
                 table: None,
                 signature: row.try_get("signature").ok(),
                 definition: row.try_get::<String, _>("definition").ok().map(|value| value.trim_end_matches(';').to_string() + ";"),
