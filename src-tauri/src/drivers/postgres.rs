@@ -13,7 +13,11 @@ pub struct PgDriver {
 }
 
 fn options(cfg: &ConnectionConfig, password: Option<&str>) -> PgConnectOptions {
-    base_options(cfg, password).database(&cfg.database)
+    let options = base_options(cfg, password).database(&cfg.database);
+    match cfg.schema.as_deref().map(str::trim).filter(|schema| !schema.is_empty()) {
+        Some(schema) => options.options([("search_path", schema)]),
+        None => options.options([("search_path", "public")]),
+    }
 }
 
 /// Postgres requires connecting to *some* database; use the standard `postgres`
@@ -141,11 +145,25 @@ impl Driver for PgDriver {
         })
     }
 
+    async fn list_schemas(&self) -> AppResult<Vec<String>> {
+        let rows = sqlx::query(
+            "SELECT schema_name FROM information_schema.schemata
+             WHERE schema_name <> 'information_schema' AND schema_name NOT LIKE 'pg_%'
+             ORDER BY schema_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .filter_map(|row| row.try_get::<String, _>("schema_name").ok())
+            .collect())
+    }
+
     async fn list_tables(&self) -> AppResult<Vec<TableInfo>> {
         let rows = sqlx::query(
             "SELECT table_name, table_type, table_schema FROM information_schema.tables \
-             WHERE table_schema NOT IN ('pg_catalog','information_schema') \
-             ORDER BY table_schema, table_name",
+             WHERE table_schema = current_schema() \
+             ORDER BY table_name",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -169,7 +187,7 @@ impl Driver for PgDriver {
              JOIN information_schema.key_column_usage kcu \
                ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema \
              WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = $1 \
-               AND tc.table_schema NOT IN ('pg_catalog','information_schema')",
+               AND tc.table_schema = current_schema()",
         )
         .bind(table)
         .fetch_all(&self.pool)
@@ -181,7 +199,7 @@ impl Driver for PgDriver {
 
         let rows = sqlx::query(
             "SELECT column_name, data_type, is_nullable FROM information_schema.columns \
-             WHERE table_name = $1 AND table_schema NOT IN ('pg_catalog','information_schema') \
+             WHERE table_name = $1 AND table_schema = current_schema() \
              ORDER BY ordinal_position",
         )
         .bind(table)
