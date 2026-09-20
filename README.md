@@ -14,8 +14,9 @@ OrbitoDB is a desktop-first database client for developers who want a lightweigh
 
 - saved connection profiles with groups and environment labels
 - PostgreSQL schema selection and switching
+- optional TLS/SSL for PostgreSQL and MySQL/MariaDB with native root certificates
 - optional SSH tunneling through the system OpenSSH client
-- PostgreSQL / MySQL connection URL import
+- PostgreSQL / MySQL connection URL import, including common SSL parameters
 - local credential storage through the OS keychain
 - database / schema / table browsing
 - column, foreign-key and index introspection
@@ -30,6 +31,20 @@ OrbitoDB is a desktop-first database client for developers who want a lightweigh
 - production write guard and per-connection read-only mode
 - local SQLite database creation
 - optional browser + local bridge runtime
+
+## TLS / SSL
+
+Desktop PostgreSQL and MySQL/MariaDB connections can opt into TLS without changing the default behavior of existing profiles.
+
+- default mode is **Disabled**
+- PostgreSQL supports Disable / Allow / Prefer / Require / Verify CA / Verify Full
+- MySQL supports Disabled / Preferred / Required / Verify CA / Verify Identity through the shared profile modes
+- certificate verification uses the system root store by default
+- an optional custom CA certificate path can be configured
+- PostgreSQL `sslmode` / `sslrootcert` and MySQL `ssl-mode` / `ssl-ca` URL parameters are imported
+- TLS profile controls are desktop-only; the browser bridge does not pretend to provide equivalent TLS policy controls
+
+`Verify Full` / `Verify Identity` is intentionally blocked when OrbitoDB's local SSH forwarding is enabled, because the database driver connects to `127.0.0.1` and hostname verification would no longer match the original database host.
 
 ## SSH tunneling
 
@@ -60,6 +75,7 @@ Next areas of work:
 - cross-table data search
 - richer constraint and index editing
 - SSH proxy / jump-host improvements
+- TLS client-certificate support
 - connection health diagnostics
 - packaging, signing and release automation
 
