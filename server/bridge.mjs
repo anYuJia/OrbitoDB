@@ -486,13 +486,29 @@ const handlers = {
     const { engine, conn, fileKey } = need(id);
 
     if (engine === "sqlite") {
-      const r = sqliteDbs.get(fileKey).exec(`PRAGMA index_list(${sqliteIdent(table)})`);
+      const db = sqliteDbs.get(fileKey);
+      const r = db.exec(`PRAGMA index_list(${sqliteIdent(table)})`);
       const rows = r.length ? r[0].values : [];
-      return rows.map((row) => ({
-        name: String(row[1] ?? ""),
-        unique: Number(row[2] ?? 0) === 1,
-        detail: row[3] == null ? "SQLite index" : `origin: ${String(row[3])}`,
-      }));
+      return rows.map((row) => {
+        const name = String(row[1] ?? "");
+        const info = name ? db.exec(`PRAGMA index_info(${sqliteIdent(name)})`) : [];
+        const columns = (info.length ? info[0].values : [])
+          .map((item) => String(item[2] ?? ""))
+          .filter(Boolean);
+        const origin = row[3] == null ? "" : String(row[3]);
+        const detail = columns.length
+          ? origin && origin !== "c"
+            ? `${columns.join(", ")} · origin: ${origin}`
+            : columns.join(", ")
+          : origin
+            ? `origin: ${origin}`
+            : "SQLite index";
+        return {
+          name,
+          unique: Number(row[2] ?? 0) === 1,
+          detail,
+        };
+      });
     }
 
     if (engine === "postgres") {
