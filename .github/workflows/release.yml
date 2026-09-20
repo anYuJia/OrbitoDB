@@ -1,0 +1,63 @@
+name: Release
+
+# Builds a standalone Windows .exe and publishes it to GitHub Releases.
+# - every push to main  -> updates the rolling "latest" release
+# - a version tag (v*)  -> creates a versioned release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install JS dependencies
+        run: npm install
+
+      - name: Stamp version 0.1.${{ github.run_number }}
+        shell: pwsh
+        run: |
+          $p = "src-tauri/tauri.conf.json"
+          (Get-Content $p -Raw) -replace '"version":\s*"[^"]*"', '"version": "0.1.${{ github.run_number }}"' | Set-Content $p -Encoding utf8
+          Write-Output "App version -> 0.1.${{ github.run_number }}"
+
+      - name: Build standalone .exe (no installer / no wizard)
+        run: npm run tauri build -- --no-bundle
+
+      - name: Stage artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist-exe | Out-Null
+          Copy-Item "src-tauri/target/release/orbitodb.exe" "dist-exe/OrbitoDB.exe"
+
+      - name: Publish to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-exe/OrbitoDB.exe
+          tag_name: v0.1.${{ github.run_number }}
+          name: v0.1.${{ github.run_number }}
+          prerelease: false
+          make_latest: true
+          fail_on_unmatched_files: true
+          body: |
+            **OrbitoDB — standalone Windows executable.**
+
+            Download **`OrbitoDB.exe`** below and run it. No installer, no wizard,
+            nothing else to download. (Uses the Microsoft Edge WebView2 runtime,
+            which ships with Windows 10 & 11.)
