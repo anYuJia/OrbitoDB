@@ -138,6 +138,7 @@ impl Driver for SqliteDriver {
                 .await?;
             for row in rows {
                 out.push(ForeignKey {
+                    name: None,
                     table: table.name.clone(),
                     column: row.try_get::<String, _>("from").unwrap_or_default(),
                     ref_table: row.try_get::<String, _>("table").unwrap_or_default(),
