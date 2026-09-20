@@ -51,6 +51,8 @@ pub fn run() {
             commands::run_query,
             commands::list_tables,
             commands::list_columns,
+            commands::list_foreign_keys,
+            commands::list_indexes,
             commands::recent_history,
             commands::update_cell,
             commands::delete_row,
