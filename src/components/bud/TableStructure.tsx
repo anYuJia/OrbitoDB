@@ -16,6 +16,7 @@ function quoteIdentifier(engine: Engine, value: string): string {
 
 export function TableStructure({ table }: { table: string }) {
   const columns = useStore((s) => s.schema.columnsByTable[table] ?? []);
+  const tables = useStore((s) => s.schema.tables);
   const activeId = useStore((s) => s.activeConnectionId);
   const connection = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const expandTable = useStore((s) => s.expandTable);
@@ -235,24 +236,70 @@ export function TableStructure({ table }: { table: string }) {
     name === "PRIMARY" || name.startsWith("sqlite_autoindex_") || (engine === "postgres" && name.endsWith("_pkey"));
 
   const createForeignKeyTemplate = async () => {
-    if (readOnly || engine === "sqlite") return;
+    if (readOnly || engine === "sqlite" || !activeId) return;
     const column = await promptDialog({
       title: "Add foreign key",
       label: "Local column",
       defaultValue: columns[0]?.name ?? "",
     });
-    if (!column?.trim()) return;
-    const refTable = await promptDialog({ title: "Add foreign key", label: "Referenced table" });
-    if (!refTable?.trim()) return;
-    const refColumn = await promptDialog({ title: "Add foreign key", label: "Referenced column", defaultValue: "id" });
-    if (!refColumn?.trim()) return;
-    const constraint = `fk_${table}_${column.trim()}`.replace(/[^a-zA-Z0-9_]+/g, "_");
+    const localColumn = column?.trim();
+    if (!localColumn) return;
+    if (!columns.some((item) => item.name === localColumn)) {
+      await confirmDialog({
+        title: "Unknown local column",
+        message: `“${localColumn}” is not present in the loaded metadata for “${table}”.`,
+        confirmLabel: "Close",
+      });
+      return;
+    }
+
+    const refTable = await promptDialog({
+      title: "Add foreign key",
+      label: "Referenced table",
+      placeholder: tables.find((item) => item.kind === "table" && item.name !== table)?.name ?? "table_name",
+    });
+    const targetTable = refTable?.trim();
+    if (!targetTable) return;
+    if (!tables.some((item) => item.kind === "table" && item.name === targetTable)) {
+      await confirmDialog({
+        title: "Unknown referenced table",
+        message: `“${targetTable}” is not present in the active schema.`,
+        confirmLabel: "Close",
+      });
+      return;
+    }
+
+    let targetColumns;
+    try {
+      targetColumns = await getBackend().listColumns(activeId, targetTable);
+    } catch (error) {
+      setMetaError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    const defaultRef = targetColumns.find((item) => item.isPrimaryKey)?.name ?? targetColumns[0]?.name ?? "id";
+    const refColumn = await promptDialog({
+      title: "Add foreign key",
+      label: "Referenced column",
+      defaultValue: defaultRef,
+    });
+    const targetColumn = refColumn?.trim();
+    if (!targetColumn) return;
+    if (!targetColumns.some((item) => item.name === targetColumn)) {
+      await confirmDialog({
+        title: "Unknown referenced column",
+        message: `“${targetColumn}” is not present on “${targetTable}”.`,
+        confirmLabel: "Close",
+      });
+      return;
+    }
+
+    const constraint = `fk_${table}_${localColumn}`.replace(/[^a-zA-Z0-9_]+/g, "_");
     const q = (value: string) => quoteIdentifier(engine, value);
     const sql = [
       `ALTER TABLE ${q(table)}`,
       `  ADD CONSTRAINT ${q(constraint)}`,
-      `  FOREIGN KEY (${q(column.trim())})`,
-      `  REFERENCES ${q(refTable.trim())} (${q(refColumn.trim())});`,
+      `  FOREIGN KEY (${q(localColumn)})`,
+      `  REFERENCES ${q(targetTable)} (${q(targetColumn)});`,
     ].join("\n");
     await executeStructureSql(sql, `Created foreign key ${constraint}`);
   };
@@ -273,13 +320,13 @@ export function TableStructure({ table }: { table: string }) {
 
   const primaryAction =
     mode === "columns"
-      ? { label: "Add column", run: add, disabled: readOnly }
+      ? { label: "Add column", run: add, disabled: readOnly || metaLoading }
       : mode === "indexes"
-        ? { label: "New index", run: createIndexTemplate, disabled: readOnly }
+        ? { label: "New index", run: createIndexTemplate, disabled: readOnly || metaLoading }
         : {
             label: engine === "sqlite" ? "DDL required" : "New foreign key",
             run: createForeignKeyTemplate,
-            disabled: readOnly || engine === "sqlite",
+            disabled: readOnly || metaLoading || engine === "sqlite",
           };
 
   return (
@@ -377,7 +424,7 @@ export function TableStructure({ table }: { table: string }) {
                           ? "Generate DROP foreign-key SQL"
                           : "Constraint name unavailable"
                     }
-                    disabled={readOnly || engine === "sqlite" || !fk.name}
+                    disabled={readOnly || metaLoading || engine === "sqlite" || !fk.name}
                     onClick={() => void dropForeignKey(fk.name)}
                   >
                     <IconTrash size={13} stroke={1.8} />
@@ -412,7 +459,7 @@ export function TableStructure({ table }: { table: string }) {
                       className="danger"
                       title={managed ? "Managed primary/system indexes are changed through their constraint" : "Drop index"}
                       onClick={() => void dropIndex(index.name)}
-                      disabled={readOnly || managed}
+                      disabled={readOnly || metaLoading || managed}
                     >
                       <IconTrash size={13} stroke={1.8} />
                     </button>
