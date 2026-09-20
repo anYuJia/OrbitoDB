@@ -299,6 +299,7 @@ mod tests {
             env: None,
             group: None,
             schema: None,
+            tls: None,
             ssh: None,
         };
         Some((cfg, std::env::var("ORBITODB_PG_PASS").ok()))
