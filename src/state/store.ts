@@ -204,6 +204,7 @@ export interface AppStore {
   deleteConnection: (id: string) => Promise<void>;
   openAndIntrospect: (id: string) => Promise<void>;
   expandTable: (table: string) => Promise<void>;
+  refreshColumns: (table: string) => Promise<void>;
   setSql: (sql: string) => void;
   newEditor: () => void;
   openSqlTab: (name: string, sql: string) => void;
@@ -459,6 +460,18 @@ export const useStore = create<AppStore>((set, get) => ({
   expandTable: async (table) => {
     const id = get().activeConnectionId;
     if (!id || get().schema.columnsByTable[table]) return;
+    const cols = await backend.listColumns(id, table);
+    set((s) => ({
+      schema: {
+        ...s.schema,
+        columnsByTable: { ...s.schema.columnsByTable, [table]: cols },
+      },
+    }));
+  },
+
+  refreshColumns: async (table) => {
+    const id = get().activeConnectionId;
+    if (!id) return;
     const cols = await backend.listColumns(id, table);
     set((s) => ({
       schema: {
