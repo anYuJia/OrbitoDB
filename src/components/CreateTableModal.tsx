@@ -1,100 +1,184 @@
-import { useState } from "react";
-import type { ColumnDef } from "../ipc/types";
+import { IconKey, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
+import { motion } from "framer-motion";
+import { useMemo, useState } from "react";
+import type { ColumnDef, Engine } from "../ipc/types";
+import { backdropV, centeredModalV, MotionButton } from "../lib/motion";
 import { useStore } from "../state/store";
 
-const TYPES = [
-  "INTEGER",
-  "TEXT",
-  "REAL",
-  "BOOLEAN",
-  "TIMESTAMP",
-  "DATE",
-  "VARCHAR(255)",
-  "BIGINT",
-  "DOUBLE",
-  "SERIAL",
-];
+const TYPES: Record<Engine, string[]> = {
+  sqlite: ["INTEGER", "TEXT", "REAL", "BLOB", "NUMERIC"],
+  postgres: ["BIGSERIAL", "INTEGER", "BIGINT", "TEXT", "VARCHAR(255)", "BOOLEAN", "TIMESTAMP", "DATE", "NUMERIC", "JSONB"],
+  mysql: ["BIGINT", "INT", "VARCHAR(255)", "TEXT", "BOOLEAN", "DATETIME", "DATE", "DECIMAL(10,2)", "JSON"],
+};
 
 export function CreateTableModal({ onClose }: { onClose: () => void }) {
   const createTable = useStore((s) => s.createTable);
+  const conn = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
   const [cols, setCols] = useState<ColumnDef[]>([
-    { name: "id", dataType: "INTEGER", nullable: false, primaryKey: true },
+    { name: "id", dataType: conn?.engine === "postgres" ? "BIGSERIAL" : "INTEGER", nullable: false, primaryKey: true },
     { name: "", dataType: "TEXT", nullable: true, primaryKey: false },
   ]);
 
-  const update = (i: number, patch: Partial<ColumnDef>) =>
-    setCols((cs) => cs.map((c, j) => (j === i ? { ...c, ...patch } : c)));
-  const addCol = () =>
-    setCols((cs) => [...cs, { name: "", dataType: "TEXT", nullable: true, primaryKey: false }]);
-  const removeCol = (i: number) => setCols((cs) => cs.filter((_, j) => j !== i));
+  const types = useMemo(() => TYPES[conn?.engine ?? "sqlite"], [conn?.engine]);
 
-  const submit = async () => {
-    const valid = cols.filter((c) => c.name.trim());
-    if (!name.trim() || valid.length === 0) return;
-    await createTable(name.trim(), valid);
-    onClose();
+  const update = (i: number, patch: Partial<ColumnDef>) => {
+    setCols((current) =>
+      current.map((column, index) => {
+        if (patch.primaryKey === true) {
+          if (index === i) return { ...column, ...patch, nullable: false, primaryKey: true };
+          return { ...column, primaryKey: false };
+        }
+        if (index !== i) return column;
+        return { ...column, ...patch };
+      }),
+    );
   };
 
+  const addCol = () =>
+    setCols((current) => [
+      ...current,
+      { name: "", dataType: types.includes("TEXT") ? "TEXT" : types[0], nullable: true, primaryKey: false },
+    ]);
+
+  const removeCol = (i: number) => {
+    if (cols.length <= 1) return;
+    setCols((current) => current.filter((_, index) => index !== i));
+  };
+
+  const submit = async () => {
+    const table = name.trim();
+    const valid = cols
+      .map((column) => ({ ...column, name: column.name.trim(), dataType: column.dataType.trim() }))
+      .filter((column) => column.name);
+    if (!table || valid.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      await createTable(table, valid);
+      onClose();
+    } catch {
+      setBusy(false);
+    }
+  };
+
+  const canCreate = !!name.trim() && cols.some((column) => column.name.trim()) && !busy;
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">New table</div>
-        <div className="modal-body">
-          <input
-            className="modal-name"
-            placeholder="table_name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoFocus
-          />
-          <div className="coldef coldef-head">
-            <span>Column</span>
-            <span>Type</span>
-            <span>Null</span>
-            <span>PK</span>
-            <span />
+    <>
+      <motion.div
+        className="bud-modal-backdrop"
+        variants={backdropV}
+        initial="hidden"
+        animate="show"
+        exit="exit"
+        onClick={onClose}
+      />
+      <motion.div
+        className="odb-create-table-modal"
+        variants={centeredModalV}
+        initial="hidden"
+        animate="show"
+        exit="exit"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="odb-create-table-head">
+          <div>
+            <span>Schema</span>
+            <h2>Create table</h2>
+            <p>{conn ? conn.name + " · " + conn.database : "Active connection"}</p>
           </div>
-          {cols.map((c, i) => (
-            <div className="coldef" key={i}>
-              <input
-                placeholder="name"
-                value={c.name}
-                onChange={(e) => update(i, { name: e.target.value })}
-              />
-              <select value={c.dataType} onChange={(e) => update(i, { dataType: e.target.value })}>
-                {TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="checkbox"
-                checked={c.nullable}
-                onChange={(e) => update(i, { nullable: e.target.checked })}
-              />
-              <input
-                type="checkbox"
-                checked={c.primaryKey}
-                onChange={(e) => update(i, { primaryKey: e.target.checked })}
-              />
-              <button className="icon-btn danger" title="Remove" onClick={() => removeCol(i)}>
-                ✕
-              </button>
+          <button onClick={onClose} title="Close">
+            <IconX size={16} stroke={1.8} />
+          </button>
+        </header>
+
+        <div className="odb-create-table-body">
+          <label className="odb-form-field odb-table-name-field">
+            <span>Table name</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="users"
+              autoFocus
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void submit();
+              }}
+            />
+          </label>
+
+          <div className="odb-create-columns">
+            <div className="odb-create-column-row header">
+              <span>#</span>
+              <span>Name</span>
+              <span>SQL type</span>
+              <span>NULL</span>
+              <span>PK</span>
+              <span />
             </div>
-          ))}
-          <button className="add-col" onClick={addCol}>
-            ＋ Add column
+            {cols.map((column, index) => (
+              <div className="odb-create-column-row" key={index}>
+                <span className="index">{index + 1}</span>
+                <input
+                  value={column.name}
+                  onChange={(e) => update(index, { name: e.target.value })}
+                  placeholder={index === 0 ? "id" : "column_name"}
+                  aria-label={"Column " + (index + 1) + " name"}
+                />
+                <select
+                  value={column.dataType}
+                  onChange={(e) => update(index, { dataType: e.target.value })}
+                  aria-label={"Column " + (index + 1) + " type"}
+                >
+                  {!types.includes(column.dataType) && <option value={column.dataType}>{column.dataType}</option>}
+                  {types.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+                <label className="odb-check-cell" title="Allow NULL">
+                  <input
+                    type="checkbox"
+                    checked={column.nullable}
+                    disabled={column.primaryKey}
+                    onChange={(e) => update(index, { nullable: e.target.checked })}
+                  />
+                </label>
+                <label className="odb-check-cell pk" title="Primary key">
+                  <input
+                    type="checkbox"
+                    checked={column.primaryKey}
+                    onChange={(e) => update(index, { primaryKey: e.target.checked })}
+                  />
+                  {column.primaryKey && <IconKey size={11} stroke={2} />}
+                </label>
+                <button
+                  className="odb-remove-column"
+                  title="Remove column"
+                  onClick={() => removeCol(index)}
+                  disabled={cols.length <= 1}
+                >
+                  <IconTrash size={13} stroke={1.8} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button className="odb-add-column" onClick={addCol}>
+            <IconPlus size={14} stroke={2} />
+            Add column
           </button>
         </div>
-        <div className="modal-actions">
-          <button className="primary" onClick={submit}>
-            Create table
-          </button>
-          <button onClick={onClose}>Cancel</button>
-        </div>
-      </div>
-    </div>
+
+        <footer className="odb-create-table-footer">
+          <span>⌘/Ctrl + Enter to create</span>
+          <div>
+            <MotionButton className="odb-modal-secondary" onClick={onClose}>Cancel</MotionButton>
+            <MotionButton className="odb-modal-primary" onClick={() => void submit()} disabled={!canCreate}>
+              {busy ? "Creating…" : "Create table"}
+            </MotionButton>
+          </div>
+        </footer>
+      </motion.div>
+    </>
   );
 }
