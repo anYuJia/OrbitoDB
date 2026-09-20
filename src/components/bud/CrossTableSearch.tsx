@@ -47,9 +47,9 @@ function buildSearchSql(engine: Engine, table: string, columns: ColumnInfo[], te
   const castType = engine === "mysql" ? "CHAR" : "TEXT";
   const contains = (column: ColumnInfo) => {
     const value = `LOWER(CAST(${q(column.name)} AS ${castType}))`;
-    return engine === "mysql"
-      ? `LOCATE(${needle}, ${value}) > 0`
-      : `INSTR(${value}, ${needle}) > 0`;
+    if (engine === "mysql") return `LOCATE(${needle}, ${value}) > 0`;
+    if (engine === "postgres") return `POSITION(${needle} IN ${value}) > 0`;
+    return `INSTR(${value}, ${needle}) > 0`;
   };
   const where = selected.map(contains).join(" OR ");
   return `SELECT ${selected.map((column) => q(column.name)).join(", ")} FROM ${q(table)} WHERE ${where} LIMIT ${ROWS_PER_TABLE}`;
