@@ -50,6 +50,12 @@ export interface ForeignKey {
   refColumn: string;
 }
 
+export interface IndexInfo {
+  name: string;
+  unique: boolean;
+  detail: string;
+}
+
 export interface ColumnDef {
   name: string;
   dataType: string;
