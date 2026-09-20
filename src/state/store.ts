@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { getBackend } from "../ipc/backend";
 import { inferColumns } from "../lib/csv";
+import { buildTableDdl } from "../lib/ddl";
 import { resolveParams } from "../lib/params";
 import { confirmDelete, confirmDialog } from "./dialog";
 import { confirmIfDestructive, confirmProdWrite, isWrite } from "./safety";
@@ -549,28 +550,19 @@ export const useStore = create<AppStore>((set, get) => ({
     }
 
     const engine = get().connections.find((connection) => connection.id === id)?.engine ?? "sqlite";
-    const quote = (name: string) => {
-      if (engine === "mysql") return "`" + name.replace(/`/g, "``") + "`";
-      return '"' + name.replace(/"/g, '""') + '"';
-    };
+    let foreignKeys = [];
+    let indexes = [];
+    try {
+      [foreignKeys, indexes] = await Promise.all([
+        backend.listForeignKeys(id),
+        backend.listIndexes(id, table),
+      ]);
+    } catch {
+      // Column metadata is still enough to produce a useful partial DDL preview.
+      // buildTableDdl labels the output as metadata-derived and review-first.
+    }
 
-    const lines = cols.map((column) => {
-      let line = "  " + quote(column.name) + " " + (column.dataType || "TEXT");
-      if (column.isPrimaryKey) line += " PRIMARY KEY";
-      else if (!column.nullable) line += " NOT NULL";
-      return line;
-    });
-
-    const ddl = lines.length
-      ? [
-          "-- Generated from OrbitoDB schema metadata for " + engine + ".",
-          "-- Review engine-specific defaults, indexes and constraints before executing.",
-          "CREATE TABLE " + quote(table) + " (",
-          lines.join(",\n"),
-          ");",
-        ].join("\n")
-      : "-- No column information available for " + table;
-
+    const ddl = buildTableDdl(engine, table, cols, foreignKeys, indexes);
     get().openSqlTab("DDL · " + table, ddl);
   },
 
