@@ -247,7 +247,7 @@ export function Sources({
                       />
                     ))}
                     {groupedConnections.groups.map(([group, items]) => (
-                      <ConnectionGroup key={group} name={group} count={items.length}>
+                      <ConnectionGroup key={group} name={group} count={items.length} items={items}>
                         {items.map((connection) => (
                           <Datasource
                             key={connection.id}
@@ -275,22 +275,69 @@ export function Sources({
 function ConnectionGroup({
   name,
   count,
+  items,
   children,
 }: {
   name: string;
   count: number;
+  items: ConnectionConfig[];
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(true);
+  const [ctx, setCtx] = useState<CtxAnchor | null>(null);
+  const saveConnection = useStore((s) => s.saveConnection);
+
+  const renameGroup = async () => {
+    const next = await promptDialog({
+      title: "Rename connection group",
+      label: "Group name",
+      defaultValue: name,
+      placeholder: "e.g. Production",
+    });
+    const value = next?.trim();
+    if (!value || value === name) return;
+    for (const connection of items) {
+      await saveConnection({ ...connection, group: value }, null);
+    }
+  };
+
+  const ungroup = async () => {
+    if (
+      !(await confirmDialog({
+        title: "Remove group?",
+        message: `Move all ${items.length} connection${items.length === 1 ? "" : "s"} out of “${name}”? The connections themselves are not deleted.`,
+        confirmLabel: "Remove group",
+      }))
+    ) {
+      return;
+    }
+    for (const connection of items) {
+      await saveConnection({ ...connection, group: null }, null);
+    }
+  };
+
+  const menu: MenuItem[] = [
+    { label: "Rename group…", icon: (<IconPencil size={15} stroke={1.7} />), onClick: () => void renameGroup() },
+    { label: "Ungroup all", icon: (<IconFolderOpen size={15} stroke={1.7} />), onClick: () => void ungroup() },
+  ];
+
   return (
     <div className="odb-connection-group">
-      <button className="odb-connection-group-head" onClick={() => setOpen((value) => !value)}>
+      <button
+        className="odb-connection-group-head"
+        onClick={() => setOpen((value) => !value)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setCtx({ x: e.clientX, y: e.clientY, items: menu });
+        }}
+      >
         {open ? <IconChevronDown size={12} stroke={2} /> : <IconChevronRight size={12} stroke={2} />}
         <IconFolderOpen size={13} stroke={1.7} />
         <span>{name}</span>
         <em>{count}</em>
       </button>
       {open && <div className="odb-connection-group-body">{children}</div>}
+      {ctx && <ContextMenu anchor={ctx} onClose={() => setCtx(null)} />}
     </div>
   );
 }
@@ -415,6 +462,18 @@ function Datasource({
     if (!name?.trim() || name.trim() === conn.name) return;
     await saveConnection({ ...conn, name: name.trim() }, null);
   };
+  const moveToGroup = async () => {
+    const next = await promptDialog({
+      title: "Move connection to group",
+      label: "Group name",
+      defaultValue: conn.group ?? "",
+      placeholder: "Leave blank for no group",
+    });
+    if (next == null) return;
+    const group = next.trim() || null;
+    if (group === (conn.group?.trim() || null)) return;
+    await saveConnection({ ...conn, group }, null);
+  };
   const copyString = () => void navigator.clipboard?.writeText(connString(conn)).catch(() => {});
   const remove = async () => {
     if (
@@ -440,6 +499,7 @@ function Datasource({
     { label: "New table", icon: (<IconTablePlus size={15} stroke={1.7} />), onClick: () => void newTable() },
     { divider: true },
     { label: "Rename", icon: (<IconPencil size={15} stroke={1.7} />), onClick: () => void rename() },
+    { label: conn.group ? "Move to another group…" : "Move to group…", icon: (<IconFolderOpen size={15} stroke={1.7} />), onClick: () => void moveToGroup() },
     { label: "Edit connection…", icon: (<IconDatabaseCog size={15} stroke={1.7} />), onClick: () => onEditServer(conn) },
     {
       label: "Properties",
