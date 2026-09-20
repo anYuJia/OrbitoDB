@@ -70,6 +70,7 @@ export interface ColumnInfo {
   defaultValue?: string | null;
   generated?: string | null;
   comment?: string | null;
+  extra?: string | null;
 }
 
 /** A foreign-key relationship: table.column references refTable.refColumn. */
