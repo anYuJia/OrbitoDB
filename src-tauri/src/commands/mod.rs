@@ -3,7 +3,7 @@ use crate::error::{AppError, AppResult};
 use crate::schema;
 use crate::secrets;
 use crate::store::{HistoryEntry, Store};
-use crate::types::{ColumnDef, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, Engine, ForeignKey, IndexInfo, QueryResult, TableInfo};
+use crate::types::{ColumnDef, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, Engine, ForeignKey, IndexInfo, QueryResult, TableInfo};
 use tauri::State;
 
 /// Shared application state, managed by Tauri and injected into commands.
@@ -214,6 +214,16 @@ pub async fn list_indexes(
 ) -> AppResult<Vec<IndexInfo>> {
     let driver = state.registry.get(&connection_id).await?;
     schema::introspect_indexes(driver.as_ref(), &table).await
+}
+
+#[tauri::command]
+pub async fn list_constraints(
+    state: State<'_, AppState>,
+    connection_id: String,
+    table: String,
+) -> AppResult<Vec<ConstraintInfo>> {
+    let driver = state.registry.get(&connection_id).await?;
+    schema::introspect_constraints(driver.as_ref(), &table).await
 }
 
 #[tauri::command]
