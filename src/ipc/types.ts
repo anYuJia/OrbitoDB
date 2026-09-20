@@ -5,7 +5,7 @@ export type Engine = "postgres" | "mysql" | "sqlite";
 /** Environment tag for a connection — drives the colour dot and the prod guard. */
 export type ConnEnv = "dev" | "staging" | "prod";
 export type SshAuth = "agent" | "key";
-export type TlsMode = "disable" | "prefer" | "require" | "verify-ca" | "verify-full";
+export type TlsMode = "disable" | "allow" | "prefer" | "require" | "verify-ca" | "verify-full";
 
 export interface TlsConfig {
   mode: TlsMode;
