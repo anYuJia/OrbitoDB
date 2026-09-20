@@ -378,6 +378,41 @@ const handlers = {
     }
   },
 
+  async diagnostics({ id }) {
+    const e = need(id);
+    const started = performance.now();
+
+    if (e.engine === "sqlite") {
+      const db = sqliteDbs.get(e.fileKey);
+      const version = db.exec("SELECT sqlite_version()");
+      const value = version.length ? String(version[0].values?.[0]?.[0] ?? "") : "";
+      return {
+        serverVersion: value ? `SQLite ${value}` : "SQLite",
+        database: sqlitePath(e.fileKey),
+        schema: "main",
+        latencyMs: Math.max(1, Math.round(performance.now() - started)),
+      };
+    }
+
+    const raw =
+      e.engine === "postgres"
+        ? await rawArrayRows(
+            "postgres",
+            e.conn,
+            "SELECT version(), current_database(), current_schema()",
+          )
+        : await rawArrayRows("mysql", e.conn, "SELECT VERSION(), DATABASE()");
+    return {
+      serverVersion: String(raw.rows?.[0]?.[0] ?? e.engine),
+      database: String(raw.rows?.[0]?.[1] ?? ""),
+      schema:
+        e.engine === "postgres"
+          ? String(raw.rows?.[0]?.[2] ?? "")
+          : String(raw.rows?.[0]?.[1] ?? ""),
+      latencyMs: Math.max(1, Math.round(performance.now() - started)),
+    };
+  },
+
   async close({ id }) {
     const e = pools.get(id);
     if (e) {
