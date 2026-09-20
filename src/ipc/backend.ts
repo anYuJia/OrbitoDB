@@ -24,6 +24,7 @@ export interface Backend {
   runQuery(connectionId: string, sql: string): Promise<QueryResult>;
   /** Execute an internal/preview query without adding it to user-visible history. */
   runQuerySilent(connectionId: string, sql: string): Promise<QueryResult>;
+  cancelQuery(connectionId: string): Promise<boolean>;
   listSchemas(connectionId: string): Promise<string[]>;
   listTables(connectionId: string): Promise<TableInfo[]>;
   listColumns(connectionId: string, table: string): Promise<ColumnInfo[]>;
