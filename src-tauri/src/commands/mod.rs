@@ -359,6 +359,9 @@ pub async fn create_local_database(
         database: path,
         username: None,
             env: None,
+            group: None,
+            schema: None,
+            ssh: None,
     };
     // Creates the file (mode=rwc) and verifies it opens.
     crate::drivers::sqlite::SqliteDriver::test(&cfg).await?;
