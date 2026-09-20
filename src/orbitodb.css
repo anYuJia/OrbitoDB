@@ -2600,3 +2600,241 @@ textarea:focus-visible {
     min-width: 760px;
   }
 }
+
+
+/* Create-table designer */
+
+.odb-create-table-modal {
+  position: fixed;
+  z-index: 155;
+  left: 50%;
+  top: 50%;
+  width: min(760px, calc(100vw - 36px));
+  max-height: min(760px, calc(100vh - 40px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--odb-border-strong);
+  border-radius: 9px;
+  background: #121519;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.55);
+}
+
+.odb-create-table-head {
+  min-height: 76px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 15px 11px;
+  border-bottom: 1px solid var(--odb-border);
+  background: #101317;
+}
+
+.odb-create-table-head > div {
+  min-width: 0;
+}
+
+.odb-create-table-head > div > span {
+  color: #8092ff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.odb-create-table-head h2 {
+  margin: 3px 0 2px;
+  color: var(--odb-text);
+  font-size: 16px;
+  font-weight: 640;
+}
+
+.odb-create-table-head p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--odb-text-3);
+  font-family: var(--odb-mono);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.odb-create-table-head > button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--odb-text-3);
+}
+
+.odb-create-table-head > button:hover {
+  border-color: var(--odb-border);
+  background: var(--odb-surface-2);
+  color: var(--odb-text);
+}
+
+.odb-create-table-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 15px 16px;
+}
+
+.odb-table-name-field {
+  max-width: 360px;
+  margin-bottom: 14px;
+}
+
+.odb-create-columns {
+  overflow: auto;
+  border-top: 1px solid var(--odb-border);
+  border-bottom: 1px solid var(--odb-border);
+}
+
+.odb-create-column-row {
+  min-width: 650px;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: 36px minmax(170px, 1.25fr) minmax(170px, 1fr) 58px 58px 38px;
+  align-items: center;
+  border-bottom: 1px solid #20262d;
+}
+
+.odb-create-column-row:last-child {
+  border-bottom: 0;
+}
+
+.odb-create-column-row.header {
+  min-height: 29px;
+  background: #111419;
+  color: var(--odb-text-3);
+  font-size: 8.8px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.odb-create-column-row > span,
+.odb-create-column-row > label {
+  padding: 0 7px;
+}
+
+.odb-create-column-row .index {
+  color: #59626e;
+  font-family: var(--odb-mono);
+  font-size: 9.5px;
+}
+
+.odb-create-column-row > input,
+.odb-create-column-row > select {
+  height: 27px;
+  margin: 0 4px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  outline: none;
+  background: transparent;
+  color: var(--odb-text-2);
+  font-family: var(--odb-mono);
+  font-size: 10.5px;
+}
+
+.odb-create-column-row > input:hover,
+.odb-create-column-row > select:hover {
+  border-color: var(--odb-border);
+  background: #0f1216;
+}
+
+.odb-create-column-row > input:focus,
+.odb-create-column-row > select:focus {
+  border-color: #465985;
+  background: #0e1115;
+}
+
+.odb-check-cell {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.odb-check-cell.pk {
+  gap: 3px;
+  color: #d6a84b;
+}
+
+.odb-check-cell input {
+  accent-color: var(--odb-primary);
+}
+
+.odb-remove-column {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--odb-text-3);
+}
+
+.odb-remove-column:hover:not(:disabled) {
+  border-color: rgba(240, 107, 120, 0.26);
+  background: rgba(240, 107, 120, 0.055);
+  color: #ef8791;
+}
+
+.odb-remove-column:disabled {
+  opacity: 0.25;
+}
+
+.odb-add-column {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  padding: 0 8px;
+  border: 1px solid var(--odb-border);
+  border-radius: 4px;
+  background: var(--odb-surface);
+  color: var(--odb-text-2);
+  font-size: 10.5px;
+}
+
+.odb-add-column:hover {
+  border-color: var(--odb-border-strong);
+  background: var(--odb-surface-2);
+  color: var(--odb-text);
+}
+
+.odb-create-table-footer {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 13px;
+  border-top: 1px solid var(--odb-border);
+  background: #101317;
+}
+
+.odb-create-table-footer > span {
+  color: var(--odb-text-3);
+  font-size: 9px;
+}
+
+.odb-create-table-footer > div {
+  display: flex;
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .odb-create-table-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+}
