@@ -3104,3 +3104,196 @@ textarea:focus-visible {
     flex-direction: column;
   }
 }
+
+
+/* Phase 4: connection URL import + schema metadata */
+
+.odb-url-import {
+  margin-bottom: 13px;
+  padding: 10px;
+  border: 1px solid var(--odb-border);
+  border-radius: 6px;
+  background: #101318;
+}
+
+.odb-url-import-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 7px;
+}
+
+.odb-url-import-head > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--odb-text-2);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.odb-url-import-head small {
+  color: var(--odb-text-3);
+  font-size: 9.5px;
+}
+
+.odb-url-import-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.odb-url-import-row input {
+  min-width: 0;
+  height: 29px;
+  padding: 0 8px;
+  border: 1px solid var(--odb-border);
+  border-radius: 4px;
+  outline: 0;
+  background: #0d1014;
+  color: var(--odb-text);
+  font-family: var(--odb-mono);
+  font-size: 10.5px;
+}
+
+.odb-url-import-row input:focus {
+  border-color: #465985;
+}
+
+.odb-url-import-row button {
+  height: 29px;
+  padding: 0 10px;
+  border: 1px solid var(--odb-border);
+  border-radius: 4px;
+  background: var(--odb-surface-2);
+  color: var(--odb-text-2);
+  font-size: 10.5px;
+}
+
+.odb-url-import-row button:hover:not(:disabled) {
+  border-color: var(--odb-border-strong);
+  color: var(--odb-text);
+}
+
+.odb-url-import-row button:disabled {
+  opacity: 0.4;
+}
+
+.odb-structure-tabs {
+  min-height: 36px;
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--odb-border);
+  background: #101318;
+}
+
+.odb-structure-tabs button {
+  height: 35px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--odb-text-3);
+  font-size: 11px;
+}
+
+.odb-structure-tabs button:hover {
+  color: var(--odb-text-2);
+}
+
+.odb-structure-tabs button.on {
+  border-bottom-color: var(--odb-primary);
+  color: var(--odb-text);
+}
+
+.odb-structure-tabs button span {
+  min-width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #1a2027;
+  color: #727c88;
+  font-size: 8.5px;
+}
+
+.odb-structure-meta-table {
+  width: min(100%, 1080px);
+  margin: 18px auto 0;
+  padding: 0 18px 28px;
+}
+
+.odb-meta-row {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(170px, 0.8fr) minmax(240px, 1.4fr);
+  align-items: center;
+  border-bottom: 1px solid #20262d;
+  color: var(--odb-text-2);
+}
+
+.odb-meta-row.header {
+  min-height: 31px;
+  border-top: 1px solid var(--odb-border);
+  background: #111419;
+  color: var(--odb-text-3);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.odb-meta-row:not(.header):hover {
+  background: rgba(255,255,255,0.018);
+}
+
+.odb-meta-row > * {
+  min-width: 0;
+  padding: 0 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-meta-row code {
+  color: var(--odb-text);
+  font-family: var(--odb-mono);
+  font-size: 10.5px;
+}
+
+.odb-meta-row code.detail {
+  color: #8c96a3;
+  font-size: 9.8px;
+}
+
+.odb-meta-row > span {
+  color: var(--odb-text-3);
+  font-size: 10px;
+}
+
+.odb-structure-meta-error {
+  margin: 10px 18px 0;
+  padding: 7px 9px;
+  border: 1px solid rgba(240, 107, 120, 0.22);
+  border-radius: 5px;
+  background: rgba(240, 107, 120, 0.06);
+  color: #f08a95;
+  font-size: 10.5px;
+}
+
+@media (max-width: 760px) {
+  .odb-url-import-head small {
+    display: none;
+  }
+
+  .odb-meta-row {
+    grid-template-columns: minmax(130px, 0.8fr) minmax(140px, 0.8fr) minmax(180px, 1.3fr);
+  }
+}
