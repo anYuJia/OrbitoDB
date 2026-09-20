@@ -119,6 +119,13 @@ export function CommandPalette({ onAddServer }: { onAddServer: () => void }) {
       },
       { id: "n-schema", group: "Navigate", label: "Schema tools", Icon: IconDatabase, run: act(() => setTopView("design")) },
       { id: "n-utils", group: "Navigate", label: "Database utilities", Icon: IconBolt, run: act(() => setTopView("automation")) },
+      {
+        id: "a-cross-search",
+        group: "Actions",
+        label: "Cross-table search",
+        Icon: IconSearch,
+        run: act(() => window.dispatchEvent(new Event("orbitodb:cross-table-search"))),
+      },
       { id: "n-settings", group: "Navigate", label: "Connection settings", Icon: IconSettings, run: act(() => setTopView("settings")) },
     ];
     for (const c of connections) {
