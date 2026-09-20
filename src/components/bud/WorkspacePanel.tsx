@@ -14,8 +14,10 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { viewV } from "../../lib/motion";
+import { getBackend } from "../../ipc/backend";
+import type { ConnectionDiagnostics } from "../../ipc/types";
 import { confirmDialog } from "../../state/dialog";
 import type { TopView } from "../../state/store";
 import { useStore } from "../../state/store";
@@ -174,6 +176,34 @@ function SettingsPanel({
   const toggleReadOnly = useStore((s) => s.toggleReadOnly);
   const readOnlyConns = useStore((s) => s.readOnlyConns);
   const readOnly = !!conn && readOnlyConns.includes(conn.id);
+  const [diagnostics, setDiagnostics] = useState<{ connectionId: string; data: ConnectionDiagnostics } | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+
+  const runDiagnostics = async () => {
+    if (!conn || diagnosticsLoading) return;
+    setDiagnosticsLoading(true);
+    setDiagnosticsError(null);
+    try {
+      let data: ConnectionDiagnostics;
+      try {
+        data = await getBackend().connectionDiagnostics(conn.id);
+      } catch (error) {
+        if ((error as { kind?: string })?.kind !== "notConnected") throw error;
+        await openAndIntrospect(conn.id);
+        data = await getBackend().connectionDiagnostics(conn.id);
+      }
+      setDiagnostics({ connectionId: conn.id, data });
+    } catch (error) {
+      setDiagnosticsError(
+        error && typeof error === "object" && "message" in error
+          ? String((error as { message?: unknown }).message ?? "Diagnostics failed")
+          : String(error),
+      );
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
   const groupedConnections = useMemo(() => {
     const groups = new Map<string, typeof connections>();
     for (const connection of connections) {
@@ -284,6 +314,10 @@ function SettingsPanel({
                 <IconRefresh size={14} stroke={1.8} />
                 Reconnect
               </button>
+              <button onClick={() => void runDiagnostics()} disabled={diagnosticsLoading}>
+                <IconDatabaseSearch size={14} stroke={1.8} />
+                {diagnosticsLoading ? "Checking…" : "Diagnostics"}
+              </button>
             </div>
           </div>
 
@@ -316,6 +350,41 @@ function SettingsPanel({
               </div>
             ))}
           </div>
+
+          <div className="odb-connection-detail-divider" />
+
+          <div className="odb-connection-detail-head compact">
+            <div>
+              <span className="odb-page-eyebrow">Diagnostics</span>
+              <h2>Live connection</h2>
+              <p>Probe the active session instead of relying on saved profile metadata.</p>
+            </div>
+          </div>
+
+          {diagnosticsError && (
+            <div className="odb-structure-meta-error">{diagnosticsError}</div>
+          )}
+          {diagnostics?.connectionId === conn.id ? (
+            <div className="odb-settings-list">
+              {([
+                ["Server version", diagnostics.data.serverVersion || "—"],
+                ["Database", diagnostics.data.database || "—"],
+                ["Schema", diagnostics.data.schema || "—"],
+                ["Round-trip", `${diagnostics.data.latencyMs} ms`],
+              ] as [string, string][]).map(([label, value]) => (
+                <div key={label} className="odb-setting-line">
+                  <span>{label}</span>
+                  <code>{value}</code>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="odb-empty-state compact">
+              <IconDatabaseSearch size={22} stroke={1.5} />
+              <b>{diagnosticsLoading ? "Running diagnostics…" : "No live diagnostics yet"}</b>
+              <span>Use Diagnostics above to query the active database session.</span>
+            </div>
+          )}
 
           <div className="odb-safety-section">
             <div>
