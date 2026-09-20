@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
 use crate::executor::pg_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
 
 pub struct PgDriver {
     pool: sqlx::PgPool,
@@ -191,6 +191,21 @@ impl Driver for PgDriver {
             .await?;
         Ok(cancelled)
     }
+    async fn diagnostics(&self) -> AppResult<ConnectionDiagnostics> {
+        let started = std::time::Instant::now();
+        let row = sqlx::query(
+            "SELECT version() AS server_version, current_database() AS database, current_schema() AS schema",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(ConnectionDiagnostics {
+            server_version: row.try_get("server_version").unwrap_or_else(|_| "PostgreSQL".into()),
+            database: row.try_get("database").unwrap_or_default(),
+            schema: row.try_get("schema").ok(),
+            latency_ms: started.elapsed().as_millis() as u64,
+        })
+    }
+
     async fn list_schemas(&self) -> AppResult<Vec<String>> {
         let rows = sqlx::query(
             "SELECT schema_name FROM information_schema.schemata
