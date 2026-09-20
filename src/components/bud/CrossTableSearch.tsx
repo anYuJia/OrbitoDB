@@ -2,7 +2,14 @@ import { IconSearch, IconX } from "@tabler/icons-react";
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getBackend } from "../../ipc/backend";
-import type { ColumnInfo, Engine } from "../../ipc/types";
+import type { ColumnInfo } from "../../ipc/types";
+import {
+  CROSS_TABLE_MAX_COLUMNS,
+  CROSS_TABLE_CROSS_TABLE_MAX_RESULTS,
+  CROSS_TABLE_CROSS_TABLE_MAX_TABLES,
+  buildCrossTableSearchSql,
+  isCrossTableSearchable,
+} from "../../lib/crossTableSearch";
 import { backdropV, centeredModalV } from "../../lib/motion";
 import { useStore } from "../../state/store";
 
@@ -10,49 +17,6 @@ interface SearchHit {
   table: string;
   column: string;
   value: string;
-}
-
-const MAX_TABLES = 40;
-const MAX_COLUMNS_PER_TABLE = 20;
-const MAX_RESULTS = 100;
-const ROWS_PER_TABLE = 8;
-
-function quoteIdentifier(engine: Engine, value: string): string {
-  return engine === "mysql"
-    ? "`" + value.replace(/`/g, "``") + "`"
-    : '"' + value.replace(/"/g, '""') + '"';
-}
-
-function sqlLiteral(value: string): string {
-  return "'" + value.replace(/'/g, "''") + "'";
-}
-
-function isSearchable(column: ColumnInfo): boolean {
-  const type = column.dataType.toLowerCase();
-  return ![
-    "blob",
-    "binary",
-    "varbinary",
-    "bytea",
-    "image",
-    "geometry",
-    "geography",
-  ].some((token) => type.includes(token));
-}
-
-function buildSearchSql(engine: Engine, table: string, columns: ColumnInfo[], term: string): string {
-  const q = (value: string) => quoteIdentifier(engine, value);
-  const selected = columns.slice(0, MAX_COLUMNS_PER_TABLE);
-  const needle = sqlLiteral(term.toLowerCase());
-  const castType = engine === "mysql" ? "CHAR" : "TEXT";
-  const contains = (column: ColumnInfo) => {
-    const value = `LOWER(CAST(${q(column.name)} AS ${castType}))`;
-    if (engine === "mysql") return `LOCATE(${needle}, ${value}) > 0`;
-    if (engine === "postgres") return `POSITION(${needle} IN ${value}) > 0`;
-    return `INSTR(${value}, ${needle}) > 0`;
-  };
-  const where = selected.map(contains).join(" OR ");
-  return `SELECT ${selected.map((column) => q(column.name)).join(", ")} FROM ${q(table)} WHERE ${where} LIMIT ${ROWS_PER_TABLE}`;
 }
 
 export function CrossTableSearch() {
@@ -72,7 +36,7 @@ export function CrossTableSearch() {
   const setPendingColFilter = useStore((s) => s.setPendingColFilter);
 
   const searchableTables = useMemo(
-    () => tables.filter((table) => table.kind !== "view").slice(0, MAX_TABLES),
+    () => tables.filter((table) => table.kind !== "view").slice(0, CROSS_TABLE_MAX_TABLES),
     [tables],
   );
 
@@ -113,7 +77,7 @@ export function CrossTableSearch() {
 
     try {
       for (const table of searchableTables) {
-        if (token !== searchToken.current || next.length >= MAX_RESULTS) break;
+        if (token !== searchToken.current || next.length >= CROSS_TABLE_MAX_RESULTS) break;
 
         let columns = columnsByTable[table.name] ?? [];
         if (!columns.length) {
@@ -125,7 +89,7 @@ export function CrossTableSearch() {
           }
         }
 
-        const searchable = columns.filter(isSearchable).slice(0, MAX_COLUMNS_PER_TABLE);
+        const searchable = columns.filter(isCrossTableSearchable).slice(0, CROSS_TABLE_MAX_COLUMNS);
         if (!searchable.length) {
           setScanned((count) => count + 1);
           continue;
@@ -134,20 +98,20 @@ export function CrossTableSearch() {
         try {
           const result = await backend.runQuerySilent(
             activeId,
-            buildSearchSql(connection.engine, table.name, searchable, term),
+            buildCrossTableSearchSql(connection.engine, table.name, searchable, term),
           );
           const lower = term.toLowerCase();
 
           for (const row of result.rows) {
             result.columns.forEach((column, index) => {
-              if (next.length >= MAX_RESULTS) return;
+              if (next.length >= CROSS_TABLE_MAX_RESULTS) return;
               const value = row[index];
               if (value == null) return;
               const text = String(value);
               if (!text.toLowerCase().includes(lower)) return;
               next.push({ table: table.name, column: column.name, value: text });
             });
-            if (next.length >= MAX_RESULTS) break;
+            if (next.length >= CROSS_TABLE_MAX_RESULTS) break;
           }
         } catch {
           // One unsupported cast or table permission must not stop the whole search.
@@ -195,7 +159,7 @@ export function CrossTableSearch() {
           <div>
             <span>Database utility</span>
             <h2>Cross-table search</h2>
-            <p>Search visible values across up to {MAX_TABLES} tables in the active connection.</p>
+            <p>Search visible values across up to {CROSS_TABLE_MAX_TABLES} tables in the active connection.</p>
           </div>
           <button className="odb-modal-close" onClick={() => { searchToken.current += 1; setBusy(false); setOpen(false); }} title="Close">
             <IconX size={16} stroke={1.8} />
@@ -225,7 +189,7 @@ export function CrossTableSearch() {
           {hits.length > 0 && (
             <>
               <span>·</span>
-              <span>{hits.length}{hits.length >= MAX_RESULTS ? "+" : ""} matches</span>
+              <span>{hits.length}{hits.length >= CROSS_TABLE_MAX_RESULTS ? "+" : ""} matches</span>
             </>
           )}
         </div>
@@ -258,7 +222,7 @@ export function CrossTableSearch() {
 
         <footer className="odb-search-modal-foot">
           <span>Binary columns are skipped. Search is capped to protect large databases.</span>
-          <span>{MAX_RESULTS} result limit</span>
+          <span>{CROSS_TABLE_MAX_RESULTS} result limit</span>
         </footer>
       </motion.div>
     </>
