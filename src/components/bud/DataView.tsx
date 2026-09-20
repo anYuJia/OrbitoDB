@@ -16,6 +16,7 @@ import { motion } from "framer-motion";
 import { type ComponentType, type MouseEvent, useEffect, useRef, useState } from "react";
 import { download, fromCsv, toCsv } from "../../lib/csv";
 import { viewV } from "../../lib/motion";
+import { promptDialog } from "../../state/dialog";
 import { toast } from "../../state/toast";
 import { useStore } from "../../state/store";
 import { DataGrid } from "./DataGrid";
@@ -54,6 +55,7 @@ export function DataView() {
   const selectEditor = useStore((s) => s.selectEditor);
   const closeEditor = useStore((s) => s.closeEditor);
   const newEditor = useStore((s) => s.newEditor);
+  const renameEditor = useStore((s) => s.renameEditor);
   const [menu, setMenu] = useState<MenuState>(null);
   const [tableMode, setTableMode] = useState<"data" | "structure">("data");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -123,7 +125,17 @@ export function DataView() {
           <button
             key={ed.id}
             className={`bud-qtab ${view === "sql" && activeEditorId === ed.id ? "on" : ""}`}
+            title="Double-click to rename"
             onClick={() => selectEditor(ed.id)}
+            onDoubleClick={async () => {
+              const next = await promptDialog({
+                title: "Rename SQL tab",
+                label: "Tab name",
+                defaultValue: ed.name,
+                placeholder: "e.g. Monthly revenue",
+              });
+              if (next?.trim()) renameEditor(ed.id, next.trim());
+            }}
           >
             <IconCode size={14} stroke={1.7} className="bud-qtab-ic sql" />
             <span>{ed.name}</span>
