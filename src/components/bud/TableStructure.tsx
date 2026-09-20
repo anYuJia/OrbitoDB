@@ -660,6 +660,40 @@ export function TableStructure({ table }: { table: string }) {
             ))
           )}
         </div>
+      ) : mode === "constraints" ? (
+        <div className="odb-structure-meta-table constraints">
+          <div className="odb-meta-row header">
+            <span>Type</span><span>Name</span><span>Definition</span><span />
+          </div>
+          {metaLoading ? (
+            <div className="odb-structure-empty">Loading constraints…</div>
+          ) : constraints.length === 0 ? (
+            <div className="odb-structure-empty">No primary, unique, or check constraints reported for this table.</div>
+          ) : (
+            constraints.map((constraint, index) => (
+              <div className="odb-meta-row" key={`${constraint.name ?? constraint.kind}-${index}`}>
+                <span className="constraint-kind">{constraint.kind.toUpperCase()}</span>
+                <code>{constraint.name ?? (engine === "sqlite" ? "inline / unnamed" : "unnamed")}</code>
+                <code className="detail" title={constraint.definition}>{constraint.definition}</code>
+                <span className="actions">
+                  <button
+                    className="danger"
+                    title={engine === "sqlite" ? "SQLite constraint changes require a table rebuild" : "Drop constraint"}
+                    onClick={() => void dropConstraint(constraint)}
+                    disabled={readOnly || metaLoading || engine === "sqlite" || (constraint.kind !== "primary" && !constraint.name)}
+                  >
+                    <IconTrash size={13} stroke={1.8} />
+                  </button>
+                </span>
+              </div>
+            ))
+          )}
+          {engine === "sqlite" && (
+            <div className="odb-structure-note">
+              SQLite stores PRIMARY / UNIQUE / CHECK constraints inside CREATE TABLE. Changing them requires a reviewed table rebuild.
+            </div>
+          )}
+        </div>
       ) : mode === "foreignKeys" ? (
         <div className="odb-structure-meta-table foreign-keys">
           <div className="odb-meta-row header">
