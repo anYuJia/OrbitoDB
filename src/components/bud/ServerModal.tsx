@@ -3,6 +3,8 @@ import {
   IconCheck,
   IconDatabase,
   IconFileDatabase,
+  IconEye,
+  IconEyeOff,
   IconInfoCircle,
   IconLink,
   IconPlus,
@@ -118,6 +120,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
   const [username, setUsername] = useState(existing?.username ?? "");
   const [password, setPassword] = useState("");
   const [connectionUrl, setConnectionUrl] = useState("");
+  const [showConnectionUrl, setShowConnectionUrl] = useState(false);
   const [databases, setDatabases] = useState<string[] | null>(null);
   const [status, setStatus] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
@@ -345,8 +348,9 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                   <small>Optional · fills the fields below, then OrbitoDB stores the profile normally.</small>
                 </div>
                 <div className="odb-url-import-row">
-                  <input
-                    type="password"
+                  <div className="odb-url-input-wrap">
+                    <input
+                    type={showConnectionUrl ? "text" : "password"}
                     value={connectionUrl}
                     onChange={(e) => setConnectionUrl(e.target.value)}
                     placeholder="postgresql://user:password@localhost:5432/database"
@@ -359,6 +363,16 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                       }
                     }}
                   />
+                    <button
+                      type="button"
+                      className="odb-url-visibility"
+                      title={showConnectionUrl ? "Hide connection URL" : "Show connection URL"}
+                      aria-label={showConnectionUrl ? "Hide connection URL" : "Show connection URL"}
+                      onClick={() => setShowConnectionUrl((value) => !value)}
+                    >
+                      {showConnectionUrl ? <IconEyeOff size={13} stroke={1.8} /> : <IconEye size={13} stroke={1.8} />}
+                    </button>
+                  </div>
                   <button onClick={applyConnectionUrl} disabled={!connectionUrl.trim()}>
                     Apply
                   </button>
