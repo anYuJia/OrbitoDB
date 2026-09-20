@@ -298,4 +298,16 @@ mod tests {
     fn reserves_ephemeral_local_port() {
         assert!(reserve_local_port().unwrap() > 0);
     }
+
+    #[test]
+    fn formats_ssh_diagnostics_without_hiding_openssh_detail() {
+        assert_eq!(
+            ssh_error_message("SSH tunnel failed", ""),
+            "SSH tunnel failed"
+        );
+        assert_eq!(
+            ssh_error_message("SSH tunnel failed", "Permission denied (publickey)."),
+            "SSH tunnel failed: Permission denied (publickey)."
+        );
+    }
 }
