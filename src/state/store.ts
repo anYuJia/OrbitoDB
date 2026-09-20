@@ -45,7 +45,7 @@ export interface ViewDef {
   filter: ViewFilter | null;
 }
 
-/** A saved SQL snippet — used for both the Scripts and Favorites panels. */
+/** A saved SQL snippet — used for both Scripts and Starred queries. */
 export interface SavedItem {
   id: string;
   name: string;
@@ -1192,7 +1192,7 @@ export const useStore = create<AppStore>((set, get) => ({
       const item: SavedItem = { id: `f-${Date.now()}-${s.favorites.length}`, name, sql, savedAt: new Date().toISOString() };
       const favorites = [item, ...s.favorites];
       persistSaved(FAVS_KEY, favorites);
-      toast(`Added “${name}” to favorites`, "success");
+      toast(`Added “${name}” to Starred`, "success");
       return { favorites };
     }),
 
