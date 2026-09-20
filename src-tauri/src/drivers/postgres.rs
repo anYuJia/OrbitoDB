@@ -259,9 +259,19 @@ impl Driver for PgDriver {
             .collect();
 
         let rows = sqlx::query(
-            "SELECT column_name, data_type, is_nullable FROM information_schema.columns \
-             WHERE table_name = $1 AND table_schema = current_schema() \
-             ORDER BY ordinal_position",
+            "SELECT a.attname AS column_name, \
+                    pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type, \
+                    NOT a.attnotnull AS is_nullable, \
+                    CASE WHEN a.attgenerated = '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS column_default, \
+                    CASE WHEN a.attgenerated <> '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS generation_expression, \
+                    pg_catalog.col_description(a.attrelid, a.attnum) AS column_comment \
+             FROM pg_catalog.pg_attribute a \
+             JOIN pg_catalog.pg_class cls ON cls.oid = a.attrelid \
+             JOIN pg_catalog.pg_namespace ns ON ns.oid = cls.relnamespace \
+             LEFT JOIN pg_catalog.pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum \
+             WHERE ns.nspname = current_schema() AND cls.relname = $1 \
+               AND a.attnum > 0 AND NOT a.attisdropped \
+             ORDER BY a.attnum",
         )
         .bind(table)
         .fetch_all(&self.pool)
@@ -272,19 +282,21 @@ impl Driver for PgDriver {
                 let name: String = r.try_get("column_name").unwrap_or_default();
                 ColumnInfo {
                     is_primary_key: pks.contains(&name),
-                    nullable: r
-                        .try_get::<String, _>("is_nullable")
-                        .map(|v| v == "YES")
-                        .unwrap_or(true),
+                    nullable: r.try_get::<bool, _>("is_nullable").unwrap_or(true),
                     data_type: r
                         .try_get::<String, _>("data_type")
                         .unwrap_or_else(|_| "unknown".into()),
+                    default_value: r.try_get::<Option<String>, _>("column_default").ok().flatten(),
+                    generated: r
+                        .try_get::<Option<String>, _>("generation_expression")
+                        .ok()
+                        .flatten(),
+                    comment: r.try_get::<Option<String>, _>("column_comment").ok().flatten(),
                     name,
                 }
             })
             .collect())
     }
-
     async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
         let rows = sqlx::query(
             "SELECT tc.constraint_name, tc.table_name, kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column \
