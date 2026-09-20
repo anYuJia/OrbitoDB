@@ -217,7 +217,7 @@ export const httpBackend: Backend = {
   closeConnection: (id) => rpc<void>("close", { id }).then(() => {}),
   runQuery: (id, sql) => withReopen<QueryResult>(id, "query", { id, sql }).then(textifyCells),
   runQuerySilent: (id, sql) => withReopen<QueryResult>(id, "query", { id, sql }).then(textifyCells),
-  cancelQuery: (id) => rpc<boolean>("cancel", { id }),
+  cancelQuery: async (id) => rpc<boolean>("cancel", { id, password: await loadSecret(id) }),
   connectionDiagnostics: (id) => withReopen<ConnectionDiagnostics>(id, "diagnostics", { id }),
   listSchemas: (id) => withReopen<string[]>(id, "schemas", { id }),
   listTables: (id) => withReopen(id, "tables", { id }),
