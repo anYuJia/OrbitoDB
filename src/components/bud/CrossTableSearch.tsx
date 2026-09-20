@@ -2,11 +2,10 @@ import { IconSearch, IconX } from "@tabler/icons-react";
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getBackend } from "../../ipc/backend";
-import type { ColumnInfo } from "../../ipc/types";
 import {
   CROSS_TABLE_MAX_COLUMNS,
-  CROSS_TABLE_CROSS_TABLE_MAX_RESULTS,
-  CROSS_TABLE_CROSS_TABLE_MAX_TABLES,
+  CROSS_TABLE_MAX_RESULTS,
+  CROSS_TABLE_MAX_TABLES,
   buildCrossTableSearchSql,
   isCrossTableSearchable,
 } from "../../lib/crossTableSearch";
