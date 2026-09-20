@@ -206,7 +206,7 @@ export interface AppStore {
   renameEditor: (id: string, name: string) => void;
   bindEditorConnection: (id: string, connectionId: string | null) => void;
   closeEditor: (id: string) => void;
-  selectEditor: (id: string) => void;
+  selectEditor: (id: string) => Promise<void>;
   setEditorResult: (id: string, result: QueryResult | null, error: AppError | null) => void;
   run: () => Promise<void>;
   loadHistory: () => Promise<void>;
@@ -518,13 +518,22 @@ export const useStore = create<AppStore>((set, get) => ({
       return { editors };
     }),
 
-  selectEditor: (id) =>
-    set((s) => {
-      const ed = s.editors.find((e) => e.id === id);
-      if (!ed) return {};
-      persistEditors(s.editors, id);
-      return { activeEditorId: id, sql: ed.sql, view: "sql", topView: "data" };
-    }),
+  selectEditor: async (id) => {
+    const state = get();
+    const editor = state.editors.find((item) => item.id === id);
+    if (!editor) return;
+
+    persistEditors(state.editors, id);
+    set({ activeEditorId: id, sql: editor.sql, view: "sql", topView: "data" });
+
+    if (
+      editor.connectionId &&
+      editor.connectionId !== get().activeConnectionId &&
+      get().connections.some((connection) => connection.id === editor.connectionId)
+    ) {
+      await get().openAndIntrospect(editor.connectionId);
+    }
+  },
 
   showTableDdl: async (table) => {
     const id = get().activeConnectionId;
@@ -565,35 +574,58 @@ export const useStore = create<AppStore>((set, get) => ({
     get().openSqlTab("DDL · " + table, ddl);
   },
 
-  closeEditor: (id) =>
-    set((s) => {
-      const idx = s.editors.findIndex((e) => e.id === id);
-      let editors = s.editors.filter((e) => e.id !== id);
-      const editorResults = { ...s.editorResults };
-      const editorErrors = { ...s.editorErrors };
-      delete editorResults[id];
-      delete editorErrors[id];
-      if (editors.length === 0) {
-        const fresh: EditorTab = {
-          id: `ed-${Date.now().toString(36)}`,
-          name: "Query 1",
-          sql: "",
-          connectionId: s.activeConnectionId,
-        };
-        editors = [fresh];
-        persistEditors(editors, fresh.id);
-        return { editors, activeEditorId: fresh.id, sql: "", editorResults, editorErrors };
-      }
-      let activeEditorId = s.activeEditorId;
-      let sql = s.sql;
-      if (id === s.activeEditorId) {
-        const next = editors[Math.min(idx, editors.length - 1)];
-        activeEditorId = next.id;
-        sql = next.sql;
-      }
-      persistEditors(editors, activeEditorId);
-      return { editors, activeEditorId, sql, editorResults, editorErrors };
-    }),
+  closeEditor: (id) => {
+    const state = get();
+    const index = state.editors.findIndex((editor) => editor.id === id);
+    if (index < 0) return;
+
+    let editors = state.editors.filter((editor) => editor.id !== id);
+    const editorResults = { ...state.editorResults };
+    const editorErrors = { ...state.editorErrors };
+    delete editorResults[id];
+    delete editorErrors[id];
+
+    if (editors.length === 0) {
+      const fresh: EditorTab = {
+        id: `ed-${Date.now().toString(36)}`,
+        name: "Query 1",
+        sql: "",
+        connectionId: state.activeConnectionId,
+      };
+      editors = [fresh];
+      persistEditors(editors, fresh.id);
+      set({
+        editors,
+        activeEditorId: fresh.id,
+        sql: "",
+        editorResults,
+        editorErrors,
+        view: "sql",
+      });
+      return;
+    }
+
+    let activeEditorId = state.activeEditorId;
+    let sql = state.sql;
+    let nextEditor: EditorTab | undefined;
+
+    if (id === state.activeEditorId) {
+      nextEditor = editors[Math.min(index, editors.length - 1)];
+      activeEditorId = nextEditor.id;
+      sql = nextEditor.sql;
+    }
+
+    persistEditors(editors, activeEditorId);
+    set({ editors, activeEditorId, sql, editorResults, editorErrors });
+
+    if (
+      nextEditor?.connectionId &&
+      nextEditor.connectionId !== get().activeConnectionId &&
+      get().connections.some((connection) => connection.id === nextEditor?.connectionId)
+    ) {
+      void get().openAndIntrospect(nextEditor.connectionId);
+    }
+  },
 
   setEditorResult: (id, result, error) =>
     set((s) => ({
