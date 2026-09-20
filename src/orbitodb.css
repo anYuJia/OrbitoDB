@@ -3494,3 +3494,14 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+
+.odb-structure-meta-table.foreign-keys .odb-meta-row {
+  grid-template-columns: minmax(140px, 0.75fr) minmax(180px, 1fr) minmax(180px, 1fr) 48px;
+}
+
+@media (max-width: 760px) {
+  .odb-structure-meta-table.foreign-keys .odb-meta-row {
+    grid-template-columns: minmax(120px, 0.75fr) minmax(150px, 1fr) minmax(150px, 1fr) 42px;
+  }
+}
