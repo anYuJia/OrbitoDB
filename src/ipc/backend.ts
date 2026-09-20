@@ -6,6 +6,7 @@ import type {
   ConnectionConfig,
   ConnectionDiagnostics,
   ConstraintInfo,
+  DatabaseObjectInfo,
   ForeignKey,
   IndexInfo,
   HistoryEntry,
@@ -30,6 +31,7 @@ export interface Backend {
   connectionDiagnostics(connectionId: string): Promise<ConnectionDiagnostics>;
   listSchemas(connectionId: string): Promise<string[]>;
   listTables(connectionId: string): Promise<TableInfo[]>;
+  listDatabaseObjects(connectionId: string): Promise<DatabaseObjectInfo[]>;
   listColumns(connectionId: string, table: string): Promise<ColumnInfo[]>;
   listForeignKeys(connectionId: string): Promise<ForeignKey[]>;
   listIndexes(connectionId: string, table: string): Promise<IndexInfo[]>;
