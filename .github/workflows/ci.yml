@@ -36,7 +36,7 @@ jobs:
         run: npm ci
 
       - name: Cross-table SQL unit test
-        run: npx vitest run src/lib/crossTableSearch.test.ts
+        run: npx vitest run src/lib/crossTableSearch.test.ts src/lib/ddl.test.ts
 
       - name: TypeScript + Vite build
         run: npm run build
