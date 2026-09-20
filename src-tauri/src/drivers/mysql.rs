@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
 use crate::executor::mysql_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
 
 pub struct MySqlDriver {
     pool: sqlx::MySqlPool,
@@ -58,6 +58,10 @@ fn server_options(cfg: &ConnectionConfig, password: Option<&str>) -> MySqlConnec
 /// into DDL without injection risk.
 fn sanitize_ident(name: &str) -> String {
     name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect()
+}
+
+fn quote_ident(name: &str) -> String {
+    format!("`{}`", name.replace('`', "``"))
 }
 
 /// information_schema text columns can come back as utf8 strings OR as binary
@@ -244,6 +248,149 @@ impl Driver for MySqlDriver {
                 }
             })
             .collect())
+    }
+
+    async fn list_database_objects(&self) -> AppResult<Vec<DatabaseObjectInfo>> {
+        let mut out = Vec::new();
+
+        let views = sqlx::query(
+            "SELECT table_name FROM information_schema.views \
+             WHERE table_schema = DATABASE() ORDER BY table_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        for row in views {
+            let name = try_get_text(&row, "table_name");
+            if name.is_empty() {
+                continue;
+            }
+            let definition = match sqlx::query(&format!("SHOW CREATE VIEW {}", quote_ident(&name)))
+                .fetch_optional(&self.pool)
+                .await
+            {
+                Ok(Some(show)) => {
+                    let value = try_get_text(&show, "Create View");
+                    if value.is_empty() { None } else { Some(value.trim_end_matches(';').to_string() + ";") }
+                }
+                _ => None,
+            };
+            out.push(DatabaseObjectInfo {
+                name,
+                kind: "view".into(),
+                schema: None,
+                table: None,
+                signature: None,
+                definition,
+            });
+        }
+
+        for table in self.list_tables().await?.into_iter().filter(|item| item.kind == "table") {
+            for index in self.list_indexes(&table.name).await? {
+                let definition = if index.name == "PRIMARY" || index.detail == "MySQL index" {
+                    None
+                } else {
+                    let columns = index
+                        .detail
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(quote_ident)
+                        .collect::<Vec<_>>();
+                    if columns.is_empty() {
+                        None
+                    } else {
+                        Some(format!(
+                            "CREATE {}INDEX {} ON {} ({});",
+                            if index.unique { "UNIQUE " } else { "" },
+                            quote_ident(&index.name),
+                            quote_ident(&table.name),
+                            columns.join(", ")
+                        ))
+                    }
+                };
+                out.push(DatabaseObjectInfo {
+                    name: index.name,
+                    kind: "index".into(),
+                    schema: None,
+                    table: Some(table.name.clone()),
+                    signature: None,
+                    definition,
+                });
+            }
+        }
+
+        let routines = sqlx::query(
+            "SELECT routine_name, routine_type FROM information_schema.routines \
+             WHERE routine_schema = DATABASE() ORDER BY routine_type, routine_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        for row in routines {
+            let name = try_get_text(&row, "routine_name");
+            let routine_type = try_get_text(&row, "routine_type");
+            if name.is_empty() {
+                continue;
+            }
+            let is_procedure = routine_type.eq_ignore_ascii_case("PROCEDURE");
+            let show_sql = format!(
+                "SHOW CREATE {} {}",
+                if is_procedure { "PROCEDURE" } else { "FUNCTION" },
+                quote_ident(&name)
+            );
+            let definition = match sqlx::query(&show_sql).fetch_optional(&self.pool).await {
+                Ok(Some(show)) => {
+                    let key = if is_procedure { "Create Procedure" } else { "Create Function" };
+                    let value = try_get_text(&show, key);
+                    if value.is_empty() { None } else { Some(value.trim_end_matches(';').to_string() + ";") }
+                }
+                _ => None,
+            };
+            out.push(DatabaseObjectInfo {
+                name,
+                kind: if is_procedure { "procedure".into() } else { "function".into() },
+                schema: None,
+                table: None,
+                signature: None,
+                definition,
+            });
+        }
+
+        let triggers = sqlx::query(
+            "SELECT trigger_name, event_object_table, action_timing, event_manipulation, action_statement \
+             FROM information_schema.triggers \
+             WHERE trigger_schema = DATABASE() ORDER BY event_object_table, trigger_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        for row in triggers {
+            let name = try_get_text(&row, "trigger_name");
+            let table = try_get_text(&row, "event_object_table");
+            let timing = try_get_text(&row, "action_timing");
+            let event = try_get_text(&row, "event_manipulation");
+            let statement = try_get_text(&row, "action_statement");
+            let definition = if name.is_empty() || table.is_empty() || timing.is_empty() || event.is_empty() || statement.is_empty() {
+                None
+            } else {
+                Some(format!(
+                    "CREATE TRIGGER {} {} {} ON {} FOR EACH ROW {};",
+                    quote_ident(&name),
+                    timing,
+                    event,
+                    quote_ident(&table),
+                    statement.trim_end_matches(';')
+                ))
+            };
+            out.push(DatabaseObjectInfo {
+                name,
+                kind: "trigger".into(),
+                schema: None,
+                table: if table.is_empty() { None } else { Some(table) },
+                signature: None,
+                definition,
+            });
+        }
+
+        Ok(out)
     }
 
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>> {
