@@ -1,17 +1,11 @@
 import { IconCode, IconKey, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { getBackend } from "../../ipc/backend";
-import type { Engine, ForeignKey, QueryResult } from "../../ipc/types";
+import type { Engine, ForeignKey, IndexInfo } from "../../ipc/types";
 import { confirmDialog, promptDialog } from "../../state/dialog";
 import { useStore } from "../../state/store";
 
 type StructureMode = "columns" | "foreignKeys" | "indexes";
-type IndexInfo = { name: string; unique: boolean; detail: string };
-
-function literal(value: string): string {
-  return value.replace(/'/g, "''");
-}
-
 function quoteIdentifier(engine: Engine, value: string): string {
   return engine === "mysql"
     ? "`" + value.replace(/`/g, "``") + "`"
@@ -21,62 +15,6 @@ function quoteIdentifier(engine: Engine, value: string): string {
 function columnIndex(result: QueryResult, ...names: string[]): number {
   const wanted = new Set(names.map((name) => name.toLowerCase()));
   return result.columns.findIndex((column) => wanted.has(column.name.toLowerCase()));
-}
-
-async function loadIndexes(connectionId: string, engine: Engine, table: string): Promise<IndexInfo[]> {
-  const backend = getBackend();
-
-  if (engine === "sqlite") {
-    const result = await backend.runQuery(connectionId, `PRAGMA index_list('${literal(table)}')`);
-    const nameI = columnIndex(result, "name");
-    const uniqueI = columnIndex(result, "unique");
-    const originI = columnIndex(result, "origin");
-    return result.rows.map((row) => ({
-      name: String(row[nameI] ?? ""),
-      unique: Number(row[uniqueI] ?? 0) === 1,
-      detail: originI >= 0 ? `origin: ${String(row[originI] ?? "user")}` : "SQLite index",
-    }));
-  }
-
-  if (engine === "postgres") {
-    const result = await backend.runQuery(
-      connectionId,
-      `SELECT indexname AS name, indexdef AS definition
-       FROM pg_indexes
-       WHERE schemaname = current_schema()
-         AND tablename = '${literal(table)}'
-       ORDER BY indexname`,
-    );
-    const nameI = columnIndex(result, "name", "indexname");
-    const defI = columnIndex(result, "definition", "indexdef");
-    return result.rows.map((row) => {
-      const definition = String(row[defI] ?? "");
-      return {
-        name: String(row[nameI] ?? ""),
-        unique: /CREATE\s+UNIQUE\s+INDEX/i.test(definition),
-        detail: definition,
-      };
-    });
-  }
-
-  const result = await backend.runQuery(connectionId, `SHOW INDEX FROM ${quoteIdentifier(engine, table)}`);
-  const nameI = columnIndex(result, "Key_name", "key_name");
-  const uniqueI = columnIndex(result, "Non_unique", "non_unique");
-  const columnI = columnIndex(result, "Column_name", "column_name");
-  const grouped = new Map<string, { unique: boolean; columns: string[] }>();
-  for (const row of result.rows) {
-    const name = String(row[nameI] ?? "");
-    if (!name) continue;
-    const item = grouped.get(name) ?? { unique: Number(row[uniqueI] ?? 1) === 0, columns: [] };
-    const column = columnI >= 0 ? String(row[columnI] ?? "") : "";
-    if (column) item.columns.push(column);
-    grouped.set(name, item);
-  }
-  return [...grouped.entries()].map(([name, item]) => ({
-    name,
-    unique: item.unique,
-    detail: item.columns.length ? item.columns.join(", ") : "MySQL index",
-  }));
 }
 
 export function TableStructure({ table }: { table: string }) {
@@ -119,7 +57,7 @@ export function TableStructure({ table }: { table: string }) {
 
     Promise.all([
       getBackend().listForeignKeys(activeId),
-      loadIndexes(activeId, engine, table),
+      getBackend().listIndexes(activeId, table),
     ])
       .then(([allFks, nextIndexes]) => {
         if (!alive) return;
