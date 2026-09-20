@@ -161,6 +161,8 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
           ? `Imported URL · connection parameters filled. URL query options are not stored yet: ${ignored.join(", ")}`
           : "Imported connection URL.",
       });
+      setConnectionUrl("");
+      setShowConnectionUrl(false);
     } catch (e) {
       setStatus({ kind: "error", msg: errMsg(e) });
     }
