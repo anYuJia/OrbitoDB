@@ -218,6 +218,20 @@ class LocalBackend implements Backend {
     return false;
   }
 
+  async connectionDiagnostics(connectionId: string) {
+    const started = performance.now();
+    const db = await this.ensureDb(connectionId);
+    const versionResult = db.exec("SELECT sqlite_version()");
+    const version = versionResult.length ? String(versionResult[0].values[0]?.[0] ?? "") : "";
+    const cfg = (await this.listConnections()).find((item) => item.id === connectionId);
+    return {
+      serverVersion: version ? `SQLite ${version}` : "SQLite",
+      database: cfg?.database ?? "main",
+      schema: "main",
+      latencyMs: Math.max(1, Math.round(performance.now() - started)),
+    };
+  }
+
   async listSchemas(_connectionId: string): Promise<string[]> {
     return ["main", "temp"];
   }
