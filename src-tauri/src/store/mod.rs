@@ -190,7 +190,14 @@ mod tests {
             env: Some("prod".into()),
             group: Some("Work".into()),
             schema: Some("analytics".into()),
-            ssh: None,
+            ssh: Some(SshTunnelConfig {
+                enabled: true,
+                host: "bastion.example.com".into(),
+                port: 2222,
+                username: "deploy".into(),
+                auth: crate::types::SshAuth::Key,
+                private_key_path: Some("~/.ssh/id_ed25519".into()),
+            }),
         };
         store.upsert_connection(&cfg).await.unwrap();
         let list = store.list_connections().await.unwrap();
@@ -200,6 +207,12 @@ mod tests {
         assert_eq!(list[0].env.as_deref(), Some("prod"));
         assert_eq!(list[0].group.as_deref(), Some("Work"));
         assert_eq!(list[0].schema.as_deref(), Some("analytics"));
+        let ssh = list[0].ssh.as_ref().expect("SSH config persisted");
+        assert!(ssh.enabled);
+        assert_eq!(ssh.host, "bastion.example.com");
+        assert_eq!(ssh.port, 2222);
+        assert_eq!(ssh.username, "deploy");
+        assert_eq!(ssh.private_key_path.as_deref(), Some("~/.ssh/id_ed25519"));
 
         store.add_history("c1", "SELECT 1").await.unwrap();
         store.add_history("c1", "SELECT 2").await.unwrap();
