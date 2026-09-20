@@ -4,6 +4,7 @@ import {
   IconDatabase,
   IconFileDatabase,
   IconInfoCircle,
+  IconLink,
   IconPlus,
   IconRefresh,
   IconServer,
@@ -46,6 +47,49 @@ function defaultPortFor(engine: Engine): string {
   return "";
 }
 
+
+function parseConnectionUrl(raw: string): {
+  engine: Exclude<Engine, "sqlite">;
+  host: string;
+  port: string;
+  database: string;
+  username: string;
+  password: string;
+} {
+  const value = raw.trim();
+  if (!value) throw new Error("Paste a PostgreSQL or MySQL connection URL.");
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("Invalid connection URL.");
+  }
+
+  const protocol = url.protocol.toLowerCase();
+  const engine: Exclude<Engine, "sqlite"> =
+    protocol === "postgres:" || protocol === "postgresql:"
+      ? "postgres"
+      : protocol === "mysql:" || protocol === "mariadb:"
+        ? "mysql"
+        : (() => {
+            throw new Error("Supported URL schemes: postgresql://, postgres://, mysql:// and mariadb://.");
+          })();
+
+  const database = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+  if (!url.hostname) throw new Error("The connection URL is missing a host.");
+  if (!database) throw new Error("The connection URL is missing a database name.");
+
+  return {
+    engine,
+    host: url.hostname,
+    port: url.port || defaultPortFor(engine),
+    database,
+    username: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+  };
+}
+
 export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig | null; onClose: () => void }) {
   const saveConnection = useStore((s) => s.saveConnection);
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
@@ -73,6 +117,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
   const [database, setDatabase] = useState(existing?.database ?? "");
   const [username, setUsername] = useState(existing?.username ?? "");
   const [password, setPassword] = useState("");
+  const [connectionUrl, setConnectionUrl] = useState("");
   const [databases, setDatabases] = useState<string[] | null>(null);
   const [status, setStatus] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
@@ -91,6 +136,30 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
       setHost("localhost");
       setUsername("");
       setPassword("");
+    }
+  };
+
+  const applyConnectionUrl = () => {
+    try {
+      const parsed = parseConnectionUrl(connectionUrl);
+      setEngine(parsed.engine);
+      setHost(parsed.host);
+      setPort(parsed.port);
+      setDatabase(parsed.database);
+      setUsername(parsed.username);
+      setPassword(parsed.password);
+      setDatabases(null);
+      if (!name.trim()) setName(`${engineLabel(parsed.engine)} · ${parsed.database}`);
+      const url = new URL(connectionUrl.trim());
+      const ignored = [...url.searchParams.keys()];
+      setStatus({
+        kind: "ok",
+        msg: ignored.length
+          ? `Imported URL · connection parameters filled. URL query options are not stored yet: ${ignored.join(", ")}`
+          : "Imported connection URL.",
+      });
+    } catch (e) {
+      setStatus({ kind: "error", msg: errMsg(e) });
     }
   };
 
@@ -263,6 +332,35 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                     ? "Choose the local database name."
                     : "Enter server credentials, test the connection, then choose a database."}
                 </small>
+              </div>
+            </div>
+
+            <div className="odb-url-import">
+              <div className="odb-url-import-head">
+                <span>
+                  <IconLink size={14} stroke={1.8} />
+                  Connection URL
+                </span>
+                <small>Optional · fills the fields below, then OrbitoDB stores the profile normally.</small>
+              </div>
+              <div className="odb-url-import-row">
+                <input
+                  type="password"
+                  value={connectionUrl}
+                  onChange={(e) => setConnectionUrl(e.target.value)}
+                  placeholder="postgresql://user:password@localhost:5432/database"
+                  autoComplete="off"
+                  spellCheck={false}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      applyConnectionUrl();
+                    }
+                  }}
+                />
+                <button onClick={applyConnectionUrl} disabled={!connectionUrl.trim()}>
+                  Apply
+                </button>
               </div>
             </div>
 
