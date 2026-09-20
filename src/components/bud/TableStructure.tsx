@@ -49,17 +49,20 @@ export function TableStructure({ table }: { table: string }) {
     if (!activeId) {
       setForeignKeys([]);
       setIndexes([]);
+      setConstraints([]);
       return;
     }
     setMetaLoading(true);
     setMetaError(null);
     try {
-      const [allFks, nextIndexes] = await Promise.all([
+      const [allFks, nextIndexes, nextConstraints] = await Promise.all([
         getBackend().listForeignKeys(activeId),
         getBackend().listIndexes(activeId, table),
+        getBackend().listConstraints(activeId, table),
       ]);
       setForeignKeys(allFks.filter((fk) => fk.table === table));
       setIndexes(nextIndexes);
+      setConstraints(nextConstraints);
     } catch (error) {
       setMetaError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -72,11 +75,13 @@ export function TableStructure({ table }: { table: string }) {
   }, [activeId, engine, table]);
 
   const executeStructureSql = async (
-    sql: string,
+    sql: string | string[],
     successMessage: string,
     destructiveMessage?: string,
   ) => {
     if (!activeId || readOnly) return false;
+    const statements = Array.isArray(sql) ? sql : [sql];
+    const preview = statements.join("\n");
     if (
       destructiveMessage &&
       !(await confirmDialog({
@@ -88,13 +93,15 @@ export function TableStructure({ table }: { table: string }) {
     ) {
       return false;
     }
-    if (!(await confirmProdWrite(connection, sql))) return false;
+    if (!(await confirmProdWrite(connection, preview))) return false;
 
     setMetaLoading(true);
     setMetaError(null);
     try {
-      await getBackend().runQuerySilent(activeId, sql);
-      await refreshMetadata();
+      for (const statement of statements) {
+        if (statement.trim()) await getBackend().runQuerySilent(activeId, statement);
+      }
+      await Promise.all([refreshColumns(table), refreshMetadata()]);
       toast(successMessage, "success");
       return true;
     } catch (error) {
@@ -108,8 +115,15 @@ export function TableStructure({ table }: { table: string }) {
   };
 
   const count = useMemo(
-    () => (mode === "columns" ? columns.length : mode === "foreignKeys" ? foreignKeys.length : indexes.length),
-    [columns.length, foreignKeys.length, indexes.length, mode],
+    () =>
+      mode === "columns"
+        ? columns.length
+        : mode === "foreignKeys"
+          ? foreignKeys.length
+          : mode === "constraints"
+            ? constraints.length
+            : indexes.length,
+    [columns.length, constraints.length, foreignKeys.length, indexes.length, mode],
   );
 
   const add = async () => {
