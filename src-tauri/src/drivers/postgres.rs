@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
 use crate::executor::pg_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
 
 pub struct PgDriver {
     pool: sqlx::PgPool,
@@ -240,6 +240,104 @@ impl Driver for PgDriver {
                 }
             })
             .collect())
+    }
+
+    async fn list_database_objects(&self) -> AppResult<Vec<DatabaseObjectInfo>> {
+        let mut out = Vec::new();
+
+        let views = sqlx::query(
+            "SELECT schemaname, viewname, \
+                    'CREATE OR REPLACE VIEW ' || quote_ident(viewname) || ' AS ' || \
+                    pg_get_viewdef((quote_ident(schemaname) || '.' || quote_ident(viewname))::regclass, true) || ';' AS definition \
+             FROM pg_views WHERE schemaname = current_schema() ORDER BY viewname",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        out.extend(views.iter().map(|row| DatabaseObjectInfo {
+            name: row.try_get("viewname").unwrap_or_default(),
+            kind: "view".into(),
+            schema: row.try_get("schemaname").ok(),
+            table: None,
+            signature: None,
+            definition: row.try_get("definition").ok(),
+        }));
+
+        let indexes = sqlx::query(
+            "SELECT schemaname, tablename, indexname, indexdef \
+             FROM pg_indexes WHERE schemaname = current_schema() ORDER BY tablename, indexname",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        out.extend(indexes.iter().map(|row| DatabaseObjectInfo {
+            name: row.try_get("indexname").unwrap_or_default(),
+            kind: "index".into(),
+            schema: row.try_get("schemaname").ok(),
+            table: row.try_get("tablename").ok(),
+            signature: None,
+            definition: row.try_get::<String, _>("indexdef").ok().map(|value| format!("{value};")),
+        }));
+
+        let sequences = sqlx::query(
+            "SELECT schemaname, sequencename, \
+                    format('CREATE SEQUENCE %I INCREMENT BY %s MINVALUE %s MAXVALUE %s START WITH %s CACHE %s %s;', \
+                           sequencename, increment_by, min_value, max_value, start_value, cache_size, \
+                           CASE WHEN cycle THEN 'CYCLE' ELSE 'NO CYCLE' END) AS definition \
+             FROM pg_sequences WHERE schemaname = current_schema() ORDER BY sequencename",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        out.extend(sequences.iter().map(|row| DatabaseObjectInfo {
+            name: row.try_get("sequencename").unwrap_or_default(),
+            kind: "sequence".into(),
+            schema: row.try_get("schemaname").ok(),
+            table: None,
+            signature: None,
+            definition: row.try_get("definition").ok(),
+        }));
+
+        let routines = sqlx::query(
+            "SELECT p.proname, p.prokind::text AS prokind, \
+                    pg_get_function_identity_arguments(p.oid) AS signature, \
+                    pg_get_functiondef(p.oid) AS definition \
+             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace \
+             WHERE n.nspname = current_schema() AND p.prokind IN ('f','p') \
+             ORDER BY p.prokind, p.proname, pg_get_function_identity_arguments(p.oid)",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        out.extend(routines.iter().map(|row| {
+            let prokind: String = row.try_get("prokind").unwrap_or_default();
+            DatabaseObjectInfo {
+                name: row.try_get("proname").unwrap_or_default(),
+                kind: if prokind == "p" { "procedure".into() } else { "function".into() },
+                schema: Some("current_schema".into()).and_then(|_| None),
+                table: None,
+                signature: row.try_get("signature").ok(),
+                definition: row.try_get::<String, _>("definition").ok().map(|value| value.trim_end_matches(';').to_string() + ";"),
+            }
+        }));
+
+        let triggers = sqlx::query(
+            "SELECT tg.tgname, cls.relname AS table_name, ns.nspname AS schema_name, \
+                    pg_get_triggerdef(tg.oid, true) || ';' AS definition \
+             FROM pg_trigger tg \
+             JOIN pg_class cls ON cls.oid = tg.tgrelid \
+             JOIN pg_namespace ns ON ns.oid = cls.relnamespace \
+             WHERE NOT tg.tgisinternal AND ns.nspname = current_schema() \
+             ORDER BY cls.relname, tg.tgname",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        out.extend(triggers.iter().map(|row| DatabaseObjectInfo {
+            name: row.try_get("tgname").unwrap_or_default(),
+            kind: "trigger".into(),
+            schema: row.try_get("schema_name").ok(),
+            table: row.try_get("table_name").ok(),
+            signature: None,
+            definition: row.try_get("definition").ok(),
+        }));
+
+        Ok(out)
     }
 
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>> {
