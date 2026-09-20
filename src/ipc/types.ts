@@ -62,6 +62,23 @@ export interface TableInfo {
   schema: string | null;
 }
 
+export type DatabaseObjectKind =
+  | "view"
+  | "index"
+  | "sequence"
+  | "procedure"
+  | "function"
+  | "trigger";
+
+export interface DatabaseObjectInfo {
+  name: string;
+  kind: DatabaseObjectKind;
+  schema?: string | null;
+  table?: string | null;
+  signature?: string | null;
+  definition?: string | null;
+}
+
 export interface ColumnInfo {
   name: string;
   dataType: string;
