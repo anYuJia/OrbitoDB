@@ -351,16 +351,16 @@ const handlers = {
         ? await rawArrayRows("postgres", conn, "SELECT pg_backend_pid()")
         : await rawArrayRows("mysql", conn, "SELECT CONNECTION_ID()");
     const sessionId = Number(session.rows?.[0]?.[0] ?? 0);
-    pools.set(id, { engine: cfg.engine, conn, cfg: { ...cfg }, password, sessionId });
+    pools.set(id, { engine: cfg.engine, conn, cfg: { ...cfg }, sessionId });
     return { ok: true };
   },
 
-  async cancel({ id }) {
+  async cancel({ id, password }) {
     const e = need(id);
     if (e.engine === "sqlite") return false;
     if (!e.sessionId || !e.cfg) return false;
 
-    const control = await connect(e.cfg, e.password ?? null);
+    const control = await connect(e.cfg, password ?? null);
     try {
       if (e.engine === "postgres") {
         const raw = await rawArrayRows(
