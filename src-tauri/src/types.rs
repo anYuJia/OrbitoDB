@@ -37,6 +37,7 @@ pub enum SshAuth {
 #[serde(rename_all = "kebab-case")]
 pub enum TlsMode {
     Disable,
+    Allow,
     Prefer,
     Require,
     VerifyCa,
