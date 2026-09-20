@@ -249,7 +249,7 @@ impl Driver for MySqlDriver {
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>> {
         let rows = sqlx::query(
             "SELECT column_name, column_type, is_nullable, column_key, column_default, \
-                    generation_expression, column_comment \
+                    generation_expression, column_comment, extra \
              FROM information_schema.columns \
              WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position",
         )
@@ -269,6 +269,7 @@ impl Driver for MySqlDriver {
                         .filter(|value| !value.trim().is_empty()),
                     comment: try_get_optional_text(r, "column_comment")
                         .filter(|value| !value.is_empty()),
+                    extra: try_get_optional_text(r, "extra").filter(|value| !value.is_empty()),
                     name,
                 }
             })
