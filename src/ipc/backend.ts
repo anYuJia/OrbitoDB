@@ -4,6 +4,7 @@ import type {
   ColumnDef,
   ColumnInfo,
   ConnectionConfig,
+  ConnectionDiagnostics,
   ForeignKey,
   IndexInfo,
   HistoryEntry,
@@ -25,6 +26,7 @@ export interface Backend {
   /** Execute an internal/preview query without adding it to user-visible history. */
   runQuerySilent(connectionId: string, sql: string): Promise<QueryResult>;
   cancelQuery(connectionId: string): Promise<boolean>;
+  connectionDiagnostics(connectionId: string): Promise<ConnectionDiagnostics>;
   listSchemas(connectionId: string): Promise<string[]>;
   listTables(connectionId: string): Promise<TableInfo[]>;
   listColumns(connectionId: string, table: string): Promise<ColumnInfo[]>;
