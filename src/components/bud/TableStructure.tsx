@@ -185,6 +185,19 @@ export function TableStructure({ table }: { table: string }) {
     openSqlTab(`FK · ${table}`, sql);
   };
 
+  const dropForeignKeyTemplate = (constraintName: string | null | undefined) => {
+    if (readOnly || engine === "sqlite" || !constraintName) return;
+    const q = (value: string) => quoteIdentifier(engine, value);
+    const sql =
+      engine === "mysql"
+        ? `ALTER TABLE ${q(table)} DROP FOREIGN KEY ${q(constraintName)};`
+        : `ALTER TABLE ${q(table)} DROP CONSTRAINT ${q(constraintName)};`;
+    openSqlTab(`Drop FK · ${constraintName}`, [
+      "-- Review before executing. Dropping a foreign key changes referential integrity.",
+      sql,
+    ].join("\n"));
+  };
+
   const primaryAction =
     mode === "columns"
       ? { label: "Add column", run: add, disabled: readOnly }
@@ -267,9 +280,9 @@ export function TableStructure({ table }: { table: string }) {
           )}
         </div>
       ) : mode === "foreignKeys" ? (
-        <div className="odb-structure-meta-table">
+        <div className="odb-structure-meta-table foreign-keys">
           <div className="odb-meta-row header">
-            <span>Column</span><span>References</span><span>Relationship</span>
+            <span>Column</span><span>References</span><span>Constraint</span><span />
           </div>
           {metaLoading ? (
             <div className="odb-structure-empty">Loading foreign keys…</div>
@@ -277,15 +290,31 @@ export function TableStructure({ table }: { table: string }) {
             <div className="odb-structure-empty">No foreign keys defined on this table.</div>
           ) : (
             foreignKeys.map((fk, index) => (
-              <div className="odb-meta-row" key={`${fk.column}-${fk.refTable}-${fk.refColumn}-${index}`}>
+              <div className="odb-meta-row" key={`${fk.name ?? "fk"}-${fk.column}-${fk.refTable}-${fk.refColumn}-${index}`}>
                 <code>{fk.column}</code>
                 <code>{fk.refTable}.{fk.refColumn}</code>
-                <span>FOREIGN KEY</span>
+                <code className="detail">{fk.name ?? (engine === "sqlite" ? "inline / unnamed" : "unnamed")}</code>
+                <span className="actions">
+                  <button
+                    className="danger"
+                    title={
+                      engine === "sqlite"
+                        ? "SQLite foreign keys require a table rebuild"
+                        : fk.name
+                          ? "Generate DROP foreign-key SQL"
+                          : "Constraint name unavailable"
+                    }
+                    disabled={readOnly || engine === "sqlite" || !fk.name}
+                    onClick={() => dropForeignKeyTemplate(fk.name)}
+                  >
+                    <IconTrash size={13} stroke={1.8} />
+                  </button>
+                </span>
               </div>
             ))
           )}
           {engine === "sqlite" && (
-            <div className="odb-structure-note">SQLite cannot add a foreign-key constraint with ALTER TABLE. Open DDL to rebuild the table safely.</div>
+            <div className="odb-structure-note">SQLite foreign-key changes require rebuilding the table. Open DDL and review the full definition first.</div>
           )}
         </div>
       ) : (
