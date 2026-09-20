@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { getBackend } from "../ipc/backend";
 import { inferColumns } from "../lib/csv";
-import { buildTableDdl } from "../lib/ddl";
+import { buildTableDdl, quoteDdlIdentifier } from "../lib/ddl";
 import { buildCreateViewSql, buildDropDatabaseObjectSql } from "../lib/databaseObjects";
 import { resolveParams } from "../lib/params";
 import { confirmDelete, confirmDialog } from "./dialog";
@@ -527,6 +527,7 @@ export const useStore = create<AppStore>((set, get) => ({
       await backend.runQuerySilent(id, sql);
       await get().refreshDatabaseObjects();
       toast(`Created view “${name.trim()}”`, "success");
+      await get().openTableData(name.trim());
       return true;
     } catch (error) {
       const err = normalizeError(error);
@@ -815,7 +816,9 @@ export const useStore = create<AppStore>((set, get) => ({
     } else {
       nextTabs = [...openTables, table];
     }
-    const sql = `SELECT * FROM ${table} LIMIT 1000;`;
+    const conn = get().connections.find((item) => item.id === id);
+    const tableRef = conn ? quoteDdlIdentifier(conn.engine, table) : table;
+    const sql = `SELECT * FROM ${tableRef} LIMIT 1000;`;
     set({
       view: "data",
       topView: "data",
@@ -1227,7 +1230,9 @@ export const useStore = create<AppStore>((set, get) => ({
   openView: async (view) => {
     const id = get().activeConnectionId;
     if (!id || id !== view.connectionId) return;
-    const sql = `SELECT * FROM ${view.table} LIMIT 200;`;
+    const conn = get().connections.find((item) => item.id === id);
+    const tableRef = conn ? quoteDdlIdentifier(conn.engine, view.table) : view.table;
+    const sql = `SELECT * FROM ${tableRef} LIMIT 200;`;
     set({
       view: "data",
       topView: "data",
