@@ -148,6 +148,14 @@ impl Driver for MySqlDriver {
         })
     }
 
+    async fn list_schemas(&self) -> AppResult<Vec<String>> {
+        let row = sqlx::query("SELECT database() AS schema_name")
+            .fetch_one(&self.pool)
+            .await?;
+        let name = try_get_text(&row, "schema_name");
+        Ok(if name.is_empty() { vec![] } else { vec![name] })
+    }
+
     async fn list_tables(&self) -> AppResult<Vec<TableInfo>> {
         let rows = sqlx::query(
             "SELECT table_name, table_type FROM information_schema.tables \
