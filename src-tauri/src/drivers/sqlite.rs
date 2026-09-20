@@ -94,6 +94,12 @@ impl Driver for SqliteDriver {
         })
     }
 
+    async fn cancel(&self) -> AppResult<bool> {
+        // SQLx does not expose sqlite3_interrupt for pooled SQLite connections.
+        // Keep this honest rather than pretending the query stopped.
+        Ok(false)
+    }
+
     async fn list_schemas(&self) -> AppResult<Vec<String>> {
         Ok(vec!["main".into(), "temp".into()])
     }
