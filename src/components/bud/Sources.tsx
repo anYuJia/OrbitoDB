@@ -231,7 +231,7 @@ export function Sources({
   );
 }
 
-/** The Scripts / Favorites panels: saved SQL snippets, click to load, ✕ to delete. */
+/** Saved SQL snippets and starred queries. */
 function SavedList({ kind }: { kind: "Scripts" | "Starred" }) {
   const scripts = useStore((s) => s.scripts);
   const favorites = useStore((s) => s.favorites);
@@ -397,7 +397,6 @@ function Datasource({
   ];
 
   const refresh = () => void openAndIntrospect(conn.id);
-  const refreshMenu: MenuItem[] = [{ label: "Refresh", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: refresh }];
   // Views/Indexes/Sequences/… don't have a create flow yet, so the folder menu
   // is just Refresh (no permanently-disabled "New …" placeholder).
   const folderMenu = (_singular: string): MenuItem[] => [
