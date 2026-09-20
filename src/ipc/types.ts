@@ -5,6 +5,12 @@ export type Engine = "postgres" | "mysql" | "sqlite";
 /** Environment tag for a connection — drives the colour dot and the prod guard. */
 export type ConnEnv = "dev" | "staging" | "prod";
 export type SshAuth = "agent" | "key";
+export type TlsMode = "disable" | "prefer" | "require" | "verify-ca" | "verify-full";
+
+export interface TlsConfig {
+  mode: TlsMode;
+  caPath?: string | null;
+}
 
 export interface SshTunnelConfig {
   enabled: boolean;
@@ -26,6 +32,7 @@ export interface ConnectionConfig {
   env?: ConnEnv | null;
   group?: string | null;
   schema?: string | null;
+  tls?: TlsConfig | null;
   ssh?: SshTunnelConfig | null;
 }
 
