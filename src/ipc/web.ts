@@ -101,6 +101,7 @@ export const webBackend: Backend = {
   connectionDiagnostics: (id) => sub(id).connectionDiagnostics(id),
   listSchemas: (id) => sub(id).listSchemas(id),
   listTables: (id) => sub(id).listTables(id),
+  listDatabaseObjects: (id) => sub(id).listDatabaseObjects(id),
   listColumns: (id, table) => sub(id).listColumns(id, table),
   listForeignKeys: (id) => sub(id).listForeignKeys(id),
   listIndexes: (id, table) => sub(id).listIndexes(id, table),
