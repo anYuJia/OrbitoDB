@@ -1,6 +1,7 @@
 import { AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import type { ConnectionConfig } from "../ipc/types";
+import { CreateTableModal } from "./CreateTableModal";
 import { installSmoothScroll } from "../lib/smoothScroll";
 import { useStore } from "../state/store";
 import { DataView } from "./bud/DataView";
@@ -27,6 +28,7 @@ function initialWidth(): number {
 
 export function AppShell() {
   const [serverModal, setServerModal] = useState<ConnectionConfig | "new" | null>(null);
+  const [createTableOpen, setCreateTableOpen] = useState(false);
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(initialWidth);
   const topView = useStore((s) => s.topView);
@@ -70,7 +72,7 @@ export function AppShell() {
     >
       <TopNav onAddServer={openAdd} onToggleSidebar={() => setSidebarHidden((v) => !v)} sidebarHidden={sidebarHidden} />
       <div className="bud-body">
-        <Sources onAddServer={openAdd} onEditServer={openEdit} />
+        <Sources onAddServer={openAdd} onEditServer={openEdit} onCreateTable={() => setCreateTableOpen(true)} />
         <AnimatePresence mode="wait" initial={false}>
           {topView === "data" ? (
             <DataView key="data" />
@@ -88,6 +90,9 @@ export function AppShell() {
             existing={serverModal === "new" ? null : serverModal}
             onClose={() => setServerModal(null)}
           />
+        )}
+        {createTableOpen && (
+          <CreateTableModal key="create-table-modal" onClose={() => setCreateTableOpen(false)} />
         )}
       </AnimatePresence>
       <CommandPalette onAddServer={openAdd} />
