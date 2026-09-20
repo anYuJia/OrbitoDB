@@ -180,6 +180,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn migrates_legacy_connection_environment_column() {
+        let dir = std::env::temp_dir().join(format!(
+            "orbitodb_store_migration_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let db = dir.join("legacy.db");
+        let path = db.to_str().unwrap();
+        let url = format!("sqlite:{path}?mode=rwc");
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE connections (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, engine TEXT NOT NULL,
+                host TEXT, port INTEGER, database TEXT NOT NULL, username TEXT
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO connections (id,name,engine,host,port,database,username)
+             VALUES ('legacy','Legacy','sqlite',NULL,NULL,':memory:',NULL)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        drop(pool);
+
+        let store = Store::open(path).await.unwrap();
+        let mut cfg = store.list_connections().await.unwrap().remove(0);
+        assert!(cfg.env.is_none());
+
+        cfg.env = Some("staging".into());
+        store.upsert_connection(&cfg).await.unwrap();
+        let list = store.list_connections().await.unwrap();
+        assert_eq!(list[0].env.as_deref(), Some("staging"));
+
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
     async fn opens_file_backed_store_at_real_path() {
         // Mirrors what setup() does at launch: open a file DB at an OS path
         // (Windows path with backslashes + drive colon).
