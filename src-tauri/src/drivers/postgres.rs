@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 use sqlx::{Column as _, Row, TypeInfo};
 use std::collections::HashSet;
+use tokio::sync::Mutex;
 
 use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
@@ -10,6 +11,7 @@ use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, 
 
 pub struct PgDriver {
     pool: sqlx::PgPool,
+    active_pid: Mutex<Option<i32>>,
 }
 
 fn options(cfg: &ConnectionConfig, password: Option<&str>) -> PgConnectOptions {
@@ -71,7 +73,7 @@ impl PgDriver {
             .max_connections(5)
             .connect_with(options(cfg, password))
             .await?;
-        Ok(Self { pool })
+        Ok(Self { pool, active_pid: Mutex::new(None) })
     }
 
     pub async fn test(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<()> {
@@ -122,51 +124,73 @@ impl PgDriver {
 impl Driver for PgDriver {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         let started = std::time::Instant::now();
-        let head = sql.trim_start().to_uppercase();
-        let returns_rows = head.starts_with("SELECT")
-            || head.starts_with("WITH")
-            || head.starts_with("SHOW")
-            || head.starts_with("TABLE")
-            || head.starts_with("VALUES")
-            || head.starts_with("EXPLAIN");
+        let mut conn = self.pool.acquire().await?;
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *conn)
+            .await?;
+        *self.active_pid.lock().await = Some(pid);
 
-        if !returns_rows {
-            let res = sqlx::query(sql).execute(&self.pool).await?;
-            return Ok(QueryResult {
-                columns: vec![],
-                rows: vec![],
-                rows_affected: res.rows_affected(),
+        let result: AppResult<QueryResult> = async {
+            let head = sql.trim_start().to_uppercase();
+            let returns_rows = head.starts_with("SELECT")
+                || head.starts_with("WITH")
+                || head.starts_with("SHOW")
+                || head.starts_with("TABLE")
+                || head.starts_with("VALUES")
+                || head.starts_with("EXPLAIN");
+
+            if !returns_rows {
+                let res = sqlx::query(sql).execute(&mut *conn).await?;
+                return Ok(QueryResult {
+                    columns: vec![],
+                    rows: vec![],
+                    rows_affected: res.rows_affected(),
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                    truncated: false,
+                });
+            }
+
+            let fetched = sqlx::query(sql).fetch_all(&mut *conn).await?;
+            let columns = match fetched.first() {
+                Some(first) => first
+                    .columns()
+                    .iter()
+                    .map(|c| Column {
+                        name: c.name().to_string(),
+                        data_type: c.type_info().name().to_string(),
+                    })
+                    .collect(),
+                None => vec![],
+            };
+            let truncated = fetched.len() > MAX_ROWS;
+            let mut rows = Vec::with_capacity(fetched.len().min(MAX_ROWS));
+            for row in fetched.iter().take(MAX_ROWS) {
+                rows.push(pg_row_to_values(row)?);
+            }
+            Ok(QueryResult {
+                columns,
+                rows,
+                rows_affected: 0,
                 elapsed_ms: started.elapsed().as_millis() as u64,
-                truncated: false,
-            });
+                truncated,
+            })
         }
+        .await;
 
-        let fetched = sqlx::query(sql).fetch_all(&self.pool).await?;
-        let columns = match fetched.first() {
-            Some(first) => first
-                .columns()
-                .iter()
-                .map(|c| Column {
-                    name: c.name().to_string(),
-                    data_type: c.type_info().name().to_string(),
-                })
-                .collect(),
-            None => vec![],
-        };
-        let truncated = fetched.len() > MAX_ROWS;
-        let mut rows = Vec::with_capacity(fetched.len().min(MAX_ROWS));
-        for row in fetched.iter().take(MAX_ROWS) {
-            rows.push(pg_row_to_values(row)?);
-        }
-        Ok(QueryResult {
-            columns,
-            rows,
-            rows_affected: 0,
-            elapsed_ms: started.elapsed().as_millis() as u64,
-            truncated,
-        })
+        *self.active_pid.lock().await = None;
+        result
     }
 
+    async fn cancel(&self) -> AppResult<bool> {
+        let Some(pid) = *self.active_pid.lock().await else {
+            return Ok(false);
+        };
+        let cancelled: bool = sqlx::query_scalar("SELECT pg_cancel_backend($1)")
+            .bind(pid)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(cancelled)
+    }
     async fn list_schemas(&self) -> AppResult<Vec<String>> {
         let rows = sqlx::query(
             "SELECT schema_name FROM information_schema.schemata
