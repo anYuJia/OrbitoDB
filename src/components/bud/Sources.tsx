@@ -397,7 +397,7 @@ function Datasource({
     anchorRef.current = name;
     return false;
   };
-  const schemaName = conn.engine === "postgres" ? "public" : "main";
+  const schemaName = conn.engine === "postgres" ? conn.schema?.trim() || "public" : "main";
   const dbName = conn.database || "database";
 
   const toggle = async () => {
@@ -506,7 +506,7 @@ function Datasource({
         <span className="odb-ds-main">
           <span className="bud-src-name">{conn.name}</span>
           <span className="odb-ds-meta">
-            {engineLabel(conn.engine)} · {dbName}{conn.engine === "postgres" ? ` / ${schemaName}` : ""}
+            {engineLabel(conn.engine)} · {dbName}{conn.engine === "postgres" ? ` / ${schemaName}` : ""}{conn.ssh?.enabled ? " · SSH" : ""}
           </span>
         </span>
         {conn.env && <span className={`bud-ds-env ${conn.env}`} title={`${conn.env} environment`} />}
