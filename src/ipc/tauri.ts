@@ -3,6 +3,7 @@ import type { Backend } from "./backend";
 import type {
   ColumnInfo,
   ConnectionConfig,
+  ConnectionDiagnostics,
   ForeignKey,
   IndexInfo,
   HistoryEntry,
@@ -29,6 +30,8 @@ export const tauriBackend: Backend = {
   runQuerySilent: (connectionId, sql) =>
     invoke<QueryResult>("run_query_silent", { connectionId, sql }),
   cancelQuery: (connectionId) => invoke<boolean>("cancel_query", { connectionId }),
+  connectionDiagnostics: (connectionId) =>
+    invoke<ConnectionDiagnostics>("connection_diagnostics", { connectionId }),
   listSchemas: (connectionId) => invoke<string[]>("list_schemas", { connectionId }),
   listTables: (connectionId) =>
     invoke<TableInfo[]>("list_tables", { connectionId }),
