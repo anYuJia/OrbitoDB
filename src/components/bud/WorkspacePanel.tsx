@@ -269,8 +269,16 @@ function SettingsPanel({
               ["Host", conn.host ?? "Local"],
               ["Port", conn.port != null ? String(conn.port) : "—"],
               ["Database", conn.database],
+              ...(conn.engine === "postgres" ? [["Schema", conn.schema?.trim() || "public"] as [string, string]] : []),
               ["Username", conn.username ?? "—"],
+              ["Group", conn.group?.trim() || "Ungrouped"],
               ["Environment", conn.env ? conn.env.toUpperCase() : "None"],
+              [
+                "SSH tunnel",
+                conn.ssh?.enabled
+                  ? `${conn.ssh.username}@${conn.ssh.host}:${conn.ssh.port} · ${conn.ssh.auth === "agent" ? "Agent" : "Private key"}`
+                  : "Disabled",
+              ],
             ] as [string, string][]).map(([label, value]) => (
               <div key={label} className="odb-setting-line">
                 <span>{label}</span>
