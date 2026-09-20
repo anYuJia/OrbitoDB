@@ -212,6 +212,12 @@ class LocalBackend implements Backend {
     return this.runQuery(connectionId, sql);
   }
 
+  async cancelQuery(_connectionId: string): Promise<boolean> {
+    // sql.js executes synchronously on the browser thread and cannot be
+    // interrupted safely once execution has started.
+    return false;
+  }
+
   async listSchemas(_connectionId: string): Promise<string[]> {
     return ["main", "temp"];
   }
