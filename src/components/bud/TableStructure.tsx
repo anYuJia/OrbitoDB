@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { getBackend } from "../../ipc/backend";
 import type { Engine, ForeignKey, IndexInfo } from "../../ipc/types";
 import { confirmDialog, promptDialog } from "../../state/dialog";
+import { confirmProdWrite } from "../../state/safety";
+import { toast } from "../../state/toast";
 import { useStore } from "../../state/store";
 
 type StructureMode = "columns" | "foreignKeys" | "indexes";
@@ -39,36 +41,67 @@ export function TableStructure({ table }: { table: string }) {
     if (columns.length === 0) void expandTable(table);
   }, [columns.length, expandTable, table]);
 
-  useEffect(() => {
+  const refreshMetadata = async () => {
     if (!activeId) {
       setForeignKeys([]);
       setIndexes([]);
       return;
     }
-
-    let alive = true;
     setMetaLoading(true);
     setMetaError(null);
+    try {
+      const [allFks, nextIndexes] = await Promise.all([
+        getBackend().listForeignKeys(activeId),
+        getBackend().listIndexes(activeId, table),
+      ]);
+      setForeignKeys(allFks.filter((fk) => fk.table === table));
+      setIndexes(nextIndexes);
+    } catch (error) {
+      setMetaError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setMetaLoading(false);
+    }
+  };
 
-    Promise.all([
-      getBackend().listForeignKeys(activeId),
-      getBackend().listIndexes(activeId, table),
-    ])
-      .then(([allFks, nextIndexes]) => {
-        if (!alive) return;
-        setForeignKeys(allFks.filter((fk) => fk.table === table));
-        setIndexes(nextIndexes);
-      })
-      .catch((error) => {
-        if (!alive) return;
-        setMetaError(error instanceof Error ? error.message : String(error));
-      })
-      .finally(() => alive && setMetaLoading(false));
-
-    return () => {
-      alive = false;
-    };
+  useEffect(() => {
+    void refreshMetadata();
   }, [activeId, engine, table]);
+
+  const executeStructureSql = async (
+    sql: string,
+    successMessage: string,
+    destructiveMessage?: string,
+  ) => {
+    if (!activeId || readOnly) return false;
+    if (
+      destructiveMessage &&
+      !(await confirmDialog({
+        title: "Apply schema change?",
+        message: destructiveMessage,
+        confirmLabel: "Apply change",
+        danger: true,
+      }))
+    ) {
+      return false;
+    }
+    if (!(await confirmProdWrite(connection, sql))) return false;
+
+    setMetaLoading(true);
+    setMetaError(null);
+    try {
+      await getBackend().runQuerySilent(activeId, sql);
+      await refreshMetadata();
+      toast(successMessage, "success");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMetaError(message);
+      toast(message || "Schema change failed", "error");
+      return false;
+    } finally {
+      setMetaLoading(false);
+    }
+  };
 
   const count = useMemo(
     () => (mode === "columns" ? columns.length : mode === "foreignKeys" ? foreignKeys.length : indexes.length),
@@ -178,23 +211,24 @@ export function TableStructure({ table }: { table: string }) {
 
     const q = (value: string) => quoteIdentifier(engine, value);
     const sql = `CREATE ${unique ? "UNIQUE " : ""}INDEX ${q(name.trim())} ON ${q(table)} (${requested.map(q).join(", ")});`;
-    openSqlTab(`Index · ${name.trim()}`, [
-      `-- ${unique ? "Unique" : "Non-unique"} index on ${requested.join(", ")}.`,
+    await executeStructureSql(
       sql,
-    ].join("\n"));
+      `Created index ${name.trim()}`,
+    );
   };
 
-  const dropIndexTemplate = (indexName: string) => {
+  const dropIndex = async (indexName: string) => {
     if (readOnly) return;
     const q = (value: string) => quoteIdentifier(engine, value);
     const sql =
       engine === "mysql"
         ? `DROP INDEX ${q(indexName)} ON ${q(table)};`
         : `DROP INDEX ${q(indexName)};`;
-    openSqlTab(`Drop index · ${indexName}`, [
-      "-- Review before executing. Dropping an index can affect query performance.",
+    await executeStructureSql(
       sql,
-    ].join("\n"));
+      `Dropped index ${indexName}`,
+      `Drop index “${indexName}” from “${table}”? Query performance may change immediately.`,
+    );
   };
 
   const isManagedIndex = (name: string) =>
@@ -220,20 +254,21 @@ export function TableStructure({ table }: { table: string }) {
       `  FOREIGN KEY (${q(column.trim())})`,
       `  REFERENCES ${q(refTable.trim())} (${q(refColumn.trim())});`,
     ].join("\n");
-    openSqlTab(`FK · ${table}`, sql);
+    await executeStructureSql(sql, `Created foreign key ${constraint}`);
   };
 
-  const dropForeignKeyTemplate = (constraintName: string | null | undefined) => {
+  const dropForeignKey = async (constraintName: string | null | undefined) => {
     if (readOnly || engine === "sqlite" || !constraintName) return;
     const q = (value: string) => quoteIdentifier(engine, value);
     const sql =
       engine === "mysql"
         ? `ALTER TABLE ${q(table)} DROP FOREIGN KEY ${q(constraintName)};`
         : `ALTER TABLE ${q(table)} DROP CONSTRAINT ${q(constraintName)};`;
-    openSqlTab(`Drop FK · ${constraintName}`, [
-      "-- Review before executing. Dropping a foreign key changes referential integrity.",
+    await executeStructureSql(
       sql,
-    ].join("\n"));
+      `Dropped foreign key ${constraintName}`,
+      `Drop foreign key “${constraintName}” from “${table}”? Referential-integrity enforcement will change immediately.`,
+    );
   };
 
   const primaryAction =
@@ -343,7 +378,7 @@ export function TableStructure({ table }: { table: string }) {
                           : "Constraint name unavailable"
                     }
                     disabled={readOnly || engine === "sqlite" || !fk.name}
-                    onClick={() => dropForeignKeyTemplate(fk.name)}
+                    onClick={() => void dropForeignKey(fk.name)}
                   >
                     <IconTrash size={13} stroke={1.8} />
                   </button>
@@ -375,8 +410,8 @@ export function TableStructure({ table }: { table: string }) {
                   <span className="actions">
                     <button
                       className="danger"
-                      title={managed ? "Managed primary/system indexes are changed through their constraint" : "Generate DROP INDEX SQL"}
-                      onClick={() => dropIndexTemplate(index.name)}
+                      title={managed ? "Managed primary/system indexes are changed through their constraint" : "Drop index"}
+                      onClick={() => void dropIndex(index.name)}
                       disabled={readOnly || managed}
                     >
                       <IconTrash size={13} stroke={1.8} />
