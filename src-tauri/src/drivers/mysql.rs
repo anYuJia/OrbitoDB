@@ -202,7 +202,7 @@ impl Driver for MySqlDriver {
 
     async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
         let rows = sqlx::query(
-            "SELECT table_name, column_name, referenced_table_name, referenced_column_name \
+            "SELECT constraint_name, table_name, column_name, referenced_table_name, referenced_column_name \
              FROM information_schema.key_column_usage \
              WHERE referenced_table_name IS NOT NULL AND table_schema = database() \
              ORDER BY table_name, ordinal_position",
@@ -213,6 +213,7 @@ impl Driver for MySqlDriver {
         Ok(rows
             .iter()
             .map(|row| ForeignKey {
+                name: Some(try_get_text(row, "constraint_name")).filter(|name| !name.is_empty()),
                 table: try_get_text(row, "table_name"),
                 column: try_get_text(row, "column_name"),
                 ref_table: try_get_text(row, "referenced_table_name"),
