@@ -4,6 +4,16 @@ export type Engine = "postgres" | "mysql" | "sqlite";
 
 /** Environment tag for a connection — drives the colour dot and the prod guard. */
 export type ConnEnv = "dev" | "staging" | "prod";
+export type SshAuth = "agent" | "key";
+
+export interface SshTunnelConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  auth: SshAuth;
+  privateKeyPath?: string | null;
+}
 
 export interface ConnectionConfig {
   id: string;
@@ -14,6 +24,9 @@ export interface ConnectionConfig {
   database: string;
   username?: string | null;
   env?: ConnEnv | null;
+  group?: string | null;
+  schema?: string | null;
+  ssh?: SshTunnelConfig | null;
 }
 
 export interface Column {
