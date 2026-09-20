@@ -83,6 +83,23 @@ pub struct ColumnInfo {
 /// A column definition for the visual create-table designer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ForeignKey {
+    pub table: String,
+    pub column: String,
+    pub ref_table: String,
+    pub ref_column: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexInfo {
+    pub name: String,
+    pub unique: bool,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ColumnDef {
     pub name: String,
     pub data_type: String,
