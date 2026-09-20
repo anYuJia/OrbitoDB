@@ -10,7 +10,6 @@ import {
   IconStar,
   IconTable,
   IconTrash,
-  IconUpload,
   IconX,
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
@@ -26,7 +25,6 @@ import { SqlPanel } from "./SqlPanel";
 type Icon = ComponentType<{ size?: number; stroke?: number }>;
 const TOOLS: { Icon: Icon; label: string }[] = [
   { Icon: IconDownload, label: "Import CSV" },
-  { Icon: IconUpload, label: "Export CSV" },
   { Icon: IconBolt, label: "Rows" },
 ];
 
@@ -83,9 +81,6 @@ export function DataView() {
     switch (label) {
       case "Import CSV":
         fileRef.current?.click();
-        break;
-      case "Export CSV":
-        if (result) download(`${table}.csv`, toCsv(result));
         break;
       case "Rows":
         openMenu("rowactions", e);
