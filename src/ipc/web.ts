@@ -40,7 +40,9 @@ export const webBackend: Backend = {
   listConnections: () => localBackend.listConnections(),
   saveConnection: async (cfg, password = null) => {
     await localBackend.saveConnection(cfg, password);
-    if (cfg.engine !== "sqlite") await saveSecret(cfg.id, password);
+    // Match the desktop/keychain behavior: null means "keep the existing
+    // password", while a non-null value explicitly replaces it.
+    if (cfg.engine !== "sqlite" && password !== null) await saveSecret(cfg.id, password);
   },
   deleteConnection: async (id) => {
     try {
