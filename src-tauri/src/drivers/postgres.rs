@@ -1,12 +1,12 @@
 use async_trait::async_trait;
-use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 use sqlx::{Column as _, Row, TypeInfo};
 use std::collections::HashSet;
 
-use crate::drivers::Driver;
+use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
 use crate::executor::pg_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
 
 pub struct PgDriver {
     pool: sqlx::PgPool,
@@ -30,12 +30,33 @@ fn base_options(cfg: &ConnectionConfig, password: Option<&str>) -> PgConnectOpti
     let mut o = PgConnectOptions::new()
         .host(cfg.host.as_deref().unwrap_or("localhost"))
         .port(cfg.port.unwrap_or(5432));
+
     if let Some(u) = cfg.username.as_deref() {
         o = o.username(u);
     }
     if let Some(p) = password {
         o = o.password(p);
     }
+
+    let tls_mode = cfg.tls.as_ref().map(|tls| tls.mode).unwrap_or(TlsMode::Disable);
+    o = o.ssl_mode(match tls_mode {
+        TlsMode::Disable => PgSslMode::Disable,
+        TlsMode::Prefer => PgSslMode::Prefer,
+        TlsMode::Require => PgSslMode::Require,
+        TlsMode::VerifyCa => PgSslMode::VerifyCa,
+        TlsMode::VerifyFull => PgSslMode::VerifyFull,
+    });
+
+    if let Some(ca_path) = cfg
+        .tls
+        .as_ref()
+        .and_then(|tls| tls.ca_path.as_deref())
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        o = o.ssl_root_cert(expand_home_path(ca_path));
+    }
+
     o
 }
 
