@@ -60,4 +60,80 @@ describe("buildTableDdl", () => {
     expect(ddl).not.toContain("INDEX `PRIMARY`");
     expect(ddl).toContain("CREATE INDEX `idx_users_email` ON `users` (`email`);");
   });
+  it("restores defaults, generated expressions and PostgreSQL comments", () => {
+    const ddl = buildTableDdl(
+      "postgres",
+      "users",
+      [
+        {
+          name: "created_at",
+          dataType: "timestamp with time zone",
+          nullable: false,
+          isPrimaryKey: false,
+          defaultValue: "now()",
+        },
+        {
+          name: "slug",
+          dataType: "text",
+          nullable: true,
+          isPrimaryKey: false,
+          generated: "lower(name)",
+          comment: "Normalized display name",
+        },
+      ],
+    );
+
+    expect(ddl).toContain('"created_at" timestamp with time zone DEFAULT now() NOT NULL');
+    expect(ddl).toContain('"slug" text GENERATED ALWAYS AS (lower(name)) STORED');
+    expect(ddl).toContain(
+      'COMMENT ON COLUMN "users"."slug" IS \'Normalized display name\';',
+    );
+  });
+
+  it("quotes MySQL string defaults and comments without quoting numeric defaults", () => {
+    const ddl = buildTableDdl(
+      "mysql",
+      "profiles",
+      [
+        {
+          name: "label",
+          dataType: "varchar(80)",
+          nullable: false,
+          isPrimaryKey: false,
+          defaultValue: "guest",
+          comment: "user's label",
+        },
+        {
+          name: "rank",
+          dataType: "int unsigned",
+          nullable: false,
+          isPrimaryKey: false,
+          defaultValue: "0",
+        },
+      ],
+    );
+
+    expect(ddl).toContain("`label` varchar(80) DEFAULT 'guest' NOT NULL COMMENT 'user''s label'");
+    expect(ddl).toContain("`rank` int unsigned DEFAULT 0 NOT NULL");
+  });
+
+  it("marks SQLite generated columns whose expression cannot be recovered", () => {
+    const ddl = buildTableDdl(
+      "sqlite",
+      "metrics",
+      [
+        {
+          name: "total",
+          dataType: "REAL",
+          nullable: true,
+          isPrimaryKey: false,
+          generated: "VIRTUAL (expression unavailable)",
+        },
+      ],
+    );
+
+    expect(ddl).toContain("-- Generated columns requiring manual review");
+    expect(ddl).toContain("SQLite metadata does not expose the original expression");
+  });
+
 });
