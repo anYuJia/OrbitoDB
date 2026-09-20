@@ -24,3 +24,16 @@ pub trait Driver: Send + Sync {
     /// List indexes for one table.
     async fn list_indexes(&self, table: &str) -> AppResult<Vec<IndexInfo>>;
 }
+
+
+pub(crate) fn expand_home_path(path: &str) -> std::path::PathBuf {
+    if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
+        if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+            let suffix = path
+                .trim_start_matches('~')
+                .trim_start_matches(|ch| ch == '/' || ch == '\\');
+            return std::path::PathBuf::from(home).join(suffix);
+        }
+    }
+    std::path::PathBuf::from(path)
+}
