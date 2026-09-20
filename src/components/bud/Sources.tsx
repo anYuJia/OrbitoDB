@@ -43,6 +43,12 @@ function EngineIcon({ engine }: { engine: Engine }) {
   return <IconDatabase size={14} stroke={1.7} />;
 }
 
+function engineLabel(engine: Engine): string {
+  if (engine === "postgres") return "PostgreSQL";
+  if (engine === "mysql") return "MySQL";
+  return "SQLite";
+}
+
 function connString(c: ConnectionConfig): string {
   if (c.engine === "sqlite") return `sqlite://${c.database}`;
   const user = c.username ? `${c.username}@` : "";
@@ -435,8 +441,13 @@ function Datasource({
         <span className="bud-src-ic ds-engine">
           <EngineIcon engine={conn.engine} />
         </span>
+        <span className="odb-ds-main">
+          <span className="bud-src-name">{conn.name}</span>
+          <span className="odb-ds-meta">
+            {engineLabel(conn.engine)} · {dbName}{conn.engine === "postgres" ? ` / ${schemaName}` : ""}
+          </span>
+        </span>
         {conn.env && <span className={`bud-ds-env ${conn.env}`} title={`${conn.env} environment`} />}
-        <span className="bud-src-name">{conn.name}</span>
         {isReadOnly && <IconLock size={12} stroke={1.9} className="bud-ds-ro" />}
       </div>
       {isActive && (open || !!filter) && (
@@ -444,35 +455,33 @@ function Datasource({
           {loadingTables ? (
             <div className="bud-ds-empty">Loading…</div>
           ) : (
-            <ObjectGroup label="Databases" count={1} defaultOpen menu={refreshMenu}>
-              <ObjectGroup label={`${dbName} (Default)`} count={1} defaultOpen menu={refreshMenu}>
-                <ObjectGroup label="Schemas" count={1} defaultOpen menu={refreshMenu}>
-                  <ObjectGroup label={schemaName} count={shownTables.length} defaultOpen menu={refreshMenu}>
-                    <ObjectGroup label="Tables" count={shownTables.length} defaultOpen menu={tablesMenu}>
-                      {shownTables.length === 0 ? (
-                        <div className="bud-ds-empty">{filter ? "No match" : "No tables"}</div>
-                      ) : (
-                        shownTables.map((t) => (
-                          <TableRow
-                            key={t.name}
-                            table={t.name}
-                            connectionId={conn.id}
-                            selected={selTables.includes(t.name)}
-                            selectedNames={selTables}
-                            onActivate={activateTable}
-                          />
-                        ))
-                      )}
-                    </ObjectGroup>
-                    <ObjectGroup label="Views" count={0} menu={folderMenu("view")} />
-                    <ObjectGroup label="Indexes" count={0} menu={folderMenu("index")} />
-                    <ObjectGroup label="Sequences" count={0} menu={folderMenu("sequence")} />
-                    <ObjectGroup label="Procedures" count={0} menu={folderMenu("procedure")} />
-                    <ObjectGroup label="Functions" count={0} menu={folderMenu("function")} />
-                  </ObjectGroup>
-                </ObjectGroup>
+            <>
+              <div className="odb-ds-context">
+                <span className="odb-ds-context-label">{conn.engine === "postgres" ? "Schema" : "Database"}</span>
+                <span className="odb-ds-context-value">{conn.engine === "postgres" ? schemaName : dbName}</span>
+              </div>
+              <ObjectGroup label="Tables" count={shownTables.length} defaultOpen menu={tablesMenu}>
+                {shownTables.length === 0 ? (
+                  <div className="bud-ds-empty">{filter ? "No matching tables" : "No tables"}</div>
+                ) : (
+                  shownTables.map((t) => (
+                    <TableRow
+                      key={t.name}
+                      table={t.name}
+                      connectionId={conn.id}
+                      selected={selTables.includes(t.name)}
+                      selectedNames={selTables}
+                      onActivate={activateTable}
+                    />
+                  ))
+                )}
               </ObjectGroup>
-            </ObjectGroup>
+              <ObjectGroup label="Views" count={0} menu={folderMenu("view")} />
+              <ObjectGroup label="Indexes" count={0} menu={folderMenu("index")} />
+              {conn.engine === "postgres" && <ObjectGroup label="Sequences" count={0} menu={folderMenu("sequence")} />}
+              <ObjectGroup label="Procedures" count={0} menu={folderMenu("procedure")} />
+              <ObjectGroup label="Functions" count={0} menu={folderMenu("function")} />
+            </>
           )}
         </div>
       )}
