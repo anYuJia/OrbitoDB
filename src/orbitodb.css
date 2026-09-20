@@ -2838,3 +2838,256 @@ textarea:focus-visible {
     max-height: calc(100vh - 20px);
   }
 }
+
+
+/* Phase 3: connection manager */
+
+.odb-connection-manager-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 10px;
+}
+
+.odb-connection-manager-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.odb-connection-manager-head b {
+  color: var(--odb-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.odb-connection-manager-head span {
+  color: var(--odb-text-3);
+  font-size: 11px;
+}
+
+.odb-connection-manager-head button {
+  height: 29px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--odb-border);
+  border-radius: 5px;
+  background: var(--odb-surface);
+  color: var(--odb-text-2);
+}
+
+.odb-connection-manager-head button.primary {
+  border-color: #4f68ce;
+  background: rgba(76, 111, 255, 0.14);
+  color: #c2ccff;
+}
+
+.odb-connection-manager-list {
+  overflow: hidden;
+  border-top: 1px solid var(--odb-border);
+}
+
+.odb-connection-manager-row {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  border-bottom: 1px solid var(--odb-border);
+  background: transparent;
+}
+
+.odb-connection-manager-row:hover {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.odb-connection-manager-row.active {
+  background: rgba(76, 111, 255, 0.045);
+  box-shadow: inset 2px 0 0 var(--odb-primary);
+}
+
+.odb-connection-manager-main {
+  min-width: 0;
+  height: 57px;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 0 10px 0 9px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.odb-connection-manager-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #505963;
+}
+
+.odb-connection-manager-row.active .odb-connection-manager-dot {
+  background: var(--odb-green);
+  box-shadow: 0 0 0 3px rgba(85, 197, 139, 0.08);
+}
+
+.odb-connection-manager-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.odb-connection-manager-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.odb-connection-manager-name b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--odb-text);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.odb-connection-manager-name em {
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  border: 1px solid #344055;
+  border-radius: 3px;
+  color: #8998b4;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.odb-connection-manager-name em.env.prod {
+  border-color: rgba(240, 107, 120, 0.28);
+  color: #ed8792;
+}
+
+.odb-connection-manager-name em.env.staging {
+  border-color: rgba(214, 168, 75, 0.3);
+  color: #d9ad58;
+}
+
+.odb-connection-manager-name em.env.dev {
+  border-color: rgba(85, 197, 139, 0.25);
+  color: #72cda0;
+}
+
+.odb-connection-manager-name em.readonly {
+  border-color: rgba(122, 112, 255, 0.3);
+  color: #aaa4ff;
+}
+
+.odb-connection-manager-copy > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--odb-text-3);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.odb-connection-manager-copy i {
+  margin: 0 5px;
+  color: #49525e;
+  font-style: normal;
+}
+
+.odb-connection-manager-edit {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--odb-text-3);
+}
+
+.odb-connection-manager-edit:hover {
+  border-color: var(--odb-border);
+  background: var(--odb-surface-2);
+  color: var(--odb-text);
+}
+
+.odb-connection-manager-empty {
+  width: 100%;
+  min-height: 118px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 5px;
+  border: 0;
+  border-bottom: 1px solid var(--odb-border);
+  background: transparent;
+  color: var(--odb-text-3);
+}
+
+.odb-connection-manager-empty:hover {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.odb-connection-manager-empty b {
+  color: var(--odb-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.odb-connection-manager-empty span {
+  font-size: 10.5px;
+}
+
+.odb-connection-detail-divider {
+  height: 34px;
+}
+
+.odb-connection-detail-head {
+  min-height: 62px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 10px;
+}
+
+.odb-connection-detail-head h2 {
+  margin: 0;
+  color: var(--odb-text);
+  font-size: 16px;
+  font-weight: 620;
+}
+
+.odb-connection-detail-head p {
+  margin: 4px 0 0;
+  color: var(--odb-text-3);
+  font-size: 11px;
+}
+
+.odb-empty-state.compact {
+  min-height: 150px;
+}
+
+@media (max-width: 760px) {
+  .odb-connection-manager-row {
+    grid-template-columns: minmax(0, 1fr) 30px;
+  }
+
+  .odb-connection-detail-head {
+    flex-direction: column;
+  }
+}
