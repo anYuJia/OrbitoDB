@@ -26,8 +26,32 @@ impl FromStr for Engine {
     }
 }
 
-/// A saved connection profile. Note: NO password field — secrets live only in
-/// the OS keychain, keyed by `id`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SshAuth {
+    Agent,
+    Key,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshTunnelConfig {
+    pub enabled: bool,
+    pub host: String,
+    #[serde(default = "default_ssh_port")]
+    pub port: u16,
+    pub username: String,
+    pub auth: SshAuth,
+    #[serde(default)]
+    pub private_key_path: Option<String>,
+}
+
+fn default_ssh_port() -> u16 {
+    22
+}
+
+/// A saved connection profile. Note: NO database or SSH secret fields —
+/// passwords remain outside the profile and live in the OS keychain.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionConfig {
@@ -44,6 +68,15 @@ pub struct ConnectionConfig {
     /// Optional safety/environment label used by the desktop UI (dev/staging/prod).
     #[serde(default)]
     pub env: Option<String>,
+    /// Optional user-defined group shown in connection navigation.
+    #[serde(default)]
+    pub group: Option<String>,
+    /// Active schema. PostgreSQL defaults to public; ignored by other engines.
+    #[serde(default)]
+    pub schema: Option<String>,
+    /// Optional desktop SSH local-forward configuration.
+    #[serde(default)]
+    pub ssh: Option<SshTunnelConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
