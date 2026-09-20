@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
 use crate::executor::mysql_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
 
 pub struct MySqlDriver {
     pool: sqlx::MySqlPool,
@@ -336,6 +336,83 @@ impl Driver for MySqlDriver {
             })
             .collect())
     }
+    async fn list_constraints(&self, table: &str) -> AppResult<Vec<ConstraintInfo>> {
+        let rows = sqlx::query(
+            "SELECT tc.constraint_name, tc.constraint_type, \
+                    GROUP_CONCAT(kcu.column_name ORDER BY kcu.ordinal_position SEPARATOR ',') AS columns_csv \
+             FROM information_schema.table_constraints tc \
+             LEFT JOIN information_schema.key_column_usage kcu \
+               ON kcu.constraint_schema = tc.constraint_schema \
+              AND kcu.table_name = tc.table_name \
+              AND kcu.constraint_name = tc.constraint_name \
+             WHERE tc.table_schema = DATABASE() AND tc.table_name = ? \
+               AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE') \
+             GROUP BY tc.constraint_name, tc.constraint_type \
+             ORDER BY CASE tc.constraint_type WHEN 'PRIMARY KEY' THEN 0 ELSE 1 END, tc.constraint_name",
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut out = rows
+            .iter()
+            .map(|row| {
+                let kind = if try_get_text(row, "constraint_type") == "PRIMARY KEY" {
+                    "primary"
+                } else {
+                    "unique"
+                };
+                let columns_csv = try_get_text(row, "columns_csv");
+                let columns = columns_csv
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>();
+                let definition = if kind == "primary" {
+                    format!("PRIMARY KEY ({})", columns.join(", "))
+                } else {
+                    format!("UNIQUE ({})", columns.join(", "))
+                };
+                ConstraintInfo {
+                    name: Some(try_get_text(row, "constraint_name")).filter(|name| !name.is_empty()),
+                    kind: kind.into(),
+                    definition,
+                    columns,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        // CHECK_CONSTRAINTS is available on modern MySQL and MariaDB. Older
+        // servers may not expose it; primary/unique metadata should still work.
+        if let Ok(checks) = sqlx::query(
+            "SELECT tc.constraint_name, cc.check_clause \
+             FROM information_schema.table_constraints tc \
+             JOIN information_schema.check_constraints cc \
+               ON cc.constraint_schema = tc.constraint_schema \
+              AND cc.constraint_name = tc.constraint_name \
+             WHERE tc.table_schema = DATABASE() AND tc.table_name = ? \
+               AND tc.constraint_type = 'CHECK' \
+             ORDER BY tc.constraint_name",
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await
+        {
+            out.extend(checks.iter().map(|row| {
+                let clause = try_get_text(row, "check_clause");
+                ConstraintInfo {
+                    name: Some(try_get_text(row, "constraint_name")).filter(|name| !name.is_empty()),
+                    kind: "check".into(),
+                    definition: if clause.is_empty() { "CHECK".into() } else { format!("CHECK ({clause})") },
+                    columns: vec![],
+                }
+            }));
+        }
+
+        Ok(out)
+    }
+
 
 }
 
