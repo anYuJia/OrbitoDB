@@ -22,6 +22,7 @@ import type {
   ColumnInfo,
   ConnectionConfig,
   ConstraintInfo,
+  DatabaseObjectInfo,
   HistoryEntry,
   ForeignKey,
   IndexInfo,
@@ -31,6 +32,7 @@ import type {
 
 interface SchemaState {
   tables: TableInfo[];
+  objects: DatabaseObjectInfo[];
   columnsByTable: Record<string, ColumnInfo[]>;
 }
 
@@ -295,7 +297,7 @@ export function isFkError(e: unknown): boolean {
 export const useStore = create<AppStore>((set, get) => ({
   connections: [],
   activeConnectionId: null,
-  schema: { tables: [], columnsByTable: {} },
+  schema: { tables: [], objects: [], columnsByTable: {} },
   sql: INITIAL_EDITORS.find((e) => e.id === INITIAL_ACTIVE_EDITOR)?.sql ?? "",
   editors: INITIAL_EDITORS,
   activeEditorId: INITIAL_ACTIVE_EDITOR,
@@ -419,7 +421,7 @@ export const useStore = create<AppStore>((set, get) => ({
       activeConnectionId: id,
       loadingTables: true,
       error: null,
-      schema: { tables: [], columnsByTable: {} },
+      schema: { tables: [], objects: [], columnsByTable: {} },
       editTable: null,
       openTables: [],
       result: null,
@@ -430,8 +432,11 @@ export const useStore = create<AppStore>((set, get) => ({
     });
     try {
       await backend.openConnection(id);
-      const tables = await backend.listTables(id);
-      set({ schema: { tables, columnsByTable: {} }, loadingTables: false });
+      const [tables, objects] = await Promise.all([
+        backend.listTables(id),
+        backend.listDatabaseObjects(id),
+      ]);
+      set({ schema: { tables, objects, columnsByTable: {} }, loadingTables: false });
       // Eagerly cache columns for small schemas so SQL autocomplete has them.
       if (tables.length <= 40) {
         void (async () => {
@@ -882,9 +887,12 @@ export const useStore = create<AppStore>((set, get) => ({
     if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
     try {
       await backend.dropTable(id, table);
-      const tables = await backend.listTables(id);
+      const [tables, objects] = await Promise.all([
+        backend.listTables(id),
+        backend.listDatabaseObjects(id),
+      ]);
       set((s) => ({
-        schema: { tables, columnsByTable: {} },
+        schema: { tables, objects, columnsByTable: {} },
         editTable: s.editTable?.table === table ? null : s.editTable,
         result: s.editTable?.table === table ? null : s.result,
       }));
@@ -910,9 +918,12 @@ export const useStore = create<AppStore>((set, get) => ({
       await withFkDisabled(id, conn?.engine, choice.skipFk, async () => {
         for (const n of names) await backend.dropTable(id, n);
       });
-      const tables = await backend.listTables(id);
+      const [tables, objects] = await Promise.all([
+        backend.listTables(id),
+        backend.listDatabaseObjects(id),
+      ]);
       set((s) => ({
-        schema: { tables, columnsByTable: {} },
+        schema: { tables, objects, columnsByTable: {} },
         editTable: s.editTable && names.includes(s.editTable.table) ? null : s.editTable,
         result: s.editTable && names.includes(s.editTable.table) ? null : s.result,
       }));
@@ -967,8 +978,11 @@ export const useStore = create<AppStore>((set, get) => ({
     }
     try {
       await backend.createTable(id, name, columns);
-      const tables = await backend.listTables(id);
-      set({ schema: { tables, columnsByTable: {} }, error: null });
+      const [tables, objects] = await Promise.all([
+        backend.listTables(id),
+        backend.listDatabaseObjects(id),
+      ]);
+      set({ schema: { tables, objects, columnsByTable: {} }, error: null });
     } catch (e) {
       set({ error: normalizeError(e) });
       throw e;
@@ -1013,11 +1027,14 @@ export const useStore = create<AppStore>((set, get) => ({
   reload: async (table) => {
     const id = get().activeConnectionId;
     if (!id) return;
-    const tables = await backend.listTables(id);
+    const [tables, objects] = await Promise.all([
+      backend.listTables(id),
+      backend.listDatabaseObjects(id),
+    ]);
     set((s) => {
       const columnsByTable = { ...s.schema.columnsByTable };
       delete columnsByTable[table];
-      return { schema: { tables, columnsByTable } };
+      return { schema: { tables, objects, columnsByTable } };
     });
     await get().openTableData(table);
   },
@@ -1064,8 +1081,11 @@ export const useStore = create<AppStore>((set, get) => ({
     if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
     try {
       await backend.renameTable(id, from, to);
-      const tables = await backend.listTables(id);
-      set({ schema: { tables, columnsByTable: {} } });
+      const [tables, objects] = await Promise.all([
+        backend.listTables(id),
+        backend.listDatabaseObjects(id),
+      ]);
+      set({ schema: { tables, objects, columnsByTable: {} } });
       await get().openTableData(to);
     } catch (e) {
       set({ error: normalizeError(e) });
