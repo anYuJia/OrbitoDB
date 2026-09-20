@@ -3555,3 +3555,207 @@ textarea:focus-visible {
 .bud-qtab.on .odb-qtab-connection-dot {
   background: #8da0ff;
 }
+
+
+/* Phase 5: cross-table search */
+
+.odb-search-modal {
+  position: fixed;
+  z-index: 120;
+  top: 50%;
+  left: 50%;
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 40px));
+  display: grid;
+  grid-template-rows: auto auto auto minmax(180px, 1fr) auto;
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  border: 1px solid var(--odb-border-strong);
+  border-radius: 8px;
+  background: #111419;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+}
+
+.odb-search-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--odb-border);
+}
+
+.odb-search-modal-head > div {
+  min-width: 0;
+}
+
+.odb-search-modal-head > div > span {
+  color: #8294ff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.odb-search-modal-head h2 {
+  margin: 4px 0 0;
+  color: var(--odb-text);
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.odb-search-modal-head p {
+  margin: 5px 0 0;
+  color: var(--odb-text-3);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.odb-search-modal-query {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--odb-border);
+  background: #0f1216;
+  color: var(--odb-text-3);
+}
+
+.odb-search-modal-query input {
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--odb-border);
+  border-radius: 5px;
+  outline: none;
+  background: #0c0f13;
+  color: var(--odb-text);
+}
+
+.odb-search-modal-query input:focus {
+  border-color: #4c6092;
+  box-shadow: 0 0 0 2px rgba(76, 111, 255, 0.08);
+}
+
+.odb-search-modal-query button {
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid #4a64cf;
+  border-radius: 5px;
+  background: rgba(76, 111, 255, 0.16);
+  color: #c5ceff;
+  font-weight: 600;
+}
+
+.odb-search-modal-query button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.odb-search-modal-meta,
+.odb-search-modal-foot {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  color: var(--odb-text-3);
+  font-size: 9.5px;
+}
+
+.odb-search-modal-meta {
+  border-bottom: 1px solid var(--odb-border);
+  background: #111419;
+}
+
+.odb-search-results {
+  min-height: 0;
+  overflow: auto;
+  background: var(--odb-bg);
+}
+
+.odb-search-state {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--odb-text-3);
+  font-size: 11px;
+  text-align: center;
+}
+
+.odb-search-state.error {
+  color: #ef8c97;
+}
+
+.odb-search-hit {
+  width: 100%;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: minmax(170px, 0.7fr) minmax(0, 1.7fr);
+  align-items: center;
+  gap: 14px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid #20262d;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.odb-search-hit:hover {
+  background: #151a21;
+}
+
+.odb-search-hit-context {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.odb-search-hit-context b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--odb-text);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.odb-search-hit-context code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #7f8da1;
+  font-family: var(--odb-mono);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.odb-search-hit-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #c5cbd3;
+  font-family: var(--odb-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.odb-search-modal-foot {
+  justify-content: space-between;
+  border-top: 1px solid var(--odb-border);
+  background: #0f1216;
+}
+
+@media (max-width: 640px) {
+  .odb-search-hit {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .odb-search-modal-foot span:first-child {
+    display: none;
+  }
+}
