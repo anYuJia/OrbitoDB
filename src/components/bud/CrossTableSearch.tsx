@@ -126,7 +126,7 @@ export function CrossTableSearch() {
         }
 
         try {
-          const result = await backend.runQuery(
+          const result = await backend.runQuerySilent(
             activeId,
             buildSearchSql(connection.engine, table.name, searchable, term),
           );
