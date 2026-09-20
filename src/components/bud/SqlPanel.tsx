@@ -119,6 +119,7 @@ export function SqlPanel() {
   const activeEditorId = useStore((s) => s.activeEditorId);
   const editors = useStore((s) => s.editors);
   const selectEditor = useStore((s) => s.selectEditor);
+  const renameEditor = useStore((s) => s.renameEditor);
   const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
   const res = useStore((s) => s.editorResults[s.activeEditorId] ?? null);
   const err = useStore((s) => s.editorErrors[s.activeEditorId] ?? null);
@@ -425,13 +426,20 @@ export function SqlPanel() {
   const saveAs = async (kind: "script" | "favorite") => {
     if (!sql.trim()) return;
     const name = await promptDialog({
-      title: kind === "script" ? "Save SQL script" : "Add to favorites",
+      title: kind === "script" ? "Save SQL script" : "Add to Starred",
       label: "Name",
       placeholder: kind === "script" ? "e.g. monthly report" : "e.g. active customers",
     });
     if (!name?.trim()) return;
-    if (kind === "script") saveScript(name.trim(), sql);
-    else saveFavorite(name.trim(), sql);
+    if (kind === "script") {
+      const nextName = name.trim();
+      saveScript(nextName, sql);
+      renameEditor(activeEditorId, nextName);
+      toast(`Saved script · ${nextName}`, "success");
+    } else {
+      saveFavorite(name.trim(), sql);
+      toast("Added to Starred", "success");
+    }
   };
 
   const lineCount = sql.split("\n").length;
