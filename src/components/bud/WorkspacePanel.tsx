@@ -1,9 +1,11 @@
 import {
-  IconBolt,
-  IconBrowser,
-  IconCirclePlus,
-  IconClock,
-  IconMail,
+  IconArrowsDiff,
+  IconDatabaseSearch,
+  IconGitCompare,
+  IconKey,
+  IconPlugConnected,
+  IconSchema,
+  IconTerminal2,
   IconTrash,
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
@@ -14,84 +16,85 @@ import { toast } from "../../state/toast";
 import type { TopView } from "../../state/store";
 import { useStore } from "../../state/store";
 
-const SCREENS = [
-  { name: "Home", path: "/", role: "Basic" },
-  { name: "Employees", path: "/employees", role: "Basic" },
-  { name: "Submissions", path: "/submissions", role: "Power" },
-  { name: "Settings", path: "/settings", role: "Admin" },
-];
-
-const AUTOMATIONS = [
-  { name: "Weekly timesheet reminder", trigger: "Schedule", icon: IconClock, on: true },
-  { name: "Email on new submission", trigger: "Row created", icon: IconMail, on: true },
-  { name: "Flag overtime > 9h", trigger: "Row updated", icon: IconBolt, on: false },
-];
-
 export function WorkspacePanel({ view }: { view: TopView }) {
-  if (view === "design") return <DesignPanel />;
-  if (view === "automation") return <AutomationPanel />;
+  if (view === "design") return <SchemaToolsPanel />;
+  if (view === "automation") return <UtilitiesPanel />;
   return <SettingsPanel />;
 }
 
-function PanelShell({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+function PanelShell({
+  eyebrow,
+  title,
+  subtitle,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}) {
   return (
-    <motion.main className="bud-main bud-wp" variants={viewV} initial="hidden" animate="show" exit="exit">
-      <div className="bud-wp-head">
-        <h1 className="bud-wp-title">{title}</h1>
-        <p className="bud-wp-sub">{subtitle}</p>
+    <motion.main className="bud-main odb-page" variants={viewV} initial="hidden" animate="show" exit="exit">
+      <div className="odb-page-head">
+        <span className="odb-page-eyebrow">{eyebrow}</span>
+        <h1>{title}</h1>
+        <p>{subtitle}</p>
       </div>
-      <div className="bud-wp-body">{children}</div>
+      <div className="odb-page-body">{children}</div>
     </motion.main>
   );
 }
 
-function DesignPanel() {
+function ToolRow({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  action: string;
+}) {
   return (
-    <PanelShell title="Design" subtitle="Screens generated from your data sources.">
-      <div className="bud-wp-toolbar">
-        <button className="bud-create-view" onClick={() => toast("Screen builder is coming soon.", "info")}>
-          <IconCirclePlus size={15} stroke={1.8} /> New screen
-        </button>
-      </div>
-      <div className="bud-wp-cards">
-        {SCREENS.map((s) => (
-          <div key={s.path} className="bud-card">
-            <div className="bud-card-ic">
-              <IconBrowser size={18} stroke={1.6} />
-            </div>
-            <div className="bud-card-main">
-              <div className="bud-card-title">{s.name}</div>
-              <div className="bud-card-sub">{s.path}</div>
-            </div>
-            <span className="bud-pill bud-role">{s.role}</span>
-          </div>
-        ))}
+    <button className="odb-tool-row" onClick={() => toast(`${title} is planned for a later OrbitoDB milestone.`, "info")}>
+      <span className="odb-tool-icon">{icon}</span>
+      <span className="odb-tool-copy">
+        <b>{title}</b>
+        <span>{description}</span>
+      </span>
+      <span className="odb-tool-action">{action}</span>
+    </button>
+  );
+}
+
+function SchemaToolsPanel() {
+  return (
+    <PanelShell
+      eyebrow="Database"
+      title="Schema tools"
+      subtitle="Inspect and compare database structure without leaving the desktop client."
+    >
+      <div className="odb-section">
+        <ToolRow icon={<IconSchema size={18} stroke={1.6} />} title="ER diagram" description="Visualize tables and relationships." action="Open" />
+        <ToolRow icon={<IconGitCompare size={18} stroke={1.6} />} title="Schema diff" description="Compare structures across two connections." action="Compare" />
+        <ToolRow icon={<IconArrowsDiff size={18} stroke={1.6} />} title="Migration preview" description="Review DDL changes before applying them." action="Preview" />
       </div>
     </PanelShell>
   );
 }
 
-function AutomationPanel() {
+function UtilitiesPanel() {
   return (
-    <PanelShell title="Automation" subtitle="Workflows that run when something happens in your data.">
-      <div className="bud-wp-toolbar">
-        <button className="bud-create-view" onClick={() => toast("Automation builder is coming soon.", "info")}>
-          <IconCirclePlus size={15} stroke={1.8} /> New automation
-        </button>
-      </div>
-      <div className="bud-wp-cards">
-        {AUTOMATIONS.map((a) => (
-          <div key={a.name} className="bud-card">
-            <div className="bud-card-ic">
-              <a.icon size={18} stroke={1.6} />
-            </div>
-            <div className="bud-card-main">
-              <div className="bud-card-title">{a.name}</div>
-              <div className="bud-card-sub">Trigger: {a.trigger}</div>
-            </div>
-            <span className={`bud-status ${a.on ? "on" : "off"}`}>{a.on ? "Enabled" : "Paused"}</span>
-          </div>
-        ))}
+    <PanelShell
+      eyebrow="Workspace"
+      title="Utilities"
+      subtitle="Database-focused utilities. No cloud account or hosted workspace required."
+    >
+      <div className="odb-section">
+        <ToolRow icon={<IconDatabaseSearch size={18} stroke={1.6} />} title="Data search" description="Search values across selected tables." action="Search" />
+        <ToolRow icon={<IconTerminal2 size={18} stroke={1.6} />} title="SQL console" description="Open another isolated query session." action="Open" />
+        <ToolRow icon={<IconKey size={18} stroke={1.6} />} title="Credential check" description="Verify locally stored connection credentials." action="Check" />
       </div>
     </PanelShell>
   );
@@ -103,49 +106,57 @@ function SettingsPanel() {
 
   if (!conn) {
     return (
-      <PanelShell title="Settings" subtitle="Pick a data source on the left to manage it.">
-        <div className="bud-empty">No data source selected.</div>
+      <PanelShell eyebrow="Connection" title="Connection settings" subtitle="Select a connection from Database Explorer to inspect it.">
+        <div className="odb-empty-state">
+          <IconPlugConnected size={26} stroke={1.4} />
+          <b>No connection selected</b>
+          <span>Your saved connections stay local to this device.</span>
+        </div>
       </PanelShell>
     );
   }
 
   const fields: [string, string][] = [
     ["Name", conn.name],
-    ["Engine", conn.engine],
-    ["Host", conn.host ?? "—"],
+    ["Engine", conn.engine === "postgres" ? "PostgreSQL" : conn.engine === "mysql" ? "MySQL / MariaDB" : "SQLite"],
+    ["Host", conn.host ?? "Local"],
     ["Port", conn.port != null ? String(conn.port) : "—"],
     ["Database", conn.database],
     ["Username", conn.username ?? "—"],
   ];
 
   return (
-    <PanelShell title="Settings" subtitle={`Connection details for ${conn.name}.`}>
-      <div className="bud-settings-card">
+    <PanelShell eyebrow="Connection" title={conn.name} subtitle="Connection metadata and local safety controls.">
+      <div className="odb-settings-list">
         {fields.map(([label, value]) => (
-          <div key={label} className="bud-setting-row">
-            <span className="bud-setting-label">{label}</span>
-            <input className="bud-setting-input" value={value} readOnly />
+          <div key={label} className="odb-setting-line">
+            <span>{label}</span>
+            <code>{value}</code>
           </div>
         ))}
-        <div className="bud-setting-actions">
-          <button
-            className="bud-danger-btn"
-            onClick={async () => {
-              if (
-                await confirmDialog({
-                  title: "Delete connection",
-                  message: `Delete "${conn.name}"? This removes the saved connection.`,
-                  confirmLabel: "Delete",
-                  danger: true,
-                })
-              ) {
-                void deleteConnection(conn.id);
-              }
-            }}
-          >
-            <IconTrash size={15} stroke={1.7} /> Delete connection
-          </button>
+      </div>
+      <div className="odb-danger-zone">
+        <div>
+          <b>Remove saved connection</b>
+          <span>This only removes the local OrbitoDB profile. It does not change the database server.</span>
         </div>
+        <button
+          onClick={async () => {
+            if (
+              await confirmDialog({
+                title: "Delete connection",
+                message: `Delete "${conn.name}"? This removes the saved local connection only.`,
+                confirmLabel: "Delete",
+                danger: true,
+              })
+            ) {
+              void deleteConnection(conn.id);
+            }
+          }}
+        >
+          <IconTrash size={14} stroke={1.8} />
+          Delete
+        </button>
       </div>
     </PanelShell>
   );
