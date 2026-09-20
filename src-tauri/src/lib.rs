@@ -51,6 +51,7 @@ pub fn run() {
             commands::run_query,
             commands::run_query_silent,
             commands::cancel_query,
+            commands::connection_diagnostics,
             commands::list_schemas,
             commands::list_tables,
             commands::list_columns,
