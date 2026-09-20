@@ -407,6 +407,9 @@ pub async fn scan_local_databases() -> AppResult<Vec<ConnectionConfig>> {
                 database: db.into(),
                 username: Some(user.into()),
                 env: None,
+                group: None,
+                schema: None,
+                ssh: None,
             });
         }
     }
