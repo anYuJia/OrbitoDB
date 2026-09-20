@@ -12,56 +12,45 @@ export function StatusBar() {
   const commitTxn = useStore((s) => s.commitTxn);
 
   const rows = result?.rows.length ?? 0;
-  const sel = selection.length;
-  const secs = result ? (result.elapsedMs / 1000).toFixed(3) : "0.000";
+  const elapsed = result ? `${result.elapsedMs} ms` : "Ready";
 
   return (
-    <div className="bud-statusbar">
-      <div className="bud-status-l">
-        <span className="bud-status-fmt">
-          Format: <em>&lt;Select a Cell&gt;</em>
-        </span>
+    <footer className="bud-statusbar odb-statusbar">
+      <div className="odb-status-left">
         {conn ? (
-          <span className="bud-status-conn">
-            <IconPlugConnected size={13} stroke={1.8} />
-            <span className="bud-status-engine">{conn.engine}</span>
-            {conn.name}
+          <span className="odb-status-connection">
+            <IconPlugConnected size={12} stroke={2} />
+            <b>{conn.name}</b>
+            <span>{conn.engine}</span>
           </span>
         ) : (
-          <span className="bud-status-conn off">
-            <IconPlugConnectedX size={13} stroke={1.8} />
-            Not connected
+          <span className="odb-status-connection muted">
+            <IconPlugConnectedX size={12} stroke={2} />
+            No active connection
           </span>
         )}
-        {conn?.env && (
-          <span className={`bud-status-env ${conn.env}`} title={`${conn.env} environment`}>
-            {conn.env === "prod" ? "PRODUCTION" : conn.env.toUpperCase()}
-          </span>
-        )}
+        {conn?.env && <span className={`odb-env-tag ${conn.env}`}>{conn.env === "prod" ? "PROD" : conn.env.toUpperCase()}</span>}
         {readOnly && (
-          <span className="bud-status-ro" title="This connection is read-only">
-            <IconLock size={12} stroke={1.9} /> Read-only
+          <span className="odb-readonly">
+            <IconLock size={11} stroke={2} />
+            Read-only
           </span>
         )}
       </div>
-      <div className="bud-status-r">
+
+      <div className="odb-status-right">
         {txnDirty && (
-          <span className="bud-status-txn" title="Uncommitted transaction">
-            <button onClick={() => void commitTxn()}>Commit</button>
+          <span className="odb-txn">
+            <span>Uncommitted changes</span>
             <button onClick={() => void rollbackTxn()}>Rollback</button>
-            ● Uncommitted
+            <button className="primary" onClick={() => void commitTxn()}>Commit</button>
           </span>
         )}
-        {loadingResult && <span className="bud-status-item">Loading…</span>}
-        {sel > 0 && <span className="bud-status-item accent">{sel} selected</span>}
-        <span className="bud-status-item">{secs}/0.000 sec</span>
-        <span className="bud-status-item">{rows > 0 ? `1/${rows.toLocaleString()}` : "0/0"}</span>
-        <span className="bud-status-item">1-1</span>
-        <span className="bud-status-mem" title="Heap memory">
-          <span className="bud-status-mem-fill" style={{ width: "10%" }} />
-          <span className="bud-status-mem-t">201M of 2048M</span>
-        </span>
+        {loadingResult && <span>Running…</span>}
+        {selection.length > 0 && <span>{selection.length} selected</span>}
+        {rows > 0 && <span>{rows.toLocaleString()} rows</span>}
+        <span>{elapsed}</span>
       </div>
-    </div>
+    </footer>
   );
 }
