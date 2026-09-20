@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
 use crate::executor::mysql_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
 
 pub struct MySqlDriver {
     pool: sqlx::MySqlPool,
@@ -193,6 +193,20 @@ impl Driver for MySqlDriver {
             .await?;
         Ok(true)
     }
+    async fn diagnostics(&self) -> AppResult<ConnectionDiagnostics> {
+        let started = std::time::Instant::now();
+        let row = sqlx::query("SELECT VERSION() AS server_version, DATABASE() AS database")
+            .fetch_one(&self.pool)
+            .await?;
+        let database = try_get_text(&row, "database");
+        Ok(ConnectionDiagnostics {
+            server_version: try_get_text(&row, "server_version"),
+            database: database.clone(),
+            schema: if database.is_empty() { None } else { Some(database) },
+            latency_ms: started.elapsed().as_millis() as u64,
+        })
+    }
+
     async fn list_schemas(&self) -> AppResult<Vec<String>> {
         let row = sqlx::query("SELECT database() AS schema_name")
             .fetch_one(&self.pool)
