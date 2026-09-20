@@ -1,6 +1,6 @@
 import { IconSearch, IconX } from "@tabler/icons-react";
 import { motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getBackend } from "../../ipc/backend";
 import type { ColumnInfo, Engine } from "../../ipc/types";
 import { backdropV, centeredModalV } from "../../lib/motion";
@@ -62,6 +62,7 @@ export function CrossTableSearch() {
   const [busy, setBusy] = useState(false);
   const [scanned, setScanned] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const searchToken = useRef(0);
 
   const activeId = useStore((s) => s.activeConnectionId);
   const connection = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
@@ -77,13 +78,17 @@ export function CrossTableSearch() {
 
   useEffect(() => {
     const show = () => {
+      searchToken.current += 1;
       setOpen(true);
       setHits([]);
       setScanned(0);
       setError(null);
     };
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        searchToken.current += 1;
+        setOpen(false);
+      }
     };
     window.addEventListener("orbitodb:cross-table-search", show);
     window.addEventListener("keydown", key);
@@ -104,10 +109,11 @@ export function CrossTableSearch() {
 
     const backend = getBackend();
     const next: SearchHit[] = [];
+    const token = ++searchToken.current;
 
     try {
       for (const table of searchableTables) {
-        if (next.length >= MAX_RESULTS) break;
+        if (token !== searchToken.current || next.length >= MAX_RESULTS) break;
 
         let columns = columnsByTable[table.name] ?? [];
         if (!columns.length) {
@@ -147,14 +153,15 @@ export function CrossTableSearch() {
           // One unsupported cast or table permission must not stop the whole search.
         }
 
+        if (token !== searchToken.current) break;
         setScanned((count) => count + 1);
       }
 
-      setHits(next);
+      if (token === searchToken.current) setHits(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setBusy(false);
+      if (token === searchToken.current) setBusy(false);
     }
   };
 
@@ -174,7 +181,7 @@ export function CrossTableSearch() {
         initial="hidden"
         animate="show"
         exit="exit"
-        onClick={() => setOpen(false)}
+        onClick={() => { searchToken.current += 1; setBusy(false); setOpen(false); }}
       />
       <motion.div
         className="odb-search-modal"
@@ -190,7 +197,7 @@ export function CrossTableSearch() {
             <h2>Cross-table search</h2>
             <p>Search visible values across up to {MAX_TABLES} tables in the active connection.</p>
           </div>
-          <button className="odb-modal-close" onClick={() => setOpen(false)} title="Close">
+          <button className="odb-modal-close" onClick={() => { searchToken.current += 1; setBusy(false); setOpen(false); }} title="Close">
             <IconX size={16} stroke={1.8} />
           </button>
         </header>
