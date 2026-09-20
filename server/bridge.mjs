@@ -505,6 +505,237 @@ const handlers = {
     return raw.rows.map((r) => ({ name: String(r[0]), kind: /VIEW/i.test(String(r[1])) ? "view" : "table", schema: null }));
   },
 
+  async objects({ id }) {
+    const { engine, conn, fileKey } = need(id);
+
+    if (engine === "sqlite") {
+      const db = sqliteDbs.get(fileKey);
+      const result = db.exec(
+        "SELECT name, type, tbl_name, sql FROM sqlite_master WHERE type IN ('view','index','trigger') AND name NOT LIKE 'sqlite_%' ORDER BY type, name",
+      );
+      const rows = result.length ? result[0].values : [];
+      return rows.map((row) => ({
+        name: String(row[0] ?? ""),
+        kind: String(row[1] ?? ""),
+        schema: "main",
+        table: row[2] == null ? null : String(row[2]),
+        signature: null,
+        definition:
+          row[3] == null || String(row[3]).trim() === ""
+            ? null
+            : String(row[3]).replace(/;?\s*$/, ";"),
+      }));
+    }
+
+    const out = [];
+    if (engine === "postgres") {
+      const views = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT schemaname, viewname,
+                'CREATE OR REPLACE VIEW ' || quote_ident(viewname) || ' AS ' ||
+                pg_get_viewdef((quote_ident(schemaname) || '.' || quote_ident(viewname))::regclass, true) || ';'
+         FROM pg_views WHERE schemaname = current_schema() ORDER BY viewname`,
+      );
+      for (const row of views.rows) {
+        out.push({
+          name: String(row[1] ?? ""),
+          kind: "view",
+          schema: row[0] == null ? null : String(row[0]),
+          table: null,
+          signature: null,
+          definition: row[2] == null ? null : String(row[2]),
+        });
+      }
+
+      const indexes = await rawArrayRows(
+        engine,
+        conn,
+        "SELECT schemaname, tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = current_schema() ORDER BY tablename, indexname",
+      );
+      for (const row of indexes.rows) {
+        out.push({
+          name: String(row[2] ?? ""),
+          kind: "index",
+          schema: row[0] == null ? null : String(row[0]),
+          table: row[1] == null ? null : String(row[1]),
+          signature: null,
+          definition: row[3] == null ? null : String(row[3]).replace(/;?\s*$/, ";"),
+        });
+      }
+
+      const sequences = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT schemaname, sequencename,
+                format('CREATE SEQUENCE %I INCREMENT BY %s MINVALUE %s MAXVALUE %s START WITH %s CACHE %s %s;',
+                       sequencename, increment_by, min_value, max_value, start_value, cache_size,
+                       CASE WHEN cycle THEN 'CYCLE' ELSE 'NO CYCLE' END)
+         FROM pg_sequences WHERE schemaname = current_schema() ORDER BY sequencename`,
+      );
+      for (const row of sequences.rows) {
+        out.push({
+          name: String(row[1] ?? ""),
+          kind: "sequence",
+          schema: row[0] == null ? null : String(row[0]),
+          table: null,
+          signature: null,
+          definition: row[2] == null ? null : String(row[2]),
+        });
+      }
+
+      const routines = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT p.proname, p.prokind::text, n.nspname,
+                pg_get_function_identity_arguments(p.oid), pg_get_functiondef(p.oid)
+         FROM pg_proc p
+         JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = current_schema() AND p.prokind IN ('f','p')
+         ORDER BY p.prokind, p.proname, pg_get_function_identity_arguments(p.oid)`,
+      );
+      for (const row of routines.rows) {
+        out.push({
+          name: String(row[0] ?? ""),
+          kind: String(row[1]) === "p" ? "procedure" : "function",
+          schema: row[2] == null ? null : String(row[2]),
+          table: null,
+          signature: row[3] == null ? null : String(row[3]),
+          definition: row[4] == null ? null : String(row[4]).replace(/;?\s*$/, ";"),
+        });
+      }
+
+      const triggers = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT tg.tgname, cls.relname, ns.nspname, pg_get_triggerdef(tg.oid, true) || ';'
+         FROM pg_trigger tg
+         JOIN pg_class cls ON cls.oid = tg.tgrelid
+         JOIN pg_namespace ns ON ns.oid = cls.relnamespace
+         WHERE NOT tg.tgisinternal AND ns.nspname = current_schema()
+         ORDER BY cls.relname, tg.tgname`,
+      );
+      for (const row of triggers.rows) {
+        out.push({
+          name: String(row[0] ?? ""),
+          kind: "trigger",
+          schema: row[2] == null ? null : String(row[2]),
+          table: row[1] == null ? null : String(row[1]),
+          signature: null,
+          definition: row[3] == null ? null : String(row[3]),
+        });
+      }
+      return out;
+    }
+
+    const views = await rawArrayRows(
+      engine,
+      conn,
+      "SELECT table_name FROM information_schema.views WHERE table_schema = DATABASE() ORDER BY table_name",
+    );
+    for (const row of views.rows) {
+      const name = String(row[0] ?? "");
+      if (!name) continue;
+      let definition = null;
+      try {
+        const shown = await rawArrayRows(engine, conn, `SHOW CREATE VIEW ${quote.mysql(name)}`);
+        const idx = shown.columns.findIndex((column) => String(column).toLowerCase() === "create view");
+        if (idx >= 0 && shown.rows[0]?.[idx] != null) {
+          definition = String(shown.rows[0][idx]).replace(/;?\s*$/, ";");
+        }
+      } catch {
+        // Keep the object visible even when SHOW CREATE requires more privileges.
+      }
+      out.push({ name, kind: "view", schema: null, table: null, signature: null, definition });
+    }
+
+    const baseTables = await rawArrayRows(
+      engine,
+      conn,
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' ORDER BY table_name",
+    );
+    for (const tableRow of baseTables.rows) {
+      const table = String(tableRow[0] ?? "");
+      if (!table) continue;
+      const raw = await rawArrayRows(engine, conn, `SHOW INDEX FROM ${quote.mysql(table)}`);
+      const grouped = new Map();
+      for (const row of raw.rows) {
+        const name = String(row[2] ?? "");
+        if (!name) continue;
+        const item = grouped.get(name) ?? { unique: Number(row[1] ?? 1) === 0, columns: [] };
+        const column = String(row[4] ?? "");
+        if (column) item.columns.push(column);
+        grouped.set(name, item);
+      }
+      for (const [name, item] of grouped.entries()) {
+        const definition =
+          name === "PRIMARY" || !item.columns.length
+            ? null
+            : `CREATE ${item.unique ? "UNIQUE " : ""}INDEX ${quote.mysql(name)} ON ${quote.mysql(table)} (${item.columns
+                .map((column) => quote.mysql(column))
+                .join(", ")});`;
+        out.push({ name, kind: "index", schema: null, table, signature: null, definition });
+      }
+    }
+
+    const routines = await rawArrayRows(
+      engine,
+      conn,
+      "SELECT routine_name, routine_type FROM information_schema.routines WHERE routine_schema = DATABASE() ORDER BY routine_type, routine_name",
+    );
+    for (const row of routines.rows) {
+      const name = String(row[0] ?? "");
+      const routineType = String(row[1] ?? "").toUpperCase();
+      if (!name) continue;
+      const kind = routineType === "PROCEDURE" ? "procedure" : "function";
+      let definition = null;
+      try {
+        const shown = await rawArrayRows(
+          engine,
+          conn,
+          `SHOW CREATE ${routineType === "PROCEDURE" ? "PROCEDURE" : "FUNCTION"} ${quote.mysql(name)}`,
+        );
+        const wanted = routineType === "PROCEDURE" ? "create procedure" : "create function";
+        const idx = shown.columns.findIndex((column) => String(column).toLowerCase() === wanted);
+        if (idx >= 0 && shown.rows[0]?.[idx] != null) {
+          definition = String(shown.rows[0][idx]).replace(/;?\s*$/, ";");
+        }
+      } catch {
+        // Keep metadata listing available with limited privileges.
+      }
+      out.push({ name, kind, schema: null, table: null, signature: null, definition });
+    }
+
+    const triggers = await rawArrayRows(
+      engine,
+      conn,
+      `SELECT trigger_name, event_object_table, action_timing, event_manipulation, action_statement
+       FROM information_schema.triggers
+       WHERE trigger_schema = DATABASE()
+       ORDER BY event_object_table, trigger_name`,
+    );
+    for (const row of triggers.rows) {
+      const name = String(row[0] ?? "");
+      const table = String(row[1] ?? "");
+      const timing = String(row[2] ?? "");
+      const event = String(row[3] ?? "");
+      const statement = String(row[4] ?? "");
+      out.push({
+        name,
+        kind: "trigger",
+        schema: null,
+        table: table || null,
+        signature: null,
+        definition:
+          name && table && timing && event && statement
+            ? `CREATE TRIGGER ${quote.mysql(name)} ${timing} ${event} ON ${quote.mysql(table)} FOR EACH ROW ${statement.replace(/;?\s*$/, "")};`
+            : null,
+      });
+    }
+
+    return out;
+  },
+
   async columns({ id, table }) {
     const { engine, conn, fileKey } = need(id);
     if (engine === "sqlite") {
