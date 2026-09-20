@@ -148,17 +148,32 @@ impl Driver for SqliteDriver {
         let rows = sqlx::query(&format!("PRAGMA index_list({})", quote_ident(table)))
             .fetch_all(&self.pool)
             .await?;
-        Ok(rows
-            .iter()
-            .map(|row| IndexInfo {
-                name: row.try_get::<String, _>("name").unwrap_or_default(),
-                unique: row.try_get::<i64, _>("unique").unwrap_or(0) == 1,
-                detail: row
-                    .try_get::<String, _>("origin")
-                    .map(|origin| format!("origin: {origin}"))
-                    .unwrap_or_else(|_| "SQLite index".into()),
-            })
-            .collect())
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let name = row.try_get::<String, _>("name").unwrap_or_default();
+            if name.is_empty() {
+                continue;
+            }
+            let unique = row.try_get::<i64, _>("unique").unwrap_or(0) == 1;
+            let info = sqlx::query(&format!("PRAGMA index_info({})", quote_ident(&name)))
+                .fetch_all(&self.pool)
+                .await?;
+            let columns = info
+                .iter()
+                .filter_map(|item| item.try_get::<String, _>("name").ok())
+                .filter(|column| !column.is_empty())
+                .collect::<Vec<_>>();
+            let origin = row.try_get::<String, _>("origin").unwrap_or_default();
+            let detail = if columns.is_empty() {
+                if origin.is_empty() { "SQLite index".into() } else { format!("origin: {origin}") }
+            } else if origin.is_empty() || origin == "c" {
+                columns.join(", ")
+            } else {
+                format!("{} · origin: {}", columns.join(", "), origin)
+            };
+            out.push(IndexInfo { name, unique, detail });
+        }
+        Ok(out)
     }
 }
 
