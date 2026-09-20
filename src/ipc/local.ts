@@ -12,6 +12,7 @@ import type {
   ColumnDef,
   ColumnInfo,
   ConnectionConfig,
+  ConstraintInfo,
   ForeignKey,
   IndexInfo,
   HistoryEntry,
@@ -41,6 +42,49 @@ function saveConns(list: ConnectionConfig[]): void {
 /** Double-quote a SQL identifier (table/column name). */
 function q(id: string): string {
   return `"${String(id).replace(/"/g, '""')}"`;
+}
+
+function sqliteChecks(createSql: string): string[] {
+  const upper = createSql.toUpperCase();
+  const out: string[] = [];
+  let searchFrom = 0;
+  while (searchFrom < createSql.length) {
+    const rel = upper.indexOf("CHECK", searchFrom);
+    if (rel < 0) break;
+    const open = createSql.indexOf("(", rel + 5);
+    if (open < 0) break;
+    let depth = 0;
+    let quote: "'" | '"' | null = null;
+    let close = -1;
+    for (let i = open; i < createSql.length; i++) {
+      const ch = createSql[i];
+      if (quote) {
+        if (ch === quote) {
+          if (createSql[i + 1] === quote) {
+            i++;
+            continue;
+          }
+          quote = null;
+        }
+        continue;
+      }
+      if (ch === "'" || ch === '"') {
+        quote = ch;
+      } else if (ch === "(") {
+        depth++;
+      } else if (ch === ")") {
+        depth--;
+        if (depth === 0) {
+          close = i;
+          break;
+        }
+      }
+    }
+    if (close < 0) break;
+    out.push(createSql.slice(open + 1, close).trim());
+    searchFrom = close + 1;
+  }
+  return out;
 }
 
 function remoteErr(): AppError {
@@ -312,6 +356,57 @@ class LocalBackend implements Backend {
         } satisfies IndexInfo;
       })
       .filter((index): index is IndexInfo => index !== null);
+  }
+
+  async listConstraints(connectionId: string, table: string): Promise<ConstraintInfo[]> {
+    const db = await this.ensureDb(connectionId);
+    const out: ConstraintInfo[] = [];
+    const columns = await this.listColumns(connectionId, table);
+    const primary = columns.filter((column) => column.isPrimaryKey).map((column) => column.name);
+    if (primary.length) {
+      out.push({
+        name: null,
+        kind: "primary",
+        definition: `PRIMARY KEY (${primary.join(", ")})`,
+        columns: primary,
+      });
+    }
+
+    const indexes = db.exec(`PRAGMA index_list(${q(table)})`);
+    for (const row of indexes.length ? indexes[0].values : []) {
+      const name = String(row[1] ?? "");
+      const origin = row[3] == null ? "" : String(row[3]);
+      if (!name || origin !== "u") continue;
+      const info = db.exec(`PRAGMA index_info(${q(name)})`);
+      const cols = (info.length ? info[0].values : [])
+        .map((item) => String(item[2] ?? ""))
+        .filter(Boolean);
+      out.push({
+        name: null,
+        kind: "unique",
+        definition: `UNIQUE (${cols.join(", ")})`,
+        columns: cols,
+      });
+    }
+
+    const statement = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?");
+    try {
+      statement.bind([table]);
+      if (statement.step()) {
+        const createSql = String(statement.get()[0] ?? "");
+        for (const expression of sqliteChecks(createSql)) {
+          out.push({
+            name: null,
+            kind: "check",
+            definition: `CHECK (${expression})`,
+            columns: [],
+          });
+        }
+      }
+    } finally {
+      statement.free();
+    }
+    return out;
   }
 
   async recentHistory(limit: number): Promise<HistoryEntry[]> {
