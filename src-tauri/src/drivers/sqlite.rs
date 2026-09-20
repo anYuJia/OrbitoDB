@@ -5,7 +5,7 @@ use sqlx::{Column as _, Row, TypeInfo};
 use crate::drivers::Driver;
 use crate::error::AppResult;
 use crate::executor::sqlite_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ForeignKey, IndexInfo, QueryResult, TableInfo, MAX_ROWS};
 
 pub struct SqliteDriver {
     pub(crate) pool: sqlx::SqlitePool,
@@ -98,6 +98,28 @@ impl Driver for SqliteDriver {
         // SQLx does not expose sqlite3_interrupt for pooled SQLite connections.
         // Keep this honest rather than pretending the query stopped.
         Ok(false)
+    }
+
+    async fn diagnostics(&self) -> AppResult<ConnectionDiagnostics> {
+        let started = std::time::Instant::now();
+        let version: String = sqlx::query_scalar("SELECT sqlite_version()")
+            .fetch_one(&self.pool)
+            .await?;
+        let rows = sqlx::query("PRAGMA database_list")
+            .fetch_all(&self.pool)
+            .await?;
+        let database = rows
+            .iter()
+            .find(|row| row.try_get::<String, _>("name").ok().as_deref() == Some("main"))
+            .and_then(|row| row.try_get::<String, _>("file").ok())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "main".into());
+        Ok(ConnectionDiagnostics {
+            server_version: format!("SQLite {version}"),
+            database,
+            schema: Some("main".into()),
+            latency_ms: started.elapsed().as_millis() as u64,
+        })
     }
 
     async fn list_schemas(&self) -> AppResult<Vec<String>> {
