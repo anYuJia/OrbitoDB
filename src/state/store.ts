@@ -31,8 +31,6 @@ interface SchemaState {
 }
 
 export type TopView = "data" | "design" | "automation" | "settings";
-export type AppScreen = "dashboard" | "workspace";
-export type DashPage = "home" | "connections" | "logs";
 export type FilterOp = "=" | "!=" | "contains" | ">" | "<";
 export interface ViewFilter {
   column: string;
@@ -185,8 +183,6 @@ export interface AppStore {
   view: "data" | "sql" | "history";
   inspectorRow: number | null;
   topView: TopView;
-  screen: AppScreen;
-  dashPage: DashPage;
   views: ViewDef[];
   activeViewId: string | null;
   selection: number[];
@@ -243,8 +239,6 @@ export interface AppStore {
   openInspector: (rowIndex: number) => void;
   closeInspector: () => void;
   setTopView: (v: TopView) => void;
-  setScreen: (s: AppScreen) => void;
-  setDashPage: (p: DashPage) => void;
   addView: (table: string, name: string, filter: ViewFilter | null) => void;
   deleteView: (id: string) => void;
   openView: (view: ViewDef) => Promise<void>;
@@ -310,8 +304,6 @@ export const useStore = create<AppStore>((set, get) => ({
   view: "sql",
   inspectorRow: null,
   topView: "data",
-  screen: "dashboard",
-  dashPage: "home",
   views: [],
   activeViewId: null,
   selection: [],
@@ -1037,10 +1029,6 @@ export const useStore = create<AppStore>((set, get) => ({
   closeInspector: () => set({ inspectorRow: null }),
 
   setTopView: (v) => set({ topView: v }),
-
-  setScreen: (s) => set({ screen: s }),
-
-  setDashPage: (p) => set({ dashPage: p, screen: "dashboard" }),
 
   addView: (table, name, filter) => {
     const id = get().activeConnectionId;
