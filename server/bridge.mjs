@@ -466,45 +466,71 @@ const handlers = {
   async columns({ id, table }) {
     const { engine, conn, fileKey } = need(id);
     if (engine === "sqlite") {
-      const r = sqliteDbs.get(fileKey).exec(`PRAGMA table_info(${sqliteIdent(table)})`);
+      const r = sqliteDbs.get(fileKey).exec(`PRAGMA table_xinfo(${sqliteIdent(table)})`);
       const rows = r.length ? r[0].values : [];
-      return rows.map((row) => ({
-        name: String(row[1]),
-        dataType: row[2] ? String(row[2]) : "",
-        nullable: Number(row[3]) === 0,
-        isPrimaryKey: Number(row[5]) > 0,
-      }));
+      return rows.map((row) => {
+        const hidden = Number(row[6] ?? 0);
+        return {
+          name: String(row[1]),
+          dataType: row[2] ? String(row[2]) : "",
+          nullable: Number(row[3]) === 0,
+          isPrimaryKey: Number(row[5]) > 0,
+          defaultValue: row[4] == null ? null : String(row[4]),
+          generated:
+            hidden === 2
+              ? "VIRTUAL (expression unavailable)"
+              : hidden === 3
+                ? "STORED (expression unavailable)"
+                : null,
+          comment: null,
+        };
+      });
     }
     if (engine === "postgres") {
       const sql = `
-        SELECT c.column_name, c.data_type, c.is_nullable,
-               CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END AS is_pk
-        FROM information_schema.columns c
+        SELECT a.attname AS column_name,
+               pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
+               NOT a.attnotnull AS is_nullable,
+               CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END AS is_pk,
+               CASE WHEN a.attgenerated = '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS column_default,
+               CASE WHEN a.attgenerated <> '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS generation_expression,
+               pg_catalog.col_description(a.attrelid, a.attnum) AS column_comment
+        FROM pg_catalog.pg_attribute a
+        JOIN pg_catalog.pg_class cls ON cls.oid = a.attrelid
+        JOIN pg_catalog.pg_namespace ns ON ns.oid = cls.relnamespace
+        LEFT JOIN pg_catalog.pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
         LEFT JOIN (
           SELECT kcu.column_name
           FROM information_schema.table_constraints tc
           JOIN information_schema.key_column_usage kcu
             ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
           WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = $1 AND tc.table_schema = current_schema()
-        ) pk ON pk.column_name = c.column_name
-        WHERE c.table_name = $1 AND c.table_schema = current_schema()
-        ORDER BY c.ordinal_position`;
+        ) pk ON pk.column_name = a.attname
+        WHERE ns.nspname = current_schema() AND cls.relname = $1
+          AND a.attnum > 0 AND NOT a.attisdropped
+        ORDER BY a.attnum`;
       const raw = await rawArrayRows(engine, conn, sql, [table]);
       return raw.rows.map((r) => ({
         name: String(r[0]),
         dataType: String(r[1] || ""),
-        nullable: String(r[2]).toUpperCase() === "YES",
+        nullable: Boolean(r[2]),
         isPrimaryKey: Number(r[3]) === 1,
+        defaultValue: r[4] == null ? null : String(r[4]),
+        generated: r[5] == null ? null : String(r[5]),
+        comment: r[6] == null ? null : String(r[6]),
       }));
     }
     const sql =
-      "SELECT column_name, data_type, is_nullable, column_key FROM information_schema.columns WHERE table_name = ? AND table_schema = database() ORDER BY ordinal_position";
+      "SELECT column_name, column_type, is_nullable, column_key, column_default, generation_expression, column_comment FROM information_schema.columns WHERE table_name = ? AND table_schema = database() ORDER BY ordinal_position";
     const raw = await rawArrayRows(engine, conn, sql, [table]);
     return raw.rows.map((r) => ({
       name: String(r[0]),
       dataType: String(r[1] || ""),
       nullable: String(r[2]).toUpperCase() === "YES",
       isPrimaryKey: String(r[3]).toUpperCase() === "PRI",
+      defaultValue: r[4] == null ? null : String(r[4]),
+      generated: r[5] == null || String(r[5]).trim() === "" ? null : String(r[5]),
+      comment: r[6] == null || String(r[6]) === "" ? null : String(r[6]),
     }));
   },
 
