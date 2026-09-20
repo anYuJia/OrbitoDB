@@ -219,6 +219,38 @@ export function buildSqliteRebuildSql(
       : column,
   );
   const temp = `__orbitodb_rebuild_${table.replace(/[^A-Za-z0-9_]/g, "_")}`;
+  const q = (value: string) => quoteDdlIdentifier("sqlite", value);
+  const renamed = next.name.trim() !== editedColumn;
+  if (renamed && constraints.some((constraint) => constraint.kind === "check")) {
+    throw new Error(
+      "SQLite column rename with CHECK constraints needs manual DDL review because CHECK expressions cannot be rewritten safely.",
+    );
+  }
+
+  const mappedFks = foreignKeys
+    .filter((fk) => fk.table === table)
+    .map((fk) => ({
+      ...fk,
+      table: temp,
+      column: fk.column === editedColumn ? next.name.trim() : fk.column,
+      refColumn: fk.refTable === table && fk.refColumn === editedColumn ? next.name.trim() : fk.refColumn,
+    }));
+
+  const mappedConstraints = constraints.map((constraint) => {
+    const mappedColumns = constraint.columns.map((column) =>
+      column === editedColumn ? next.name.trim() : column,
+    );
+    return {
+      ...constraint,
+      columns: mappedColumns,
+      definition:
+        constraint.kind === "unique"
+          ? `UNIQUE (${mappedColumns.map(q).join(", ")})`
+          : constraint.definition,
+    };
+  });
+
+  const escaped = editedColumn.replace(/[.*+?^$\{\}()|[\]\\]/g, "\\  const temp = `__orbitodb_rebuild_${table.replace(/[^A-Za-z0-9_]/g, "_")}`;
   const mappedFks = foreignKeys
     .filter((fk) => fk.table === table)
     .map((fk) => ({
@@ -234,7 +266,14 @@ export function buildSqliteRebuildSql(
   }));
 
   const create = buildTableDdl("sqlite", temp, nextColumns, mappedFks, indexes, mappedConstraints);
-  const q = (value: string) => quoteDdlIdentifier("sqlite", value);
+  const q = (value: string) => quoteDdlIdentifier("sqlite", value);");
+  const columnToken = new RegExp(`\\b${escaped}\\b`, "g");
+  const mappedIndexes = indexes.map((index) => ({
+    ...index,
+    detail: renamed ? index.detail.replace(columnToken, next.name.trim()) : index.detail,
+  }));
+
+  const create = buildTableDdl("sqlite", temp, nextColumns, mappedFks, mappedIndexes, mappedConstraints);
   const sourceColumns = currentColumns.map((column) => q(column.name)).join(", ");
   const targetColumns = nextColumns.map((column) => q(column.name)).join(", ");
 
