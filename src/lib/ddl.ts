@@ -62,6 +62,37 @@ export function renderColumnDefault(engine: Engine, column: ColumnInfo): string 
   return sqlString(value);
 }
 
+export function buildSecondaryIndexStatements(
+  engine: Engine,
+  table: string,
+  indexes: IndexInfo[] = [],
+  constraints: ConstraintInfo[] = [],
+): string[] {
+  const q = (value: string) => quoteDdlIdentifier(engine, value);
+  const constraintOwnedIndexes = new Set(
+    constraints
+      .filter((constraint) => constraint.kind === "primary" || constraint.kind === "unique")
+      .map((constraint) => constraint.name)
+      .filter((name): name is string => !!name),
+  );
+  const secondary = indexes.filter(
+    (index) => !isManagedIndex(engine, index.name) && !constraintOwnedIndexes.has(index.name),
+  );
+  return secondary.map((index) => {
+    const definition = index.detail.trim();
+    if (engine === "postgres" && /^CREATE\s+(UNIQUE\s+)?INDEX/i.test(definition)) {
+      return definition.replace(/;?\s*$/, ";");
+    }
+    const cols = indexColumns(definition);
+    if (cols.length) {
+      return `CREATE ${index.unique ? "UNIQUE " : ""}INDEX ${q(index.name)} ON ${q(table)} (${cols
+        .map(q)
+        .join(", ")});`;
+    }
+    return `-- Index ${q(index.name)}${index.unique ? " (UNIQUE)" : ""} exists, but its exact column/expression definition was not available from metadata.`;
+  });
+}
+
 export function buildTableDdl(
   engine: Engine,
   table: string,
@@ -146,36 +177,8 @@ export function buildTableDdl(
     }
   }
 
-  const constraintOwnedIndexes = new Set(
-    constraints
-      .filter((constraint) => constraint.kind === "primary" || constraint.kind === "unique")
-      .map((constraint) => constraint.name)
-      .filter((name): name is string => !!name),
-  );
-  const secondary = indexes.filter(
-    (index) => !isManagedIndex(engine, index.name) && !constraintOwnedIndexes.has(index.name),
-  );
-  if (secondary.length) statements.push("", "-- Secondary indexes");
-  for (const index of secondary) {
-    const definition = index.detail.trim();
-    if (engine === "postgres" && /^CREATE\s+(UNIQUE\s+)?INDEX/i.test(definition)) {
-      statements.push(definition.replace(/;?\s*$/, ";"));
-      continue;
-    }
-
-    const cols = indexColumns(definition);
-    if (cols.length) {
-      statements.push(
-        `CREATE ${index.unique ? "UNIQUE " : ""}INDEX ${q(index.name)} ON ${q(table)} (${cols
-          .map(q)
-          .join(", ")});`,
-      );
-    } else {
-      statements.push(
-        `-- Index ${q(index.name)}${index.unique ? " (UNIQUE)" : ""} exists, but its exact column/expression definition was not available from metadata.`,
-      );
-    }
-  }
+  const secondaryStatements = buildSecondaryIndexStatements(engine, table, indexes, constraints);
+  if (secondaryStatements.length) statements.push("", "-- Secondary indexes", ...secondaryStatements);
 
   return statements.join("\n");
 }
