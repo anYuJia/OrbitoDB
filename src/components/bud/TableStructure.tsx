@@ -1,13 +1,14 @@
 import { IconCode, IconKey, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { getBackend } from "../../ipc/backend";
-import type { Engine, ForeignKey, IndexInfo } from "../../ipc/types";
+import type { ColumnInfo, ConstraintInfo, Engine, ForeignKey, IndexInfo } from "../../ipc/types";
 import { confirmDialog, promptDialog } from "../../state/dialog";
+import { buildColumnAlterPlan, buildConstraintAddSql, buildConstraintDropSql, buildSqliteRebuildSql } from "../../lib/schemaChanges";
 import { confirmProdWrite } from "../../state/safety";
 import { toast } from "../../state/toast";
 import { useStore } from "../../state/store";
 
-type StructureMode = "columns" | "foreignKeys" | "indexes";
+type StructureMode = "columns" | "foreignKeys" | "indexes" | "constraints";
 function quoteIdentifier(engine: Engine, value: string): string {
   return engine === "mysql"
     ? "`" + value.replace(/`/g, "``") + "`"
@@ -20,6 +21,8 @@ export function TableStructure({ table }: { table: string }) {
   const activeId = useStore((s) => s.activeConnectionId);
   const connection = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const expandTable = useStore((s) => s.expandTable);
+  const refreshColumns = useStore((s) => s.refreshColumns);
+  const openSqlTab = useStore((s) => s.openSqlTab);
   const addColumn = useStore((s) => s.addColumn);
   const renameColumn = useStore((s) => s.renameColumn);
   const dropColumn = useStore((s) => s.dropColumn);
@@ -28,6 +31,7 @@ export function TableStructure({ table }: { table: string }) {
   const [mode, setMode] = useState<StructureMode>("columns");
   const [foreignKeys, setForeignKeys] = useState<ForeignKey[]>([]);
   const [indexes, setIndexes] = useState<IndexInfo[]>([]);
+  const [constraints, setConstraints] = useState<ConstraintInfo[]>([]);
   const [metaLoading, setMetaLoading] = useState(false);
   const [metaError, setMetaError] = useState<string | null>(null);
 
