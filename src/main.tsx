@@ -3,7 +3,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { installInspectGuards } from "./lib/guards";
-import "./styles.css";\nimport "./orbitodb.css";
+import "./styles.css";
+import "./orbitodb.css";
 
 installInspectGuards();
 
