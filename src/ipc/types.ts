@@ -87,6 +87,15 @@ export interface IndexInfo {
   detail: string;
 }
 
+export type ConstraintKind = "primary" | "unique" | "check";
+
+export interface ConstraintInfo {
+  name?: string | null;
+  kind: ConstraintKind;
+  definition: string;
+  columns: string[];
+}
+
 export interface ColumnDef {
   name: string;
   dataType: string;
