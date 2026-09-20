@@ -41,6 +41,9 @@ pub struct ConnectionConfig {
     pub database: String,
     #[serde(default)]
     pub username: Option<String>,
+    /// Optional safety/environment label used by the desktop UI (dev/staging/prod).
+    #[serde(default)]
+    pub env: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,5 +113,6 @@ mod tests {
         assert_eq!(cfg.engine, Engine::Sqlite);
         assert!(cfg.host.is_none());
         assert_eq!(cfg.database, "/tmp/x.db");
+        assert!(cfg.env.is_none());
     }
 }
