@@ -1,37 +1,198 @@
 use std::collections::HashMap;
+use std::net::TcpListener as StdTcpListener;
+use std::process::Stdio;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::time::{Duration, Instant};
+
+use tokio::process::{Child, Command};
+use tokio::sync::{Mutex, RwLock};
+use tokio::time::sleep;
 
 use crate::drivers::{sqlite::SqliteDriver, Driver};
 use crate::error::{AppError, AppResult};
-use crate::types::{ConnectionConfig, Engine};
+use crate::types::{ConnectionConfig, Engine, SshAuth};
 
-/// Holds live, open drivers keyed by connection id. Shared via Tauri state.
+/// A database connection can optionally be reached through the user's system
+/// OpenSSH client. We intentionally use non-interactive auth only: ssh-agent or
+/// an unencrypted/private key already usable by OpenSSH.
+pub async fn prepare_connection(
+    cfg: &ConnectionConfig,
+) -> AppResult<(ConnectionConfig, Option<Child>)> {
+    let Some(ssh) = cfg.ssh.as_ref().filter(|ssh| ssh.enabled) else {
+        return Ok((cfg.clone(), None));
+    };
+
+    if cfg.engine == Engine::Sqlite {
+        return Err(AppError::ConnectionFailed(
+            "SSH tunneling is only available for PostgreSQL and MySQL/MariaDB".into(),
+        ));
+    }
+    if ssh.host.trim().is_empty() || ssh.username.trim().is_empty() {
+        return Err(AppError::ConnectionFailed(
+            "SSH host and username are required".into(),
+        ));
+    }
+
+    let database_host = cfg.host.as_deref().unwrap_or("localhost");
+    let database_port = cfg.port.unwrap_or(match cfg.engine {
+        Engine::Postgres => 5432,
+        Engine::MySql => 3306,
+        Engine::Sqlite => unreachable!(),
+    });
+    let local_port = reserve_local_port()?;
+
+    let mut args = vec![
+        "-N".to_string(),
+        "-o".to_string(),
+        "BatchMode=yes".to_string(),
+        "-o".to_string(),
+        "ExitOnForwardFailure=yes".to_string(),
+        "-o".to_string(),
+        "StrictHostKeyChecking=accept-new".to_string(),
+        "-o".to_string(),
+        "ConnectTimeout=8".to_string(),
+        "-o".to_string(),
+        "ServerAliveInterval=30".to_string(),
+        "-o".to_string(),
+        "ServerAliveCountMax=3".to_string(),
+        "-L".to_string(),
+        format!("127.0.0.1:{local_port}:{database_host}:{database_port}"),
+        "-p".to_string(),
+        ssh.port.to_string(),
+    ];
+
+    match ssh.auth {
+        SshAuth::Agent => {}
+        SshAuth::Key => {
+            let key = ssh
+                .private_key_path
+                .as_deref()
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .ok_or_else(|| {
+                    AppError::ConnectionFailed(
+                        "SSH private-key authentication requires a key file path".into(),
+                    )
+                })?;
+            args.push("-i".to_string());
+            args.push(key.to_string());
+        }
+    }
+
+    args.push(format!("{}@{}", ssh.username.trim(), ssh.host.trim()));
+
+    let mut command = Command::new("ssh");
+    command
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    let mut child = command.spawn().map_err(|error| {
+        AppError::ConnectionFailed(format!(
+            "could not start the system OpenSSH client: {error}. Install or enable the 'ssh' command first"
+        ))
+    })?;
+
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        if let Some(status) = child.try_wait().map_err(|error| {
+            AppError::ConnectionFailed(format!("failed to inspect SSH tunnel process: {error}"))
+        })? {
+            return Err(AppError::ConnectionFailed(format!(
+                "SSH tunnel exited before it became ready ({status}). Check the SSH host, user, key/agent and known-host settings"
+            )));
+        }
+
+        if tokio::net::TcpStream::connect(("127.0.0.1", local_port))
+            .await
+            .is_ok()
+        {
+            break;
+        }
+
+        if Instant::now() >= deadline {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(AppError::ConnectionFailed(
+                "SSH tunnel did not become ready within 8 seconds".into(),
+            ));
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    let mut effective = cfg.clone();
+    effective.host = Some("127.0.0.1".into());
+    effective.port = Some(local_port);
+    effective.ssh = None;
+    Ok((effective, Some(child)))
+}
+
+pub async fn stop_tunnel(mut tunnel: Option<Child>) {
+    if let Some(mut child) = tunnel.take() {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
+}
+
+fn reserve_local_port() -> AppResult<u16> {
+    let listener = StdTcpListener::bind(("127.0.0.1", 0)).map_err(|error| {
+        AppError::ConnectionFailed(format!("could not reserve a local SSH tunnel port: {error}"))
+    })?;
+    listener
+        .local_addr()
+        .map(|addr| addr.port())
+        .map_err(|error| {
+            AppError::ConnectionFailed(format!(
+                "could not read the reserved SSH tunnel port: {error}"
+            ))
+        })
+}
+
+/// Holds live database drivers and any OpenSSH child process associated with
+/// each saved connection id.
 pub struct ConnectionRegistry {
     live: RwLock<HashMap<String, Arc<dyn Driver>>>,
+    tunnels: Mutex<HashMap<String, Child>>,
 }
 
 impl ConnectionRegistry {
     pub fn new() -> Self {
         Self {
             live: RwLock::new(HashMap::new()),
+            tunnels: Mutex::new(HashMap::new()),
         }
     }
 
-    /// Open a connection for `cfg` and register it under `cfg.id`. v1 supports
-    /// SQLite; Postgres/MySQL land in Plan 3 (same trait).
     pub async fn open(&self, cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<()> {
-        let driver: Arc<dyn Driver> = match cfg.engine {
-            Engine::Sqlite => Arc::new(SqliteDriver::connect(cfg).await?),
-            Engine::Postgres => {
-                Arc::new(crate::drivers::postgres::PgDriver::connect(cfg, password).await?)
-            }
-            Engine::MySql => {
-                Arc::new(crate::drivers::mysql::MySqlDriver::connect(cfg, password).await?)
-            }
+        self.close(&cfg.id).await;
+        let (effective, tunnel) = prepare_connection(cfg).await?;
+
+        let driver: AppResult<Arc<dyn Driver>> = match effective.engine {
+            Engine::Sqlite => SqliteDriver::connect(&effective)
+                .await
+                .map(|driver| Arc::new(driver) as Arc<dyn Driver>),
+            Engine::Postgres => crate::drivers::postgres::PgDriver::connect(&effective, password)
+                .await
+                .map(|driver| Arc::new(driver) as Arc<dyn Driver>),
+            Engine::MySql => crate::drivers::mysql::MySqlDriver::connect(&effective, password)
+                .await
+                .map(|driver| Arc::new(driver) as Arc<dyn Driver>),
         };
-        self.live.write().await.insert(cfg.id.clone(), driver);
-        Ok(())
+
+        match driver {
+            Ok(driver) => {
+                self.live.write().await.insert(cfg.id.clone(), driver);
+                if let Some(child) = tunnel {
+                    self.tunnels.lock().await.insert(cfg.id.clone(), child);
+                }
+                Ok(())
+            }
+            Err(error) => {
+                stop_tunnel(tunnel).await;
+                Err(error)
+            }
+        }
     }
 
     pub async fn get(&self, id: &str) -> AppResult<Arc<dyn Driver>> {
@@ -45,6 +206,8 @@ impl ConnectionRegistry {
 
     pub async fn close(&self, id: &str) {
         self.live.write().await.remove(id);
+        let tunnel = self.tunnels.lock().await.remove(id);
+        stop_tunnel(tunnel).await;
     }
 }
 
@@ -82,5 +245,10 @@ mod tests {
         d.execute("SELECT 1").await.unwrap();
         reg.close("c1").await;
         assert!(reg.get("c1").await.is_err());
+    }
+
+    #[test]
+    fn reserves_ephemeral_local_port() {
+        assert!(reserve_local_port().unwrap() > 0);
     }
 }
