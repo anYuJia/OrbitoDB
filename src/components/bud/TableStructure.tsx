@@ -24,7 +24,6 @@ export function TableStructure({ table }: { table: string }) {
   const refreshColumns = useStore((s) => s.refreshColumns);
   const openSqlTab = useStore((s) => s.openSqlTab);
   const addColumn = useStore((s) => s.addColumn);
-  const renameColumn = useStore((s) => s.renameColumn);
   const dropColumn = useStore((s) => s.dropColumn);
   const showTableDdl = useStore((s) => s.showTableDdl);
   const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
@@ -149,15 +148,104 @@ export function TableStructure({ table }: { table: string }) {
     });
   };
 
-  const rename = async (column: string) => {
+  const editColumn = async (column: ColumnInfo) => {
     if (readOnly) return;
-    const next = await promptDialog({
-      title: "Rename column",
-      label: "Column name",
-      defaultValue: column,
+
+    const name = await promptDialog({
+      title: "Column properties",
+      label: "Name",
+      defaultValue: column.name,
     });
-    if (!next?.trim() || next.trim() === column) return;
-    await renameColumn(table, column, next.trim());
+    if (!name?.trim()) return;
+
+    const dataType = await promptDialog({
+      title: "Column properties",
+      label: "SQL type",
+      defaultValue: column.dataType || "TEXT",
+      placeholder: "VARCHAR(255), BIGINT, TIMESTAMP…",
+    });
+    if (!dataType?.trim()) return;
+
+    const nullableValue = await promptDialog({
+      title: "Column properties",
+      label: "Nullable",
+      defaultValue: column.nullable ? "yes" : "no",
+      placeholder: "yes or no",
+    });
+    if (!nullableValue?.trim()) return;
+    const nullableNormalized = nullableValue.trim().toLowerCase();
+    if (!["yes", "no", "true", "false"].includes(nullableNormalized)) {
+      toast('Nullable must be "yes" or "no".', "error");
+      return;
+    }
+
+    let defaultValue = column.defaultValue ?? "";
+    if (!column.generated && !/IDENTITY/i.test(column.extra ?? "")) {
+      const nextDefault = await promptDialog({
+        title: "Column properties",
+        label: "Default SQL expression (blank = none)",
+        defaultValue,
+        placeholder: "CURRENT_TIMESTAMP, 0, 'guest'…",
+      });
+      if (nextDefault == null) return;
+      defaultValue = nextDefault;
+    }
+
+    let comment = column.comment ?? "";
+    if (engine !== "sqlite") {
+      const nextComment = await promptDialog({
+        title: "Column properties",
+        label: "Comment (blank = none)",
+        defaultValue: comment,
+      });
+      if (nextComment == null) return;
+      comment = nextComment;
+    }
+
+    const next = {
+      name: name.trim(),
+      dataType: dataType.trim(),
+      nullable: nullableNormalized === "yes" || nullableNormalized === "true",
+      defaultValue: defaultValue.trim() ? defaultValue.trim() : null,
+      comment: comment.trim() ? comment.trim() : null,
+    };
+
+    try {
+      const plan = buildColumnAlterPlan(engine, table, column, next);
+      if (plan.requiresReview) {
+        const script = buildSqliteRebuildSql(
+          table,
+          columns,
+          column.name,
+          next,
+          foreignKeys,
+          indexes,
+          constraints,
+        );
+        openSqlTab(`Rebuild · ${table}.${column.name}`, script);
+        toast("SQLite rebuild SQL opened for review. It was not executed automatically.", "info");
+        return;
+      }
+      if (!plan.statements.length) {
+        toast("No column changes to apply.", "info");
+        return;
+      }
+      const structural =
+        next.name !== column.name ||
+        next.dataType.toLowerCase() !== (column.dataType || "TEXT").toLowerCase() ||
+        next.nullable !== column.nullable;
+      await executeStructureSql(
+        plan.statements,
+        `Updated column ${column.name}`,
+        structural
+          ? `Apply column changes to “${table}.${column.name}”? Type/nullability changes can fail or affect existing data.`
+          : undefined,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMetaError(message);
+      toast(message, "error");
+    }
   };
 
   const remove = async (column: string, primaryKey: boolean) => {
@@ -249,8 +337,22 @@ export function TableStructure({ table }: { table: string }) {
     );
   };
 
+  const constraintOwnedIndexes = useMemo(
+    () =>
+      new Set(
+        constraints
+          .filter((constraint) => constraint.kind === "primary" || constraint.kind === "unique")
+          .map((constraint) => constraint.name)
+          .filter((name): name is string => !!name),
+      ),
+    [constraints],
+  );
+
   const isManagedIndex = (name: string) =>
-    name === "PRIMARY" || name.startsWith("sqlite_autoindex_") || (engine === "postgres" && name.endsWith("_pkey"));
+    name === "PRIMARY" ||
+    name.startsWith("sqlite_autoindex_") ||
+    constraintOwnedIndexes.has(name) ||
+    (engine === "postgres" && name.endsWith("_pkey"));
 
   const createForeignKeyTemplate = async () => {
     if (readOnly || engine === "sqlite" || !activeId) return;
