@@ -94,6 +94,10 @@ impl Driver for SqliteDriver {
         })
     }
 
+    async fn list_schemas(&self) -> AppResult<Vec<String>> {
+        Ok(vec!["main".into(), "temp".into()])
+    }
+
     async fn list_tables(&self) -> AppResult<Vec<TableInfo>> {
         let rows = sqlx::query(
             "SELECT name, type FROM sqlite_master \
