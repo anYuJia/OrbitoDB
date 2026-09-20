@@ -455,29 +455,30 @@ const handlers = {
       for (const t of names) {
         const r = db.exec(`PRAGMA foreign_key_list(${sqliteIdent(t)})`);
         for (const row of r.length ? r[0].values : []) {
-          out.push({ table: t, column: String(row[3]), refTable: String(row[2]), refColumn: row[4] == null ? "" : String(row[4]) });
+          out.push({ name: null, table: t, column: String(row[3]), refTable: String(row[2]), refColumn: row[4] == null ? "" : String(row[4]) });
         }
       }
       return out;
     }
     const sql =
       engine === "postgres"
-        ? `SELECT tc.table_name, kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column
+        ? `SELECT tc.constraint_name, tc.table_name, kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column
            FROM information_schema.table_constraints tc
            JOIN information_schema.key_column_usage kcu
              ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
            JOIN information_schema.constraint_column_usage ccu
              ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = current_schema()`
-        : `SELECT table_name, column_name, referenced_table_name, referenced_column_name
+        : `SELECT constraint_name, table_name, column_name, referenced_table_name, referenced_column_name
            FROM information_schema.key_column_usage
            WHERE referenced_table_name IS NOT NULL AND table_schema = database()`;
     const raw = await rawArrayRows(engine, conn, sql);
     return raw.rows.map((r) => ({
-      table: String(r[0]),
-      column: String(r[1]),
-      refTable: String(r[2]),
-      refColumn: String(r[3]),
+      name: r[0] == null ? null : String(r[0]),
+      table: String(r[1]),
+      column: String(r[2]),
+      refTable: String(r[3]),
+      refColumn: String(r[4]),
     }));
   },
 
