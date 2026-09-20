@@ -36,6 +36,32 @@ function isManagedIndex(engine: Engine, name: string): boolean {
   return name === "PRIMARY" || name.startsWith("sqlite_autoindex_") || (engine === "postgres" && name.endsWith("_pkey"));
 }
 
+function sqlString(value: string): string {
+  return "'" + value.replace(/'/g, "''") + "'";
+}
+
+function renderDefault(engine: Engine, column: ColumnInfo): string | null {
+  const value = column.defaultValue;
+  if (value == null || value === "") return value === "" && engine === "mysql" ? "''" : null;
+  if (engine !== "mysql") return value;
+
+  const trimmed = value.trim();
+  if (/^'.*'$/.test(trimmed) || /^".*"$/.test(trimmed)) return trimmed;
+  if (/^(NULL|CURRENT_(?:TIMESTAMP|DATE|TIME)(?:\(\d+\))?|LOCALTIME(?:STAMP)?(?:\(\d+\))?)$/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^[A-Z_][A-Z0-9_]*\s*\([^)]*\)$/i.test(trimmed)) return trimmed;
+  if (
+    /\b(?:tinyint|smallint|mediumint|int|integer|bigint|decimal|numeric|float|double|real|bit|bool|boolean|year)\b/i.test(
+      column.dataType,
+    ) &&
+    /^[-+]?\d+(?:\.\d+)?$/.test(trimmed)
+  ) {
+    return trimmed;
+  }
+  return sqlString(value);
+}
+
 export function buildTableDdl(
   engine: Engine,
   table: string,
@@ -49,8 +75,16 @@ export function buildTableDdl(
   const primaryKeys = columns.filter((column) => column.isPrimaryKey);
   const defs = columns.map((column) => {
     let line = `  ${q(column.name)} ${column.dataType || "TEXT"}`;
+    if (column.generated && !column.generated.includes("expression unavailable")) {
+      if (engine === "postgres") line += ` GENERATED ALWAYS AS (${column.generated}) STORED`;
+      else if (engine === "mysql") line += ` GENERATED ALWAYS AS (${column.generated})`;
+    } else {
+      const defaultSql = renderDefault(engine, column);
+      if (defaultSql != null) line += ` DEFAULT ${defaultSql}`;
+    }
     if (primaryKeys.length === 1 && column.isPrimaryKey) line += " PRIMARY KEY";
     else if (!column.nullable) line += " NOT NULL";
+    if (engine === "mysql" && column.comment) line += ` COMMENT ${sqlString(column.comment)}`;
     return line;
   });
 
@@ -71,11 +105,38 @@ export function buildTableDdl(
 
   const statements = [
     `-- Generated from OrbitoDB schema metadata for ${engine}.`,
-    "-- Defaults, CHECK constraints, generated expressions, triggers and engine-specific options may require review.",
+    "-- CHECK constraints, triggers and engine-specific table options may still require review.",
     `CREATE TABLE ${q(table)} (`,
     defs.join(",\n"),
     ");",
   ];
+
+  const unavailableGenerated = columns.filter(
+    (column) => column.generated?.includes("expression unavailable"),
+  );
+  if (unavailableGenerated.length) {
+    statements.push("", "-- Generated columns requiring manual review");
+    for (const column of unavailableGenerated) {
+      statements.push(
+        `-- ${q(column.name)} is ${column.generated}; SQLite metadata does not expose the original expression.`,
+      );
+    }
+  }
+
+  const commented = columns.filter((column) => column.comment);
+  if (commented.length && engine === "postgres") {
+    statements.push("", "-- Column comments");
+    for (const column of commented) {
+      statements.push(
+        `COMMENT ON COLUMN ${q(table)}.${q(column.name)} IS ${sqlString(column.comment ?? "")};`,
+      );
+    }
+  } else if (commented.length && engine === "sqlite") {
+    statements.push("", "-- Column comments (SQLite does not persist native column comments)");
+    for (const column of commented) {
+      statements.push(`-- ${q(column.name)}: ${column.comment}`);
+    }
+  }
 
   const secondary = indexes.filter((index) => !isManagedIndex(engine, index.name));
   if (secondary.length) statements.push("", "-- Secondary indexes");
