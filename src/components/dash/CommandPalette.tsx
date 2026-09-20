@@ -21,7 +21,7 @@ import { useStore } from "../../state/store";
 type Icon = ComponentType<{ size?: number; stroke?: number }>;
 type Cmd = { id: string; group: string; label: string; hint?: string; Icon: Icon; run: () => void };
 
-const GROUPS = ["Actions", "Navigate", "Connections", "Tables", "Scripts", "Favorites"];
+const GROUPS = ["Actions", "Navigate", "Connections", "Tables", "Scripts", "Starred"];
 
 export function CommandPalette({ onAddServer }: { onAddServer: () => void }) {
   const [open, setOpen] = useState(false);
@@ -117,7 +117,9 @@ export function CommandPalette({ onAddServer }: { onAddServer: () => void }) {
           setView("history");
         }),
       },
-      { id: "n-settings", group: "Navigate", label: "Settings", Icon: IconSettings, run: act(() => setTopView("settings")) },
+      { id: "n-schema", group: "Navigate", label: "Schema tools", Icon: IconDatabase, run: act(() => setTopView("design")) },
+      { id: "n-utils", group: "Navigate", label: "Database utilities", Icon: IconBolt, run: act(() => setTopView("automation")) },
+      { id: "n-settings", group: "Navigate", label: "Connection settings", Icon: IconSettings, run: act(() => setTopView("settings")) },
     ];
     for (const c of connections) {
       list.push({
@@ -142,7 +144,7 @@ export function CommandPalette({ onAddServer }: { onAddServer: () => void }) {
       list.push({ id: `s-${s.id}`, group: "Scripts", label: s.name, Icon: IconFileText, run: act(() => loadSql(s.sql)) });
     }
     for (const f of favorites) {
-      list.push({ id: `fav-${f.id}`, group: "Favorites", label: f.name, Icon: IconStar, run: act(() => loadSql(f.sql)) });
+      list.push({ id: `fav-${f.id}`, group: "Starred", label: f.name, Icon: IconStar, run: act(() => loadSql(f.sql)) });
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
