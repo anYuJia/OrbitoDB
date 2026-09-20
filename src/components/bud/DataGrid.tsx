@@ -18,15 +18,6 @@ function typeIcon(t: string): string {
   return "T";
 }
 
-const PILL_COLORS: [string, string][] = [
-  ["#36275f", "#c4b5fd"],
-  ["#123a2c", "#6ee7b7"],
-  ["#3a2a10", "#fcd34d"],
-  ["#0f3040", "#7dd3fc"],
-  ["#3a1230", "#f9a8d4"],
-  ["#2a1240", "#d8b4fe"],
-];
-
 /**
  * Loading placeholder that mirrors the table it's about to show: the real
  * column headers are rendered (so nothing shifts when data arrives) and only
@@ -305,27 +296,23 @@ export function DataGrid() {
       "TEXT";
     void addColumn(table, { name: name.trim(), dataType, nullable: true, primaryKey: false });
   };
-  const pill = (v: unknown) => {
-    const s = String(v);
-    let h = 0;
-    for (let k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) >>> 0;
-    const [bg, fg] = PILL_COLORS[h % PILL_COLORS.length];
-    return (
-      <span className="bud-pill" style={{ background: bg, color: fg }}>
-        {s}
-      </span>
-    );
-  };
+  const pill = (v: unknown) => <span className="odb-value-pill">{String(v)}</span>;
 
   return (
     <div className="bud-grid-area">
-      <div className="bud-grid-toolbar">
+      <div className="bud-grid-toolbar odb-grid-toolbar">
+        <div className="odb-grid-summary">
+          <b>{table}</b>
+          <span>{result.columns.length} columns</span>
+          <span>·</span>
+          <span>{result.rows.length.toLocaleString()} loaded</span>
+        </div>
         <div className="bud-grid-search">
           <IconSearch size={13} stroke={2} />
           <input
             value={gridFilter}
-            placeholder="Filter rows…"
-            aria-label="Filter rows"
+            placeholder="Search rows"
+            aria-label="Search rows"
             onChange={(e) => {
               setGridFilter(e.target.value);
               setPage(0);
@@ -340,7 +327,6 @@ export function DataGrid() {
         {hasFilters && (
           <span className="bud-grid-toolbar-info">
             {filteredOrder.length.toLocaleString()} match{filteredOrder.length === 1 ? "" : "es"}
-            {result.rows.length >= 1000 ? " (first 1,000)" : ""}
           </span>
         )}
         <span className="bud-grid-foot-spacer" />
@@ -354,25 +340,34 @@ export function DataGrid() {
               <input type="checkbox" checked={allSelected} onChange={selectAllRows} aria-label="Select all rows" />
             </th>
             <th className="bud-rownum" />
-            {result.columns.map((c, i) => (
-              <th key={i} className={sort?.col === i ? "sorted" : ""}>
-                <button className="bud-th-sort" title={`Sort by ${c.name}`} onClick={() => toggleSort(i)}>
-                  <span className="bud-th-ic">{typeIcon(c.dataType)}</span>
-                  <span className="bud-th-name">{c.name}</span>
-                  {sort?.col === i && <span className="bud-th-arrow">{sort.dir === 1 ? "↑" : "↓"}</span>}
-                </button>
-                <button
-                  className="bud-th-menu"
-                  title="Edit column"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setColEditor({ column: colInfo(c.name), x: r.left - 280, y: r.bottom });
-                  }}
-                >
-                  ⋯
-                </button>
-              </th>
-            ))}
+            {result.columns.map((c, i) => {
+              const info = colInfo(c.name);
+              return (
+                <th key={i} className={sort?.col === i ? "sorted" : ""}>
+                  <button className="bud-th-sort odb-th-sort" title={`Sort by ${c.name}`} onClick={() => toggleSort(i)}>
+                    <span className="bud-th-ic">{typeIcon(info.dataType || c.dataType)}</span>
+                    <span className="odb-th-copy">
+                      <span className="odb-th-name-line">
+                        <span className="bud-th-name">{c.name}</span>
+                        {info.isPrimaryKey && <span className="odb-pk-tag">PK</span>}
+                      </span>
+                      <span className="odb-th-type">{info.dataType || c.dataType}</span>
+                    </span>
+                    {sort?.col === i && <span className="bud-th-arrow">{sort.dir === 1 ? "↑" : "↓"}</span>}
+                  </button>
+                  <button
+                    className="bud-th-menu"
+                    title="Column actions"
+                    onClick={(e) => {
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setColEditor({ column: info, x: r.left - 280, y: r.bottom });
+                    }}
+                  >
+                    ⋯
+                  </button>
+                </th>
+              );
+            })}
             <th className="bud-addcol">
               <button className="bud-addcol-btn" title="Add column" onClick={addColumnPrompt} disabled={readOnly}>
                 <IconPlus size={14} stroke={2} />
