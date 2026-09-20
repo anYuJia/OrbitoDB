@@ -264,7 +264,8 @@ impl Driver for PgDriver {
                     NOT a.attnotnull AS is_nullable, \
                     CASE WHEN a.attgenerated = '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS column_default, \
                     CASE WHEN a.attgenerated <> '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS generation_expression, \
-                    pg_catalog.col_description(a.attrelid, a.attnum) AS column_comment \
+                    pg_catalog.col_description(a.attrelid, a.attnum) AS column_comment, \
+                    CASE a.attidentity WHEN 'a' THEN 'IDENTITY ALWAYS' WHEN 'd' THEN 'IDENTITY BY DEFAULT' ELSE NULL END AS column_extra \
              FROM pg_catalog.pg_attribute a \
              JOIN pg_catalog.pg_class cls ON cls.oid = a.attrelid \
              JOIN pg_catalog.pg_namespace ns ON ns.oid = cls.relnamespace \
@@ -292,6 +293,7 @@ impl Driver for PgDriver {
                         .ok()
                         .flatten(),
                     comment: r.try_get::<Option<String>, _>("column_comment").ok().flatten(),
+                    extra: r.try_get::<Option<String>, _>("column_extra").ok().flatten(),
                     name,
                 }
             })
