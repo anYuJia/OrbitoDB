@@ -57,6 +57,7 @@ export interface ColumnInfo {
 
 /** A foreign-key relationship: table.column references refTable.refColumn. */
 export interface ForeignKey {
+  name?: string | null;
   table: string;
   column: string;
   refTable: string;
