@@ -3,7 +3,6 @@ import {
   IconFilePlus,
   IconFolderOpen,
   IconHistory,
-  IconKeyboard,
   IconLayoutSidebar,
   IconPlayerPlay,
   IconPlugConnected,
@@ -16,13 +15,12 @@ import { MotionButton } from "../../lib/motion";
 import { promptDialog } from "../../state/dialog";
 import { useStore } from "../../state/store";
 
-/** Mac-style window controls (decorative, matches DbVisualizer on macOS). */
 function TrafficLights() {
   return (
-    <div className="bud-traffic" aria-hidden>
-      <span className="tl r" />
-      <span className="tl y" />
-      <span className="tl g" />
+    <div className="odb-traffic" aria-hidden>
+      <span className="r" />
+      <span className="y" />
+      <span className="g" />
     </div>
   );
 }
@@ -56,86 +54,99 @@ export function TopNav({
 
   const save = async () => {
     if (!sql.trim()) return;
-    const name = await promptDialog({ title: "Save SQL script", label: "Name", placeholder: "e.g. monthly report" });
+    const name = await promptDialog({
+      title: "Save SQL script",
+      label: "Name",
+      placeholder: "e.g. monthly-report",
+    });
     if (name?.trim()) saveScript(name.trim(), sql);
   };
 
   return (
-    <div className="bud-titlebar">
-      <TrafficLights />
-      <div className="bud-tb-tools">
-        <button title={sidebarHidden ? "Show sidebar" : "Hide sidebar"} className={sidebarHidden ? "" : "on"} onClick={onToggleSidebar}>
-          <IconLayoutSidebar size={16} stroke={1.6} />
-        </button>
-        <span className="bud-tb-divider" />
-        <button title="New SQL editor" onClick={newEditor}>
-          <IconFilePlus size={16} stroke={1.6} />
-        </button>
-        <button title="Open .sql file" onClick={() => fileRef.current?.click()}>
-          <IconFolderOpen size={16} stroke={1.6} />
-        </button>
-        <button title="Save as script" onClick={() => void save()}>
-          <IconDeviceFloppy size={16} stroke={1.6} />
-        </button>
-        <span className="bud-tb-divider" />
-        <button title="New connection" onClick={onAddServer}>
-          <IconPlugConnected size={16} stroke={1.6} />
-        </button>
-        <button title="Reconnect" onClick={() => activeId && void openAndIntrospect(activeId)} disabled={!activeId}>
-          <IconRefresh size={16} stroke={1.6} />
-        </button>
-        <span className="bud-tb-divider" />
-        <MotionButton
-          className="bud-tb-run"
-          title="Execute (⌘↵)"
-          onClick={() => void run()}
-          disabled={!activeId}
-          whileTap={{ scale: 0.86 }}
+    <header className="bud-titlebar odb-titlebar">
+      <div className="odb-title-left">
+        <TrafficLights />
+        <button
+          className={`odb-icon-btn ${sidebarHidden ? "" : "on"}`}
+          title={sidebarHidden ? "Show database explorer" : "Hide database explorer"}
+          onClick={onToggleSidebar}
         >
-          <IconPlayerPlay size={16} stroke={1.7} />
-        </MotionButton>
-        <span className="bud-tb-divider" />
-        <button title="SQL history" onClick={() => setView("history")}>
-          <IconHistory size={16} stroke={1.6} />
+          <IconLayoutSidebar size={16} stroke={1.7} />
         </button>
-        <button title="Settings" onClick={() => setTopView("settings")}>
-          <IconSettings size={16} stroke={1.6} />
+        <div className="odb-brand">
+          <img src="/orbitodb-logo.svg" alt="" />
+          <span>OrbitoDB</span>
+        </div>
+      </div>
+
+      <div className="odb-title-center">
+        <div className={`odb-connection-pill ${active ? "connected" : ""}`}>
+          <span className="odb-connection-dot" />
+          <span className="odb-connection-name">{active?.name ?? "No connection"}</span>
+          {active && <span className="odb-connection-meta">{active.engine}</span>}
+        </div>
+      </div>
+
+      <div className="odb-title-actions">
+        <button className="odb-icon-btn" title="New SQL tab" onClick={newEditor}>
+          <IconFilePlus size={16} stroke={1.7} />
         </button>
-        <button title="Keyboard shortcuts (?)" onClick={() => window.dispatchEvent(new Event("orbitodb:shortcuts"))}>
-          <IconKeyboard size={16} stroke={1.6} />
+        <button className="odb-icon-btn" title="Open SQL file" onClick={() => fileRef.current?.click()}>
+          <IconFolderOpen size={16} stroke={1.7} />
         </button>
-        <span className="bud-tb-divider" />
-        <MotionButton
-          className="bud-cmdk-pill"
+        <button className="odb-icon-btn" title="Save query" disabled={!sql.trim()} onClick={() => void save()}>
+          <IconDeviceFloppy size={16} stroke={1.7} />
+        </button>
+        <span className="odb-title-separator" />
+        <button className="odb-icon-btn" title="New connection" onClick={onAddServer}>
+          <IconPlugConnected size={16} stroke={1.7} />
+        </button>
+        <button
+          className="odb-icon-btn"
+          title="Reconnect"
+          disabled={!activeId}
+          onClick={() => activeId && void openAndIntrospect(activeId)}
+        >
+          <IconRefresh size={16} stroke={1.7} />
+        </button>
+        <button className="odb-icon-btn" title="Query history" onClick={() => setView("history")}>
+          <IconHistory size={16} stroke={1.7} />
+        </button>
+        <button className="odb-icon-btn" title="Settings" onClick={() => setTopView("settings")}>
+          <IconSettings size={16} stroke={1.7} />
+        </button>
+        <button
+          className="odb-search-btn"
           title="Command palette (⌘K)"
           onClick={() => window.dispatchEvent(new Event("orbitodb:cmdk"))}
         >
-          <IconSearch size={13} stroke={1.8} />
+          <IconSearch size={14} stroke={1.8} />
           <span>Search</span>
           <kbd>⌘K</kbd>
+        </button>
+        <MotionButton
+          className="odb-run-btn"
+          title="Execute query (⌘↵)"
+          onClick={() => void run()}
+          disabled={!activeId}
+          whileTap={{ scale: 0.96 }}
+        >
+          <IconPlayerPlay size={14} stroke={2} />
+          <span>Run</span>
         </MotionButton>
-      </div>
-
-      <div className={`bud-tb-conn ${active ? "on" : ""}`} title={active ? `Connected to ${active.name}` : "No active connection"}>
-        <span className="bud-tb-conn-dot" />
-        <span>{active ? `Connected · ${active.name}` : "Disconnected"}</span>
-      </div>
-      <div className="bud-tb-brand">
-        <img className="bud-tb-logo" src="/orbitodb-logo.svg" alt="" />
-        <span className="bud-tb-word">OrbitoDB</span>
       </div>
 
       <input
         ref={fileRef}
         type="file"
         accept=".sql,text/plain"
-        style={{ display: "none" }}
+        hidden
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) openFile(f);
           e.target.value = "";
         }}
       />
-    </div>
+    </header>
   );
 }
