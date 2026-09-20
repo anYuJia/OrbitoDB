@@ -96,6 +96,7 @@ export const webBackend: Backend = {
     pushHistory(id, sql);
     return r;
   },
+  runQuerySilent: (id, sql) => sub(id).runQuerySilent(id, sql),
   listSchemas: (id) => sub(id).listSchemas(id),
   listTables: (id) => sub(id).listTables(id),
   listColumns: (id, table) => sub(id).listColumns(id, table),
