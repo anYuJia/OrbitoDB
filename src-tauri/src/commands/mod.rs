@@ -57,11 +57,14 @@ pub async fn test_connection(
         Some(pw) => Some(pw),
         None => secrets::get_password(&cfg.id)?,
     };
-    match cfg.engine {
-        Engine::Sqlite => crate::drivers::sqlite::SqliteDriver::test(&cfg).await,
-        Engine::Postgres => crate::drivers::postgres::PgDriver::test(&cfg, password.as_deref()).await,
-        Engine::MySql => crate::drivers::mysql::MySqlDriver::test(&cfg, password.as_deref()).await,
-    }
+    let (effective, tunnel) = crate::connections::prepare_connection(&cfg).await?;
+    let result = match effective.engine {
+        Engine::Sqlite => crate::drivers::sqlite::SqliteDriver::test(&effective).await,
+        Engine::Postgres => crate::drivers::postgres::PgDriver::test(&effective, password.as_deref()).await,
+        Engine::MySql => crate::drivers::mysql::MySqlDriver::test(&effective, password.as_deref()).await,
+    };
+    crate::connections::stop_tunnel(tunnel).await;
+    result
 }
 
 /// List the databases available on a server (without a database selected yet).
@@ -76,11 +79,14 @@ pub async fn list_databases(
         Some(pw) => Some(pw),
         None => secrets::get_password(&cfg.id)?,
     };
-    match cfg.engine {
+    let (effective, tunnel) = crate::connections::prepare_connection(&cfg).await?;
+    let result = match effective.engine {
         Engine::Sqlite => Ok(vec![]),
-        Engine::Postgres => crate::drivers::postgres::PgDriver::list_databases(&cfg, password.as_deref()).await,
-        Engine::MySql => crate::drivers::mysql::MySqlDriver::list_databases(&cfg, password.as_deref()).await,
-    }
+        Engine::Postgres => crate::drivers::postgres::PgDriver::list_databases(&effective, password.as_deref()).await,
+        Engine::MySql => crate::drivers::mysql::MySqlDriver::list_databases(&effective, password.as_deref()).await,
+    };
+    crate::connections::stop_tunnel(tunnel).await;
+    result
 }
 
 /// Create a new database on the server.
@@ -95,11 +101,14 @@ pub async fn create_database(
         Some(pw) => Some(pw),
         None => secrets::get_password(&cfg.id)?,
     };
-    match cfg.engine {
+    let (effective, tunnel) = crate::connections::prepare_connection(&cfg).await?;
+    let result = match effective.engine {
         Engine::Sqlite => Err(AppError::Internal("SQLite has no server databases".into())),
-        Engine::Postgres => crate::drivers::postgres::PgDriver::create_database(&cfg, password.as_deref(), &name).await,
-        Engine::MySql => crate::drivers::mysql::MySqlDriver::create_database(&cfg, password.as_deref(), &name).await,
-    }
+        Engine::Postgres => crate::drivers::postgres::PgDriver::create_database(&effective, password.as_deref(), &name).await,
+        Engine::MySql => crate::drivers::mysql::MySqlDriver::create_database(&effective, password.as_deref(), &name).await,
+    };
+    crate::connections::stop_tunnel(tunnel).await;
+    result
 }
 
 #[tauri::command]
