@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { getBackend } from "../ipc/backend";
 import { inferColumns } from "../lib/csv";
 import { buildTableDdl } from "../lib/ddl";
+import { buildCreateViewSql, buildDropDatabaseObjectSql } from "../lib/databaseObjects";
 import { resolveParams } from "../lib/params";
 import { confirmDelete, confirmDialog } from "./dialog";
 import { confirmIfDestructive, confirmProdWrite, isWrite } from "./safety";
@@ -207,6 +208,9 @@ export interface AppStore {
   openAndIntrospect: (id: string) => Promise<void>;
   expandTable: (table: string) => Promise<void>;
   refreshColumns: (table: string) => Promise<void>;
+  refreshDatabaseObjects: () => Promise<void>;
+  createDatabaseView: (name: string, query: string) => Promise<boolean>;
+  dropDatabaseObject: (object: DatabaseObjectInfo) => Promise<boolean>;
   setSql: (sql: string) => void;
   newEditor: () => void;
   openSqlTab: (name: string, sql: string) => void;
@@ -484,6 +488,85 @@ export const useStore = create<AppStore>((set, get) => ({
         columnsByTable: { ...s.schema.columnsByTable, [table]: cols },
       },
     }));
+  },
+
+  refreshDatabaseObjects: async () => {
+    const id = get().activeConnectionId;
+    if (!id) return;
+    const [tables, objects] = await Promise.all([
+      backend.listTables(id),
+      backend.listDatabaseObjects(id),
+    ]);
+    set((s) => ({
+      schema: {
+        ...s.schema,
+        tables,
+        objects,
+      },
+    }));
+  },
+
+  createDatabaseView: async (name, query) => {
+    const id = get().activeConnectionId;
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
+    const conn = get().connections.find((item) => item.id === id);
+    if (!conn) return false;
+    let sql: string;
+    try {
+      sql = buildCreateViewSql(conn.engine, name, query);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+      return false;
+    }
+    if (!(await confirmProdWrite(conn, sql))) return false;
+    try {
+      await backend.runQuerySilent(id, sql);
+      await get().refreshDatabaseObjects();
+      toast(`Created view “${name.trim()}”`, "success");
+      return true;
+    } catch (error) {
+      const err = normalizeError(error);
+      set({ error: err });
+      toast(err.message ?? "Create view failed", "error");
+      return false;
+    }
+  },
+
+  dropDatabaseObject: async (object) => {
+    const id = get().activeConnectionId;
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
+    const conn = get().connections.find((item) => item.id === id);
+    if (!conn) return false;
+    let sql: string;
+    try {
+      sql = buildDropDatabaseObjectSql(conn.engine, object);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+      return false;
+    }
+    if (!(await confirmProdWrite(conn, sql))) return false;
+    try {
+      await backend.runQuerySilent(id, sql);
+      await get().refreshDatabaseObjects();
+      if (object.kind === "view" && get().editTable?.table === object.name) {
+        set({ editTable: null, result: null, selection: [] });
+      }
+      toast(`Dropped ${object.kind} “${object.name}”`, "success");
+      return true;
+    } catch (error) {
+      const err = normalizeError(error);
+      set({ error: err });
+      toast(err.message ?? `Drop ${object.kind} failed`, "error");
+      return false;
+    }
   },
 
   setSql: (sql) =>
