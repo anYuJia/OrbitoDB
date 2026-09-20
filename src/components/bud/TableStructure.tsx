@@ -12,11 +12,6 @@ function quoteIdentifier(engine: Engine, value: string): string {
     : '"' + value.replace(/"/g, '""') + '"';
 }
 
-function columnIndex(result: QueryResult, ...names: string[]): number {
-  const wanted = new Set(names.map((name) => name.toLowerCase()));
-  return result.columns.findIndex((column) => wanted.has(column.name.toLowerCase()));
-}
-
 export function TableStructure({ table }: { table: string }) {
   const columns = useStore((s) => s.schema.columnsByTable[table] ?? []);
   const activeId = useStore((s) => s.activeConnectionId);
