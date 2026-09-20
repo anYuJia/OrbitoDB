@@ -34,6 +34,7 @@ type MenuState = { kind: "rowactions" | "generate"; x: number; y: number } | nul
 
 export function DataView() {
   const editTable = useStore((s) => s.editTable);
+  const connections = useStore((s) => s.connections);
   const activeId = useStore((s) => s.activeConnectionId);
   const inspectorRow = useStore((s) => s.inspectorRow);
   const result = useStore((s) => s.result);
@@ -125,8 +126,12 @@ export function DataView() {
           <button
             key={ed.id}
             className={`bud-qtab ${view === "sql" && activeEditorId === ed.id ? "on" : ""}`}
-            title="Double-click to rename"
-            onClick={() => selectEditor(ed.id)}
+            title={
+              ed.connectionId
+                ? `${ed.name} · ${connections.find((connection) => connection.id === ed.connectionId)?.name ?? "Saved connection"} · Double-click to rename`
+                : `${ed.name} · No pinned connection · Double-click to rename`
+            }
+            onClick={() => void selectEditor(ed.id)}
             onDoubleClick={async () => {
               const next = await promptDialog({
                 title: "Rename SQL tab",
@@ -138,6 +143,7 @@ export function DataView() {
             }}
           >
             <IconCode size={14} stroke={1.7} className="bud-qtab-ic sql" />
+            {ed.connectionId && <span className="odb-qtab-connection-dot" aria-hidden />}
             <span>{ed.name}</span>
             <span
               className="bud-qtab-x"
