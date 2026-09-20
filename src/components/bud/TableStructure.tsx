@@ -362,8 +362,10 @@ export function TableStructure({ table }: { table: string }) {
             <span>#</span>
             <span>Name</span>
             <span>Type</span>
+            <span>Default</span>
             <span>Nullable</span>
             <span>Key</span>
+            <span>Comment</span>
             <span />
           </div>
           {columns.length === 0 ? (
@@ -376,11 +378,24 @@ export function TableStructure({ table }: { table: string }) {
                   {column.isPrimaryKey && <IconKey size={12} stroke={2} />}
                   <code>{column.name}</code>
                 </span>
-                <span className="type"><code>{column.dataType || "TEXT"}</code></span>
+                <span className="type">
+                  <code title={column.dataType || "TEXT"}>{column.dataType || "TEXT"}</code>
+                  {column.generated && (
+                    <small title={column.generated}>
+                      {column.generated.includes("expression unavailable") ? column.generated.split(" ")[0] + " generated" : "generated"}
+                    </small>
+                  )}
+                </span>
+                <span className="default" title={column.defaultValue ?? undefined}>
+                  <code>{column.defaultValue ?? "—"}</code>
+                </span>
                 <span className={column.nullable ? "nullable yes" : "nullable no"}>
                   {column.nullable ? "YES" : "NO"}
                 </span>
                 <span className="key">{column.isPrimaryKey ? "PRIMARY" : "—"}</span>
+                <span className="comment" title={column.comment ?? undefined}>
+                  {column.comment || "—"}
+                </span>
                 <span className="actions">
                   <button title="Rename column" onClick={() => void rename(column.name)} disabled={readOnly}>
                     <IconPencil size={13} stroke={1.8} />
