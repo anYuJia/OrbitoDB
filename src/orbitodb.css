@@ -1276,6 +1276,30 @@ textarea:focus-visible {
   box-shadow: inset 2px 0 0 var(--odb-primary);
 }
 
+.odb-object-row {
+  min-width: 0;
+  cursor: default;
+}
+
+.odb-object-row .bud-src-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-object-meta {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--odb-text-3);
+  font-family: var(--odb-mono);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
 /* Query context is a compact IDE status strip, not a settings form. */
 
 .odb-query-context {
