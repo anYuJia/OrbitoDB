@@ -1,0 +1,402 @@
+use crate::connections::ConnectionRegistry;
+use crate::error::{AppError, AppResult};
+use crate::schema;
+use crate::secrets;
+use crate::store::{HistoryEntry, Store};
+use crate::types::{ColumnDef, ColumnInfo, ConnectionConfig, Engine, QueryResult, TableInfo};
+use tauri::State;
+
+/// Shared application state, managed by Tauri and injected into commands.
+pub struct AppState {
+    pub registry: ConnectionRegistry,
+    pub store: Store,
+}
+
+/// Split rows into fixed-size chunks for streamed emission (consumed by the
+/// frontend grid in Plan 2). `size == 0` yields a single chunk.
+pub fn chunk_rows(rows: &[Vec<serde_json::Value>], size: usize) -> Vec<&[Vec<serde_json::Value>]> {
+    if size == 0 {
+        return vec![rows];
+    }
+    rows.chunks(size).collect()
+}
+
+#[tauri::command]
+pub async fn list_connections(state: State<'_, AppState>) -> AppResult<Vec<ConnectionConfig>> {
+    state.store.list_connections().await
+}
+
+#[tauri::command]
+pub async fn save_connection(
+    state: State<'_, AppState>,
+    cfg: ConnectionConfig,
+    password: Option<String>,
+) -> AppResult<()> {
+    state.store.upsert_connection(&cfg).await?;
+    if let Some(pw) = password {
+        secrets::set_password(&cfg.id, &pw)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_connection(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    state.store.delete_connection(&id).await?;
+    secrets::delete_password(&id)?;
+    state.registry.close(&id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn test_connection(cfg: ConnectionConfig, password: Option<String>) -> AppResult<()> {
+    match cfg.engine {
+        Engine::Sqlite => crate::drivers::sqlite::SqliteDriver::test(&cfg).await,
+        Engine::Postgres => {
+            crate::drivers::postgres::PgDriver::test(&cfg, password.as_deref()).await
+        }
+        Engine::MySql => {
+            crate::drivers::mysql::MySqlDriver::test(&cfg, password.as_deref()).await
+        }
+    }
+}
+
+/// List the databases available on a server (without a database selected yet).
+/// Doubles as a reachability/credentials check for the Add-source flow.
+#[tauri::command]
+pub async fn list_databases(cfg: ConnectionConfig, password: Option<String>) -> AppResult<Vec<String>> {
+    match cfg.engine {
+        Engine::Sqlite => Ok(vec![]),
+        Engine::Postgres => {
+            crate::drivers::postgres::PgDriver::list_databases(&cfg, password.as_deref()).await
+        }
+        Engine::MySql => {
+            crate::drivers::mysql::MySqlDriver::list_databases(&cfg, password.as_deref()).await
+        }
+    }
+}
+
+/// Create a new database on the server.
+#[tauri::command]
+pub async fn create_database(
+    cfg: ConnectionConfig,
+    password: Option<String>,
+    name: String,
+) -> AppResult<()> {
+    match cfg.engine {
+        Engine::Sqlite => Err(AppError::Internal("SQLite has no server databases".into())),
+        Engine::Postgres => {
+            crate::drivers::postgres::PgDriver::create_database(&cfg, password.as_deref(), &name).await
+        }
+        Engine::MySql => {
+            crate::drivers::mysql::MySqlDriver::create_database(&cfg, password.as_deref(), &name).await
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn open_connection(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    let conns = state.store.list_connections().await?;
+    let cfg = conns
+        .into_iter()
+        .find(|c| c.id == id)
+        .ok_or_else(|| AppError::NotFound(format!("no saved connection: {id}")))?;
+    let pw = secrets::get_password(&id)?;
+    state.registry.open(&cfg, pw.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn close_connection(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    state.registry.close(&id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn run_query(
+    state: State<'_, AppState>,
+    connection_id: String,
+    sql: String,
+) -> AppResult<QueryResult> {
+    let driver = state.registry.get(&connection_id).await?;
+    let result = driver.execute(&sql).await?;
+    // History failure must never fail the query itself.
+    let _ = state.store.add_history(&connection_id, &sql).await;
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn list_tables(
+    state: State<'_, AppState>,
+    connection_id: String,
+) -> AppResult<Vec<TableInfo>> {
+    let driver = state.registry.get(&connection_id).await?;
+    schema::introspect_tables(driver.as_ref()).await
+}
+
+#[tauri::command]
+pub async fn list_columns(
+    state: State<'_, AppState>,
+    connection_id: String,
+    table: String,
+) -> AppResult<Vec<ColumnInfo>> {
+    let driver = state.registry.get(&connection_id).await?;
+    schema::introspect_columns(driver.as_ref(), &table).await
+}
+
+#[tauri::command]
+pub async fn recent_history(
+    state: State<'_, AppState>,
+    limit: i64,
+) -> AppResult<Vec<HistoryEntry>> {
+    state.store.recent_history(limit).await
+}
+
+async fn engine_of(store: &Store, connection_id: &str) -> AppResult<Engine> {
+    store
+        .list_connections()
+        .await?
+        .into_iter()
+        .find(|c| c.id == connection_id)
+        .map(|c| c.engine)
+        .ok_or_else(|| AppError::NotFound(format!("no saved connection: {connection_id}")))
+}
+
+#[tauri::command]
+pub async fn update_cell(
+    state: State<'_, AppState>,
+    connection_id: String,
+    table: String,
+    pk_column: String,
+    pk_value: serde_json::Value,
+    column: String,
+    value: serde_json::Value,
+) -> AppResult<()> {
+    let engine = engine_of(&state.store, &connection_id).await?;
+    let driver = state.registry.get(&connection_id).await?;
+    let sql = crate::editing::build_update(engine, &table, &column, &value, &pk_column, &pk_value);
+    driver.execute(&sql).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_row(
+    state: State<'_, AppState>,
+    connection_id: String,
+    table: String,
+    pk_column: String,
+    pk_value: serde_json::Value,
+) -> AppResult<()> {
+    let engine = engine_of(&state.store, &connection_id).await?;
+    let driver = state.registry.get(&connection_id).await?;
+    let sql = crate::editing::build_delete(engine, &table, &pk_column, &pk_value);
+    driver.execute(&sql).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn insert_row(
+    state: State<'_, AppState>,
+    connection_id: String,
+    table: String,
+    columns: Vec<String>,
+    values: Vec<serde_json::Value>,
+) -> AppResult<()> {
+    let engine = engine_of(&state.store, &connection_id).await?;
+    let driver = state.registry.get(&connection_id).await?;
+    let sql = crate::editing::build_insert(engine, &table, &columns, &values);
+    driver.execute(&sql).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn drop_table(
+    state: State<'_, AppState>,
+    connection_id: String,
+    table: String,
+) -> AppResult<()> {
+    let engine = engine_of(&state.store, &connection_id).await?;
+    let driver = state.registry.get(&connection_id).await?;
+    driver
+        .execute(&crate::editing::build_drop_table(engine, &table))
+        .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn create_table(
+    state: State<'_, AppState>,
+    connection_id: String,
+    name: String,
+    columns: Vec<ColumnDef>,
+) -> AppResult<()> {
+    let engine = engine_of(&state.store, &connection_id).await?;
+    let driver = state.registry.get(&connection_id).await?;
+    driver
+        .execute(&crate::editing::build_create_table(engine, &name, &columns))
+        .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn add_column(
+    state: State<'_, AppState>,
+    connection_id: String,
+    table: String,
+    column: ColumnDef,
+) -> AppResult<()> {
+    let engine = engine_of(&state.store, &connection_id).await?;
+    let driver = state.registry.get(&connection_id).await?;
+    driver
+        .execute(&crate::editing::build_add_column(engine, &table, &column))
+        .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn drop_column(
+    state: State<'_, AppState>,
+    connection_id: String,
+    table: String,
+    column: String,
+) -> AppResult<()> {
+    let engine = engine_of(&state.store, &connection_id).await?;
+    let driver = state.registry.get(&connection_id).await?;
+    driver
+        .execute(&crate::editing::build_drop_column(engine, &table, &column))
+        .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rename_column(
+    state: State<'_, AppState>,
+    connection_id: String,
+    table: String,
+    from: String,
+    to: String,
+) -> AppResult<()> {
+    let engine = engine_of(&state.store, &connection_id).await?;
+    let driver = state.registry.get(&connection_id).await?;
+    driver
+        .execute(&crate::editing::build_rename_column(engine, &table, &from, &to))
+        .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rename_table(
+    state: State<'_, AppState>,
+    connection_id: String,
+    from: String,
+    to: String,
+) -> AppResult<()> {
+    let engine = engine_of(&state.store, &connection_id).await?;
+    let driver = state.registry.get(&connection_id).await?;
+    driver
+        .execute(&crate::editing::build_rename_table(engine, &from, &to))
+        .await?;
+    Ok(())
+}
+
+/// One-click local engine: create a fresh SQLite database file in the app data
+/// dir and save it as a connection.
+#[tauri::command]
+pub async fn create_local_database(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> AppResult<ConnectionConfig> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .join("databases");
+    std::fs::create_dir_all(&dir).map_err(|e| AppError::Internal(e.to_string()))?;
+    let safe: String = name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+        .collect();
+    let stem = if safe.is_empty() { "database".to_string() } else { safe };
+    let path = dir
+        .join(format!("{stem}.sqlite"))
+        .to_str()
+        .ok_or_else(|| AppError::Internal("invalid path".into()))?
+        .to_string();
+    let cfg = ConnectionConfig {
+        id: format!("local-{stem}"),
+        name: if name.trim().is_empty() { "Local DB".into() } else { name },
+        engine: Engine::Sqlite,
+        host: None,
+        port: None,
+        database: path,
+        username: None,
+    };
+    // Creates the file (mode=rwc) and verifies it opens.
+    crate::drivers::sqlite::SqliteDriver::test(&cfg).await?;
+    state.store.upsert_connection(&cfg).await?;
+    Ok(cfg)
+}
+
+async fn port_open(host: &str, port: u16) -> bool {
+    matches!(
+        tokio::time::timeout(
+            std::time::Duration::from_millis(450),
+            tokio::net::TcpStream::connect((host, port)),
+        )
+        .await,
+        Ok(Ok(_))
+    )
+}
+
+/// Auto-discovery: probe well-known local database ports and return
+/// ready-to-add connection configs for whatever is listening.
+#[tauri::command]
+pub async fn scan_local_databases() -> AppResult<Vec<ConnectionConfig>> {
+    let candidates: [(Engine, u16, &str, &str); 4] = [
+        (Engine::Postgres, 5432, "postgres", "postgres"),
+        (Engine::MySql, 3306, "mysql", "root"),
+        (Engine::Postgres, 5433, "postgres", "postgres"),
+        (Engine::MySql, 3307, "mysql", "root"),
+    ];
+    let mut found = Vec::new();
+    for (engine, port, db, user) in candidates {
+        if port_open("127.0.0.1", port).await {
+            let label = match engine {
+                Engine::Postgres => "Postgres",
+                Engine::MySql => "MySQL/MariaDB",
+                Engine::Sqlite => "SQLite",
+            };
+            found.push(ConnectionConfig {
+                id: format!("detected-{port}"),
+                name: format!("{label} on localhost:{port}"),
+                engine,
+                host: Some("localhost".into()),
+                port: Some(port),
+                database: db.into(),
+                username: Some(user.into()),
+            });
+        }
+    }
+    Ok(found)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunks_rows_evenly_with_remainder() {
+        let rows: Vec<Vec<serde_json::Value>> =
+            (0..5).map(|i| vec![serde_json::json!(i)]).collect();
+        let chunks = chunk_rows(&rows, 2);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].len(), 2);
+        assert_eq!(chunks[2].len(), 1);
+    }
+
+    #[test]
+    fn chunk_size_zero_yields_single_chunk() {
+        let rows: Vec<Vec<serde_json::Value>> = vec![vec![serde_json::json!(1)]];
+        assert_eq!(chunk_rows(&rows, 0).len(), 1);
+    }
+}

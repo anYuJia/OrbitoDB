@@ -1,0 +1,45 @@
+[package]
+name = "orbitodb"
+version = "0.1.0"
+description = "OrbitoDB — the only SQL app you'll ever need"
+authors = ["anYuJia"]
+license = "MIT"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "orbitodb_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "postgres", "mysql", "chrono", "uuid", "bigdecimal", "json"] }
+thiserror = "2"
+async-trait = "0.1"
+keyring = { version = "3", features = ["windows-native"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+
+# Small release binary while keeping all three engines AND full resilience:
+# panic unwinds (so a panicking command becomes a caught error, not a crash).
+# strip + LTO + opt-level "z" still give most of the size reduction.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+
