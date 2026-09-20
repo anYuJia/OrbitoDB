@@ -97,6 +97,7 @@ export const webBackend: Backend = {
     return r;
   },
   runQuerySilent: (id, sql) => sub(id).runQuerySilent(id, sql),
+  cancelQuery: (id) => sub(id).cancelQuery(id),
   listSchemas: (id) => sub(id).listSchemas(id),
   listTables: (id) => sub(id).listTables(id),
   listColumns: (id, table) => sub(id).listColumns(id, table),
