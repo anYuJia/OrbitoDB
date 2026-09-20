@@ -5,7 +5,7 @@ use sqlx::{Column as _, Row, TypeInfo};
 use crate::drivers::Driver;
 use crate::error::AppResult;
 use crate::executor::sqlite_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, ForeignKey, IndexInfo, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, ForeignKey, IndexInfo, QueryResult, TableInfo, MAX_ROWS};
 
 pub struct SqliteDriver {
     pub(crate) pool: sqlx::SqlitePool,
@@ -188,6 +188,38 @@ impl Driver for SqliteDriver {
                 name: r.try_get::<String, _>("name").unwrap_or_default(),
                 kind: r.try_get::<String, _>("type").unwrap_or_else(|_| "table".into()),
                 schema: None,
+            })
+            .collect())
+    }
+
+    async fn list_database_objects(&self) -> AppResult<Vec<DatabaseObjectInfo>> {
+        let rows = sqlx::query(
+            "SELECT name, type, tbl_name, sql FROM sqlite_master \
+             WHERE type IN ('view','index','trigger') \
+               AND name NOT LIKE 'sqlite_%' \
+             ORDER BY type, name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .filter_map(|row| {
+                let kind = row.try_get::<String, _>("type").ok()?;
+                let name = row.try_get::<String, _>("name").ok()?;
+                let definition = row
+                    .try_get::<Option<String>, _>("sql")
+                    .ok()
+                    .flatten()
+                    .map(|value| value.trim_end_matches(';').to_string() + ";");
+                Some(DatabaseObjectInfo {
+                    name,
+                    kind,
+                    schema: Some("main".into()),
+                    table: row.try_get::<String, _>("tbl_name").ok(),
+                    signature: None,
+                    definition,
+                })
             })
             .collect())
     }
