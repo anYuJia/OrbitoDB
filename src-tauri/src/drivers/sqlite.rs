@@ -212,6 +212,11 @@ impl Driver for SqliteDriver {
                         _ => None,
                     },
                     comment: None,
+                    extra: match hidden {
+                        2 => Some("VIRTUAL GENERATED".into()),
+                        3 => Some("STORED GENERATED".into()),
+                        _ => None,
+                    },
                 }
             })
             .collect())
