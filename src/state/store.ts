@@ -204,6 +204,7 @@ export interface AppStore {
   setSql: (sql: string) => void;
   newEditor: () => void;
   openSqlTab: (name: string, sql: string) => void;
+  renameEditor: (id: string, name: string) => void;
   closeEditor: (id: string) => void;
   selectEditor: (id: string) => void;
   setEditorResult: (id: string, result: QueryResult | null, error: AppError | null) => void;
@@ -491,6 +492,15 @@ export const useStore = create<AppStore>((set, get) => ({
       persistEditors(editors, id);
       persistLocal(EDITOR_KEY, sql);
       return { editors, activeEditorId: id, sql, view: "sql", topView: "data" };
+    }),
+
+  renameEditor: (id, name) =>
+    set((s) => {
+      const nextName = name.trim();
+      if (!nextName) return {};
+      const editors = s.editors.map((editor) => (editor.id === id ? { ...editor, name: nextName } : editor));
+      persistEditors(editors, s.activeEditorId);
+      return { editors };
     }),
 
   selectEditor: (id) =>
