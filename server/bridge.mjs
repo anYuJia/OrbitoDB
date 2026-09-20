@@ -60,6 +60,48 @@ function persistSqlite(fileKey) {
 function sqliteIdent(id) {
   return `"${String(id).replace(/"/g, '""')}"`;
 }
+
+function sqliteChecks(createSql) {
+  const upper = String(createSql || "").toUpperCase();
+  const source = String(createSql || "");
+  const out = [];
+  let searchFrom = 0;
+  while (searchFrom < source.length) {
+    const at = upper.indexOf("CHECK", searchFrom);
+    if (at < 0) break;
+    const open = source.indexOf("(", at + 5);
+    if (open < 0) break;
+    let depth = 0;
+    let quote = null;
+    let close = -1;
+    for (let i = open; i < source.length; i++) {
+      const ch = source[i];
+      if (quote) {
+        if (ch === quote) {
+          if (source[i + 1] === quote) {
+            i++;
+            continue;
+          }
+          quote = null;
+        }
+        continue;
+      }
+      if (ch === "'" || ch === '"') quote = ch;
+      else if (ch === "(") depth++;
+      else if (ch === ")") {
+        depth--;
+        if (depth === 0) {
+          close = i;
+          break;
+        }
+      }
+    }
+    if (close < 0) break;
+    out.push(source.slice(open + 1, close).trim());
+    searchFrom = close + 1;
+  }
+  return out;
+}
 /** Run one statement with bound params; persist (unless inside a transaction). */
 function sqliteRun(fileKey, sql, params = []) {
   const db = sqliteDbs.get(fileKey);
@@ -635,6 +677,150 @@ const handlers = {
       unique: item.unique,
       detail: item.columns.join(", ") || "MySQL index",
     }));
+  },
+
+  async constraints({ id, table }) {
+    const { engine, conn, fileKey } = need(id);
+
+    if (engine === "sqlite") {
+      const db = sqliteDbs.get(fileKey);
+      const out = [];
+      const colsResult = db.exec(`PRAGMA table_xinfo(${sqliteIdent(table)})`);
+      const cols = colsResult.length ? colsResult[0].values : [];
+      const primary = cols
+        .filter((row) => Number(row[5] ?? 0) > 0)
+        .sort((a, b) => Number(a[5] ?? 0) - Number(b[5] ?? 0))
+        .map((row) => String(row[1]));
+      if (primary.length) {
+        out.push({
+          name: null,
+          kind: "primary",
+          definition: `PRIMARY KEY (${primary.join(", ")})`,
+          columns: primary,
+        });
+      }
+
+      const idxResult = db.exec(`PRAGMA index_list(${sqliteIdent(table)})`);
+      for (const row of idxResult.length ? idxResult[0].values : []) {
+        const name = String(row[1] ?? "");
+        const origin = row[3] == null ? "" : String(row[3]);
+        if (!name || origin !== "u") continue;
+        const info = db.exec(`PRAGMA index_info(${sqliteIdent(name)})`);
+        const columns = (info.length ? info[0].values : [])
+          .map((item) => String(item[2] ?? ""))
+          .filter(Boolean);
+        out.push({
+          name: null,
+          kind: "unique",
+          definition: `UNIQUE (${columns.join(", ")})`,
+          columns,
+        });
+      }
+
+      const st = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?");
+      try {
+        st.bind([table]);
+        if (st.step()) {
+          for (const expression of sqliteChecks(String(st.get()[0] ?? ""))) {
+            out.push({
+              name: null,
+              kind: "check",
+              definition: `CHECK (${expression})`,
+              columns: [],
+            });
+          }
+        }
+      } finally {
+        st.free();
+      }
+      return out;
+    }
+
+    if (engine === "postgres") {
+      const raw = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT con.conname, con.contype, pg_catalog.pg_get_constraintdef(con.oid, true),
+                COALESCE(string_agg(att.attname, ',' ORDER BY ord.ordinality), '')
+         FROM pg_catalog.pg_constraint con
+         JOIN pg_catalog.pg_class rel ON rel.oid = con.conrelid
+         JOIN pg_catalog.pg_namespace ns ON ns.oid = rel.relnamespace
+         LEFT JOIN LATERAL unnest(con.conkey) WITH ORDINALITY ord(attnum, ordinality) ON true
+         LEFT JOIN pg_catalog.pg_attribute att ON att.attrelid = rel.oid AND att.attnum = ord.attnum
+         WHERE ns.nspname = current_schema() AND rel.relname = $1
+           AND con.contype IN ('p','u','c')
+         GROUP BY con.oid, con.conname, con.contype
+         ORDER BY CASE con.contype WHEN 'p' THEN 0 WHEN 'u' THEN 1 ELSE 2 END, con.conname`,
+        [table],
+      );
+      return raw.rows.map((row) => ({
+        name: row[0] == null ? null : String(row[0]),
+        kind: String(row[1]) === "p" ? "primary" : String(row[1]) === "u" ? "unique" : "check",
+        definition: String(row[2] ?? ""),
+        columns: String(row[3] ?? "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
+      }));
+    }
+
+    const keys = await rawArrayRows(
+      engine,
+      conn,
+      `SELECT tc.constraint_name, tc.constraint_type,
+              GROUP_CONCAT(kcu.column_name ORDER BY kcu.ordinal_position SEPARATOR ',')
+       FROM information_schema.table_constraints tc
+       LEFT JOIN information_schema.key_column_usage kcu
+         ON kcu.constraint_schema = tc.constraint_schema
+        AND kcu.table_name = tc.table_name
+        AND kcu.constraint_name = tc.constraint_name
+       WHERE tc.table_schema = DATABASE() AND tc.table_name = ?
+         AND tc.constraint_type IN ('PRIMARY KEY','UNIQUE')
+       GROUP BY tc.constraint_name, tc.constraint_type
+       ORDER BY CASE tc.constraint_type WHEN 'PRIMARY KEY' THEN 0 ELSE 1 END, tc.constraint_name`,
+      [table],
+    );
+    const out = keys.rows.map((row) => {
+      const columns = String(row[2] ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const primary = String(row[1]) === "PRIMARY KEY";
+      return {
+        name: row[0] == null ? null : String(row[0]),
+        kind: primary ? "primary" : "unique",
+        definition: `${primary ? "PRIMARY KEY" : "UNIQUE"} (${columns.join(", ")})`,
+        columns,
+      };
+    });
+
+    try {
+      const checks = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT tc.constraint_name, cc.check_clause
+         FROM information_schema.table_constraints tc
+         JOIN information_schema.check_constraints cc
+           ON cc.constraint_schema = tc.constraint_schema
+          AND cc.constraint_name = tc.constraint_name
+         WHERE tc.table_schema = DATABASE() AND tc.table_name = ?
+           AND tc.constraint_type = 'CHECK'
+         ORDER BY tc.constraint_name`,
+        [table],
+      );
+      for (const row of checks.rows) {
+        const clause = String(row[1] ?? "");
+        out.push({
+          name: row[0] == null ? null : String(row[0]),
+          kind: "check",
+          definition: clause ? `CHECK (${clause})` : "CHECK",
+          columns: [],
+        });
+      }
+    } catch {
+      // Older MySQL variants may not expose CHECK_CONSTRAINTS.
+    }
+    return out;
   },
 
   async updateCell({ id, table, pkColumn, pkValue, column, value }) {
