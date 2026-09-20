@@ -30,7 +30,7 @@ import {
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { confirmDialog, promptDialog } from "../../state/dialog";
 import type { ConnectionConfig, Engine } from "../../ipc/types";
 import { useStore } from "../../state/store";
@@ -118,6 +118,24 @@ export function Sources({
   const [panel, setPanel] = useState<(typeof PANELS)[number]>("Objects");
   const [rootOpen, setRootOpen] = useState(true);
   const [rootCtx, setRootCtx] = useState<CtxAnchor | null>(null);
+  const groupedConnections = useMemo(() => {
+    const ungrouped: ConnectionConfig[] = [];
+    const groups = new Map<string, ConnectionConfig[]>();
+    for (const connection of connections) {
+      const group = connection.group?.trim();
+      if (!group) {
+        ungrouped.push(connection);
+        continue;
+      }
+      const items = groups.get(group) ?? [];
+      items.push(connection);
+      groups.set(group, items);
+    }
+    return {
+      ungrouped,
+      groups: [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)),
+    };
+  }, [connections]);
   const [compact, setCompact] = useState(false);
 
   const rootMenu: MenuItem[] = [
@@ -218,15 +236,30 @@ export function Sources({
                 {connections.length === 0 ? (
                   <div className="bud-ds-empty">No connections yet</div>
                 ) : (
-                  connections.map((c) => (
-                    <Datasource
-                      key={c.id}
-                      conn={c}
-                      onEditServer={onEditServer}
-                      onCreateTable={onCreateTable}
-                      filter={filter}
-                    />
-                  ))
+                  <>
+                    {groupedConnections.ungrouped.map((connection) => (
+                      <Datasource
+                        key={connection.id}
+                        conn={connection}
+                        onEditServer={onEditServer}
+                        onCreateTable={onCreateTable}
+                        filter={filter}
+                      />
+                    ))}
+                    {groupedConnections.groups.map(([group, items]) => (
+                      <ConnectionGroup key={group} name={group} count={items.length}>
+                        {items.map((connection) => (
+                          <Datasource
+                            key={connection.id}
+                            conn={connection}
+                            onEditServer={onEditServer}
+                            onCreateTable={onCreateTable}
+                            filter={filter}
+                          />
+                        ))}
+                      </ConnectionGroup>
+                    ))}
+                  </>
                 )}
               </div>
             )}
@@ -236,6 +269,29 @@ export function Sources({
         )}
       </div>
     </aside>
+  );
+}
+
+function ConnectionGroup({
+  name,
+  count,
+  children,
+}: {
+  name: string;
+  count: number;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="odb-connection-group">
+      <button className="odb-connection-group-head" onClick={() => setOpen((value) => !value)}>
+        {open ? <IconChevronDown size={12} stroke={2} /> : <IconChevronRight size={12} stroke={2} />}
+        <IconFolderOpen size={13} stroke={1.7} />
+        <span>{name}</span>
+        <em>{count}</em>
+      </button>
+      {open && <div className="odb-connection-group-body">{children}</div>}
+    </div>
   );
 }
 
