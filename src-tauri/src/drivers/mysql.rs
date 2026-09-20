@@ -286,7 +286,10 @@ impl Driver for MySqlDriver {
 
         for table in self.list_tables().await?.into_iter().filter(|item| item.kind == "table") {
             for index in self.list_indexes(&table.name).await? {
-                let definition = if index.name == "PRIMARY" || index.detail == "MySQL index" {
+                if index.name == "PRIMARY" {
+                    continue;
+                }
+                let definition = if index.detail == "MySQL index" {
                     None
                 } else {
                     let columns = index
