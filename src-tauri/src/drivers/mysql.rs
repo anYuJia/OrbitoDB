@@ -32,6 +32,7 @@ fn server_options(cfg: &ConnectionConfig, password: Option<&str>) -> MySqlConnec
     let tls_mode = cfg.tls.as_ref().map(|tls| tls.mode).unwrap_or(TlsMode::Disable);
     o = o.ssl_mode(match tls_mode {
         TlsMode::Disable => MySqlSslMode::Disabled,
+        TlsMode::Allow => MySqlSslMode::Preferred,
         TlsMode::Prefer => MySqlSslMode::Preferred,
         TlsMode::Require => MySqlSslMode::Required,
         TlsMode::VerifyCa => MySqlSslMode::VerifyCa,
