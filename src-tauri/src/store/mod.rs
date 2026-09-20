@@ -1,5 +1,5 @@
 use crate::error::AppResult;
-use crate::types::{ConnectionConfig, Engine};
+use crate::types::{ConnectionConfig, Engine, SshTunnelConfig};
 use serde::Serialize;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::Row;
@@ -33,7 +33,8 @@ impl Store {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS connections (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, engine TEXT NOT NULL,
-                host TEXT, port INTEGER, database TEXT NOT NULL, username TEXT, env TEXT)",
+                host TEXT, port INTEGER, database TEXT NOT NULL, username TEXT, env TEXT,
+                group_name TEXT, schema_name TEXT, ssh_json TEXT)",
         )
         .execute(&pool)
         .await?;
@@ -51,6 +52,22 @@ impl Store {
                 .await?;
         }
 
+        let connection_cols = sqlx::query("PRAGMA table_info(connections)")
+            .fetch_all(&pool)
+            .await?;
+        for (name, ddl) in [
+            ("group_name", "ALTER TABLE connections ADD COLUMN group_name TEXT"),
+            ("schema_name", "ALTER TABLE connections ADD COLUMN schema_name TEXT"),
+            ("ssh_json", "ALTER TABLE connections ADD COLUMN ssh_json TEXT"),
+        ] {
+            let exists = connection_cols
+                .iter()
+                .any(|row| row.get::<String, _>("name") == name);
+            if !exists {
+                sqlx::query(ddl).execute(&pool).await?;
+            }
+        }
+
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS query_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, connection_id TEXT NOT NULL,
@@ -63,7 +80,8 @@ impl Store {
 
     pub async fn list_connections(&self) -> AppResult<Vec<ConnectionConfig>> {
         let rows = sqlx::query(
-            "SELECT id,name,engine,host,port,database,username,env FROM connections ORDER BY name",
+            "SELECT id,name,engine,host,port,database,username,env,group_name,schema_name,ssh_json
+             FROM connections ORDER BY COALESCE(group_name,''), name",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -78,6 +96,11 @@ impl Store {
                 database: r.get("database"),
                 username: r.get("username"),
                 env: r.get("env"),
+                group: r.get("group_name"),
+                schema: r.get("schema_name"),
+                ssh: r
+                    .get::<Option<String>, _>("ssh_json")
+                    .and_then(|json| serde_json::from_str::<SshTunnelConfig>(&json).ok()),
             });
         }
         Ok(out)
@@ -90,10 +113,11 @@ impl Store {
             Engine::Sqlite => "sqlite",
         };
         sqlx::query(
-            "INSERT INTO connections (id,name,engine,host,port,database,username,env)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
+            "INSERT INTO connections (id,name,engine,host,port,database,username,env,group_name,schema_name,ssh_json)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
              ON CONFLICT(id) DO UPDATE SET
-                name=?2, engine=?3, host=?4, port=?5, database=?6, username=?7, env=?8",
+                name=?2, engine=?3, host=?4, port=?5, database=?6, username=?7, env=?8,
+                group_name=?9, schema_name=?10, ssh_json=?11",
         )
         .bind(&cfg.id)
         .bind(&cfg.name)
@@ -103,6 +127,9 @@ impl Store {
         .bind(&cfg.database)
         .bind(&cfg.username)
         .bind(&cfg.env)
+        .bind(&cfg.group)
+        .bind(&cfg.schema)
+        .bind(cfg.ssh.as_ref().and_then(|ssh| serde_json::to_string(ssh).ok()))
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -161,6 +188,9 @@ mod tests {
             database: "app".into(),
             username: Some("me".into()),
             env: Some("prod".into()),
+            group: Some("Work".into()),
+            schema: Some("analytics".into()),
+            ssh: None,
         };
         store.upsert_connection(&cfg).await.unwrap();
         let list = store.list_connections().await.unwrap();
@@ -168,6 +198,8 @@ mod tests {
         assert_eq!(list[0].name, "local pg");
         assert_eq!(list[0].port, Some(5432));
         assert_eq!(list[0].env.as_deref(), Some("prod"));
+        assert_eq!(list[0].group.as_deref(), Some("Work"));
+        assert_eq!(list[0].schema.as_deref(), Some("analytics"));
 
         store.add_history("c1", "SELECT 1").await.unwrap();
         store.add_history("c1", "SELECT 2").await.unwrap();
@@ -245,6 +277,9 @@ mod tests {
             database: ":memory:".into(),
             username: None,
             env: None,
+            group: None,
+            schema: None,
+            ssh: None,
         };
         store.upsert_connection(&cfg).await.unwrap();
         assert_eq!(store.list_connections().await.unwrap().len(), 1);
