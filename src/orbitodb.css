@@ -1811,10 +1811,22 @@ textarea:focus-visible {
   padding: 0 18px 28px;
 }
 
+.odb-structure-table {
+  min-width: 1120px;
+}
+
 .odb-structure-row {
-  min-height: 42px;
+  min-height: 44px;
   display: grid;
-  grid-template-columns: 44px minmax(180px, 1.3fr) minmax(160px, 1fr) 110px 100px 88px;
+  grid-template-columns:
+    44px
+    minmax(170px, 1.15fr)
+    minmax(160px, 1fr)
+    minmax(150px, 1fr)
+    88px
+    92px
+    minmax(170px, 1.1fr)
+    76px;
   align-items: center;
   border-bottom: 1px solid #20262d;
   color: var(--odb-text-2);
@@ -1868,6 +1880,39 @@ textarea:focus-visible {
 }
 
 .odb-structure-row .type code {
+  color: #8793a1;
+}
+
+.odb-structure-row .type {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.odb-structure-row .type small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #6f78a6;
+  font-family: var(--odb-mono);
+  font-size: 8.5px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.odb-structure-row .default,
+.odb-structure-row .comment {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #747f8b;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.odb-structure-row .default code {
   color: #8793a1;
 }
 
