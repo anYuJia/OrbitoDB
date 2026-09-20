@@ -1,10 +1,20 @@
-import { IconAlertTriangle, IconCheck, IconInfoCircle, IconPlus, IconRefresh } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconCheck,
+  IconDatabase,
+  IconFileDatabase,
+  IconInfoCircle,
+  IconPlus,
+  IconRefresh,
+  IconServer,
+  IconX,
+} from "@tabler/icons-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { backdropV, centeredModalV, MotionButton } from "../../lib/motion";
+import type { ConnEnv, ConnectionConfig, Engine } from "../../ipc/types";
 import { getBackend, isTauri } from "../../ipc/backend";
 import { bridgeHealthy } from "../../ipc/http";
-import type { ConnEnv, ConnectionConfig, Engine } from "../../ipc/types";
+import { backdropV, centeredModalV, MotionButton } from "../../lib/motion";
 import { promptDialog } from "../../state/dialog";
 import { useStore } from "../../state/store";
 import { toast } from "../../state/toast";
@@ -22,6 +32,18 @@ const SYSTEM_DBS = new Set([
 function errMsg(e: unknown): string {
   if (e && typeof e === "object" && "message" in e) return String((e as { message?: string }).message);
   return String(e);
+}
+
+function engineLabel(engine: Engine): string {
+  if (engine === "postgres") return "PostgreSQL";
+  if (engine === "mysql") return "MySQL / MariaDB";
+  return "SQLite";
+}
+
+function defaultPortFor(engine: Engine): string {
+  if (engine === "postgres") return "5432";
+  if (engine === "mysql") return "3306";
+  return "";
 }
 
 export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig | null; onClose: () => void }) {
@@ -43,10 +65,11 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
       alive = false;
     };
   }, [remoteInBrowser]);
+
   const [name, setName] = useState(existing?.name ?? "");
   const [env, setEnv] = useState<ConnEnv | "">(existing?.env ?? "");
   const [host, setHost] = useState(existing?.host ?? "localhost");
-  const [port, setPort] = useState(existing?.port != null ? String(existing.port) : "");
+  const [port, setPort] = useState(existing?.port != null ? String(existing.port) : defaultPortFor(existing?.engine ?? "sqlite"));
   const [database, setDatabase] = useState(existing?.database ?? "");
   const [username, setUsername] = useState(existing?.username ?? "");
   const [password, setPassword] = useState("");
@@ -55,11 +78,25 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
   const [testing, setTesting] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const defaultPort = engine === "postgres" ? "5432" : engine === "mysql" ? "3306" : "";
+  const defaultPort = defaultPortFor(engine);
+
+  const chooseEngine = (next: Engine) => {
+    if (next === engine) return;
+    setEngine(next);
+    setDatabases(null);
+    setStatus(null);
+    setDatabase("");
+    setPort(defaultPortFor(next));
+    if (next === "sqlite") {
+      setHost("localhost");
+      setUsername("");
+      setPassword("");
+    }
+  };
 
   const draftCfg = (db: string): ConnectionConfig => ({
     id: existing?.id ?? `srv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-    name: name.trim() || `${engine} @ ${host || "local"}`,
+    name: name.trim() || `${engineLabel(engine)} · ${db || host || "local"}`,
     engine,
     host: engine === "sqlite" ? null : host.trim() || "localhost",
     port: engine === "sqlite" ? null : Number(port || defaultPort) || null,
@@ -74,7 +111,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
     try {
       const dbs = await getBackend().listDatabases(draftCfg(""), password || null);
       setDatabases(dbs);
-      setStatus({ kind: "ok", msg: `Server reachable — ${dbs.length} database${dbs.length === 1 ? "" : "s"}` });
+      setStatus({ kind: "ok", msg: `Connected · ${dbs.length} database${dbs.length === 1 ? "" : "s"} available` });
       if (dbs.length && !dbs.includes(database)) {
         setDatabase(dbs.find((d) => !SYSTEM_DBS.has(d)) ?? dbs[0]);
       }
@@ -87,7 +124,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
   };
 
   const newDatabase = async () => {
-    const dbName = await promptDialog({ title: "Create database", label: "Database name", placeholder: "e.g. hyblock" });
+    const dbName = await promptDialog({ title: "Create database", label: "Database name", placeholder: "e.g. analytics" });
     const safe = dbName?.trim();
     if (!safe) return;
     setTesting(true);
@@ -97,7 +134,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
       const dbs = await getBackend().listDatabases(draftCfg(""), password || null);
       setDatabases(dbs);
       setDatabase(safe);
-      setStatus({ kind: "ok", msg: `Created "${safe}" — ${dbs.length} databases` });
+      setStatus({ kind: "ok", msg: `Created "${safe}"` });
     } catch (e) {
       setStatus({ kind: "error", msg: errMsg(e) });
     } finally {
@@ -133,151 +170,212 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
         onClick={onClose}
       />
       <motion.div
-        className="bud-modal"
+        className="odb-connection-modal"
         variants={centeredModalV}
         initial="hidden"
         animate="show"
         exit="exit"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bud-modal-head">{editing ? "Edit data source" : "Add data source"}</div>
-        <div className="bud-modal-body">
-          <label className="bud-field">
-            <span>Engine</span>
-            <select value={engine} onChange={(e) => { setEngine(e.target.value as Engine); setDatabases(null); setStatus(null); }}>
-              <option value="sqlite">SQLite (server file)</option>
-              <option value="postgres">PostgreSQL</option>
-              <option value="mysql">MySQL / MariaDB</option>
-            </select>
-          </label>
-          {remoteInBrowser && (
-            <div className={`bud-conn-hint ${bridgeUp === false ? "warn" : bridgeUp ? "ok" : ""}`}>
-              {bridgeUp ? <IconCheck size={15} stroke={2} /> : <IconInfoCircle size={15} stroke={1.7} />}
-              <span>
-                {bridgeUp == null
-                  ? "Checking engine server…"
-                  : bridgeUp
-                    ? "Engine server connected — PostgreSQL & MySQL are ready."
-                    : "Engine server offline. Run “npm run bridge” (or “npm run dev:all”) to connect to remote databases."}
-              </span>
-            </div>
-          )}
-          <div className="bud-field-row">
-            <label className="bud-field grow">
-              <span>Name</span>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="My database" />
-            </label>
-            <label className="bud-field env">
-              <span>Environment</span>
-              <select value={env} onChange={(e) => setEnv(e.target.value as ConnEnv | "")}>
-                <option value="">None</option>
-                <option value="dev">Development</option>
-                <option value="staging">Staging</option>
-                <option value="prod">Production</option>
-              </select>
-            </label>
+        <header className="odb-connection-head">
+          <div>
+            <span>{editing ? "Connection settings" : "New connection"}</span>
+            <h2>{editing ? existing?.name : "Connect a database"}</h2>
+            <p>Connections and credentials stay local to OrbitoDB.</p>
           </div>
-          {env === "prod" && (
-            <div className="bud-conn-hint warn">
-              <IconAlertTriangle size={15} stroke={1.8} />
-              <span>Production: writes will ask for an extra confirmation before running.</span>
+          <button className="odb-modal-close" onClick={onClose} title="Close">
+            <IconX size={16} stroke={1.8} />
+          </button>
+        </header>
+
+        <div className="odb-connection-body">
+          <section className="odb-connection-section">
+            <div className="odb-section-label">
+              <span>01</span>
+              <div>
+                <b>Database engine</b>
+                <small>Choose the driver for this connection.</small>
+              </div>
             </div>
-          )}
-
-          {engine !== "sqlite" ? (
-            <>
-              <div className="bud-field-row">
-                <label className="bud-field">
-                  <span>Host</span>
-                  <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="e.g. postgres, mysql, host.docker.internal" />
-                </label>
-                <label className="bud-field port">
-                  <span>Port</span>
-                  <input value={port} onChange={(e) => setPort(e.target.value)} placeholder={defaultPort} />
-                </label>
-              </div>
-              {!isTauri() && /^(localhost|127\.0\.0\.1|::1)$/i.test(host.trim()) && (
-                <div className="bud-conn-hint">
-                  <IconInfoCircle size={15} stroke={1.7} />
-                  <span>
-                    <code>localhost</code> connects to a database on your own computer (even when OrbitoDB runs in
-                    Docker). If it still can't connect, that database only allows local connections — let it accept
-                    other hosts (bind to <code>0.0.0.0</code>), or run OrbitoDB outside Docker.
-                  </span>
-                </div>
-              )}
-              <div className="bud-field-row">
-                <label className="bud-field">
-                  <span>Username</span>
-                  <input value={username} onChange={(e) => setUsername(e.target.value)} />
-                </label>
-                <label className="bud-field">
-                  <span>Password</span>
-                  <input
-                    type="password"
-                    value={password}
-                    placeholder={editing ? "•••••• (unchanged)" : ""}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </label>
-              </div>
-
-              <button className="bud-test-btn" onClick={testAndList} disabled={testing}>
-                <IconRefresh size={15} stroke={1.7} className={testing ? "bud-spin" : ""} />
-                {testing ? "Connecting…" : "Test connection & list databases"}
+            <div className="odb-engine-grid">
+              <button className={engine === "sqlite" ? "on" : ""} onClick={() => chooseEngine("sqlite")}>
+                <IconFileDatabase size={19} stroke={1.6} />
+                <span>
+                  <b>SQLite</b>
+                  <small>Local database file</small>
+                </span>
               </button>
-              {status && (
-                <div className={`bud-conn-status ${status.kind}`}>
-                  {status.kind === "ok" ? <IconCheck size={15} stroke={2} /> : <IconAlertTriangle size={15} stroke={1.8} />}
-                  <span>{status.msg}</span>
-                </div>
-              )}
+              <button className={engine === "postgres" ? "on" : ""} onClick={() => chooseEngine("postgres")}>
+                <IconDatabase size={19} stroke={1.6} />
+                <span>
+                  <b>PostgreSQL</b>
+                  <small>5432 by default</small>
+                </span>
+              </button>
+              <button className={engine === "mysql" ? "on" : ""} onClick={() => chooseEngine("mysql")}>
+                <IconServer size={19} stroke={1.6} />
+                <span>
+                  <b>MySQL</b>
+                  <small>MySQL / MariaDB</small>
+                </span>
+              </button>
+            </div>
+          </section>
 
-              <label className="bud-field">
-                <span>Database</span>
-                <div className="bud-db-row">
-                  {databases ? (
-                    <select value={database} onChange={(e) => setDatabase(e.target.value)}>
-                      {!databases.includes(database) && database && <option value={database}>{database}</option>}
-                      {databases.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                          {SYSTEM_DBS.has(d) ? "  (system)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      value={database}
-                      onChange={(e) => setDatabase(e.target.value)}
-                      placeholder="test the connection to list, or type a name"
-                    />
-                  )}
-                  <button className="bud-db-new" onClick={newDatabase} disabled={testing} title="Create a new database">
-                    <IconPlus size={15} stroke={2} /> New
-                  </button>
-                </div>
+          <section className="odb-connection-section">
+            <div className="odb-section-label">
+              <span>02</span>
+              <div>
+                <b>Profile</b>
+                <small>Name the connection and optionally mark its environment.</small>
+              </div>
+            </div>
+            <div className="odb-form-grid profile">
+              <label className="odb-form-field grow">
+                <span>Name</span>
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder={`${engineLabel(engine)} connection`} />
               </label>
-            </>
-          ) : (
-            <label className="bud-field">
-              <span>Database name</span>
-              <input value={database} onChange={(e) => setDatabase(e.target.value)} placeholder="e.g. analytics" />
-              <span className="bud-field-hint">
-                A real SQLite database stored in a file on the server — shared across browsers, tabs, and ports. Type an
-                existing name to open it, or a new name to create it.
-              </span>
-            </label>
-          )}
+              <label className="odb-form-field env">
+                <span>Environment</span>
+                <select value={env} onChange={(e) => setEnv(e.target.value as ConnEnv | "")}>
+                  <option value="">None</option>
+                  <option value="dev">Development</option>
+                  <option value="staging">Staging</option>
+                  <option value="prod">Production</option>
+                </select>
+              </label>
+            </div>
+            {env === "prod" && (
+              <div className="odb-connection-alert warn">
+                <IconAlertTriangle size={15} stroke={1.8} />
+                <span>Production guard enabled. Write queries require an extra confirmation.</span>
+              </div>
+            )}
+          </section>
+
+          <section className="odb-connection-section">
+            <div className="odb-section-label">
+              <span>03</span>
+              <div>
+                <b>{engine === "sqlite" ? "Database" : "Server"}</b>
+                <small>
+                  {engine === "sqlite"
+                    ? "Choose the local database name."
+                    : "Enter server credentials, test the connection, then choose a database."}
+                </small>
+              </div>
+            </div>
+
+            {remoteInBrowser && engine !== "sqlite" && (
+              <div className={`odb-connection-alert ${bridgeUp === false ? "warn" : bridgeUp ? "ok" : ""}`}>
+                {bridgeUp ? <IconCheck size={15} stroke={2} /> : <IconInfoCircle size={15} stroke={1.7} />}
+                <span>
+                  {bridgeUp == null
+                    ? "Checking local bridge…"
+                    : bridgeUp
+                      ? "Local bridge connected."
+                      : "Local bridge is offline. Start it before connecting to PostgreSQL or MySQL from the browser build."}
+                </span>
+              </div>
+            )}
+
+            {engine === "sqlite" ? (
+              <label className="odb-form-field">
+                <span>Database name</span>
+                <input
+                  value={database}
+                  onChange={(e) => setDatabase(e.target.value)}
+                  placeholder="analytics"
+                  autoFocus={!editing}
+                />
+                <small>Open an existing local SQLite database or enter a new name to create one.</small>
+              </label>
+            ) : (
+              <>
+                <div className="odb-form-grid host">
+                  <label className="odb-form-field grow">
+                    <span>Host</span>
+                    <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="localhost" />
+                  </label>
+                  <label className="odb-form-field port">
+                    <span>Port</span>
+                    <input
+                      inputMode="numeric"
+                      value={port}
+                      onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
+                      placeholder={defaultPort}
+                    />
+                  </label>
+                </div>
+                <div className="odb-form-grid credentials">
+                  <label className="odb-form-field">
+                    <span>Username</span>
+                    <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+                  </label>
+                  <label className="odb-form-field">
+                    <span>Password</span>
+                    <input
+                      type="password"
+                      value={password}
+                      placeholder={editing ? "Leave blank to keep current password" : ""}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="current-password"
+                    />
+                  </label>
+                </div>
+
+                <div className="odb-test-row">
+                  <button className="odb-test-btn" onClick={() => void testAndList()} disabled={testing || !remoteReady || !host.trim()}>
+                    <IconRefresh size={14} stroke={1.8} className={testing ? "bud-spin" : ""} />
+                    {testing ? "Testing…" : "Test connection"}
+                  </button>
+                  {status && (
+                    <div className={`odb-inline-status ${status.kind}`}>
+                      {status.kind === "ok" ? <IconCheck size={14} stroke={2} /> : <IconAlertTriangle size={14} stroke={1.8} />}
+                      <span>{status.msg}</span>
+                    </div>
+                  )}
+                </div>
+
+                <label className="odb-form-field">
+                  <span>Database</span>
+                  <div className="odb-database-picker">
+                    {databases ? (
+                      <select value={database} onChange={(e) => setDatabase(e.target.value)}>
+                        {!databases.includes(database) && database && <option value={database}>{database}</option>}
+                        {databases.map((d) => (
+                          <option key={d} value={d}>
+                            {d}{SYSTEM_DBS.has(d) ? " · system" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        value={database}
+                        onChange={(e) => setDatabase(e.target.value)}
+                        placeholder="Test connection to discover databases, or type a name"
+                      />
+                    )}
+                    <button onClick={() => void newDatabase()} disabled={testing || !remoteReady} title="Create database">
+                      <IconPlus size={14} stroke={2} />
+                      New
+                    </button>
+                  </div>
+                </label>
+              </>
+            )}
+          </section>
         </div>
-        <div className="bud-modal-actions">
-          <MotionButton className="bud-modal-cancel" onClick={onClose}>
-            Cancel
-          </MotionButton>
-          <MotionButton className="bud-modal-save" onClick={save} disabled={busy || !canSave}>
-            {busy ? "Connecting…" : editing ? "Save changes" : "Add data source"}
-          </MotionButton>
-        </div>
+
+        <footer className="odb-connection-footer">
+          <span>{editing ? "Saving keeps the existing password when the password field is blank." : "No OrbitoDB account required."}</span>
+          <div>
+            <MotionButton className="odb-modal-secondary" onClick={onClose}>Cancel</MotionButton>
+            <MotionButton className="odb-modal-primary" onClick={() => void save()} disabled={busy || !canSave}>
+              {busy ? "Connecting…" : editing ? "Save & reconnect" : "Connect"}
+            </MotionButton>
+          </div>
+        </footer>
       </motion.div>
     </>
   );
