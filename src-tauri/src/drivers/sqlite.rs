@@ -3,12 +3,16 @@ use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Column as _, Row, TypeInfo};
 
 use crate::drivers::Driver;
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::executor::sqlite_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, QueryResult, TableInfo, MAX_ROWS};
 
 pub struct SqliteDriver {
     pub(crate) pool: sqlx::SqlitePool,
+}
+
+fn quote_ident(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
 }
 
 /// Build a sqlx connection URL. `:memory:` maps to a shared in-memory DB;
@@ -108,11 +112,7 @@ impl Driver for SqliteDriver {
     }
 
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>> {
-        // PRAGMA cannot bind parameters; guard the identifier before inlining.
-        if table.is_empty() || !table.chars().all(|c| c.is_alphanumeric() || c == '_') {
-            return Err(AppError::Internal("invalid table name".into()));
-        }
-        let rows = sqlx::query(&format!("PRAGMA table_info({table})"))
+        let rows = sqlx::query(&format!("PRAGMA table_info({})", quote_ident(table)))
             .fetch_all(&self.pool)
             .await?;
         Ok(rows
@@ -122,6 +122,41 @@ impl Driver for SqliteDriver {
                 data_type: r.try_get::<String, _>("type").unwrap_or_default(),
                 nullable: r.try_get::<i64, _>("notnull").unwrap_or(0) == 0,
                 is_primary_key: r.try_get::<i64, _>("pk").unwrap_or(0) > 0,
+            })
+            .collect())
+    }
+
+    async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
+        let mut out = Vec::new();
+        for table in self.list_tables().await?.into_iter().filter(|table| table.kind == "table") {
+            let rows = sqlx::query(&format!("PRAGMA foreign_key_list({})", quote_ident(&table.name)))
+                .fetch_all(&self.pool)
+                .await?;
+            for row in rows {
+                out.push(ForeignKey {
+                    table: table.name.clone(),
+                    column: row.try_get::<String, _>("from").unwrap_or_default(),
+                    ref_table: row.try_get::<String, _>("table").unwrap_or_default(),
+                    ref_column: row.try_get::<String, _>("to").unwrap_or_default(),
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    async fn list_indexes(&self, table: &str) -> AppResult<Vec<IndexInfo>> {
+        let rows = sqlx::query(&format!("PRAGMA index_list({})", quote_ident(table)))
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|row| IndexInfo {
+                name: row.try_get::<String, _>("name").unwrap_or_default(),
+                unique: row.try_get::<i64, _>("unique").unwrap_or(0) == 1,
+                detail: row
+                    .try_get::<String, _>("origin")
+                    .map(|origin| format!("origin: {origin}"))
+                    .unwrap_or_else(|_| "SQLite index".into()),
             })
             .collect())
     }
