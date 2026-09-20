@@ -3,7 +3,7 @@ pub mod postgres;
 pub mod sqlite;
 
 use crate::error::AppResult;
-use crate::types::{ColumnInfo, ConnectionDiagnostics, ForeignKey, IndexInfo, QueryResult, TableInfo};
+use crate::types::{ColumnInfo, ConnectionDiagnostics, ConstraintInfo, ForeignKey, IndexInfo, QueryResult, TableInfo};
 use async_trait::async_trait;
 
 /// The seam every database engine plugs into. SQLite is implemented here;
@@ -28,6 +28,8 @@ pub trait Driver: Send + Sync {
     async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>>;
     /// List indexes for one table.
     async fn list_indexes(&self, table: &str) -> AppResult<Vec<IndexInfo>>;
+    /// List primary/unique/check constraints defined on a table.
+    async fn list_constraints(&self, table: &str) -> AppResult<Vec<ConstraintInfo>>;
 }
 
 
