@@ -4,6 +4,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
@@ -86,7 +87,7 @@ pub async fn prepare_connection(
         .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
 
     let mut child = command.spawn().map_err(|error| {
         AppError::ConnectionFailed(format!(
@@ -99,8 +100,10 @@ pub async fn prepare_connection(
         if let Some(status) = child.try_wait().map_err(|error| {
             AppError::ConnectionFailed(format!("failed to inspect SSH tunnel process: {error}"))
         })? {
-            return Err(AppError::ConnectionFailed(format!(
-                "SSH tunnel exited before it became ready ({status}). Check the SSH host, user, key/agent and known-host settings"
+            let detail = ssh_stderr(&mut child).await;
+            return Err(AppError::ConnectionFailed(ssh_error_message(
+                &format!("SSH tunnel exited before it became ready ({status})"),
+                &detail,
             )));
         }
 
@@ -114,11 +117,21 @@ pub async fn prepare_connection(
         if Instant::now() >= deadline {
             let _ = child.kill().await;
             let _ = child.wait().await;
-            return Err(AppError::ConnectionFailed(
-                "SSH tunnel did not become ready within 8 seconds".into(),
-            ));
+            let detail = ssh_stderr(&mut child).await;
+            return Err(AppError::ConnectionFailed(ssh_error_message(
+                "SSH tunnel did not become ready within 8 seconds",
+                &detail,
+            )));
         }
         sleep(Duration::from_millis(100)).await;
+    }
+
+    // Drain SSH stderr after startup so a long-lived tunnel can never block on a full pipe.
+    if let Some(mut stderr) = child.stderr.take() {
+        tokio::spawn(async move {
+            let mut sink = Vec::new();
+            let _ = stderr.read_to_end(&mut sink).await;
+        });
     }
 
     let mut effective = cfg.clone();
@@ -126,6 +139,25 @@ pub async fn prepare_connection(
     effective.port = Some(local_port);
     effective.ssh = None;
     Ok((effective, Some(child)))
+}
+
+async fn ssh_stderr(child: &mut Child) -> String {
+    let Some(mut stderr) = child.stderr.take() else {
+        return String::new();
+    };
+    let mut bytes = Vec::new();
+    if stderr.read_to_end(&mut bytes).await.is_err() {
+        return String::new();
+    }
+    String::from_utf8_lossy(&bytes).trim().to_string()
+}
+
+fn ssh_error_message(prefix: &str, detail: &str) -> String {
+    if detail.trim().is_empty() {
+        prefix.to_string()
+    } else {
+        format!("{prefix}: {}", detail.trim())
+    }
 }
 
 pub async fn stop_tunnel(mut tunnel: Option<Child>) {
