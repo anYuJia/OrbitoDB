@@ -3379,6 +3379,19 @@ textarea:focus-visible {
   grid-template-columns: minmax(150px, 0.8fr) minmax(130px, 0.55fr) minmax(260px, 1.5fr) 48px;
 }
 
+.odb-structure-meta-table.constraints .odb-meta-row {
+  grid-template-columns: 104px minmax(160px, 0.75fr) minmax(300px, 1.65fr) 48px;
+}
+
+.odb-meta-row .constraint-kind {
+  color: #8b96a5;
+  font-family: var(--odb-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+
 .odb-meta-row .actions {
   display: flex;
   align-items: center;
@@ -3411,6 +3424,10 @@ textarea:focus-visible {
 @media (max-width: 760px) {
   .odb-structure-meta-table.indexes .odb-meta-row {
     grid-template-columns: minmax(130px, 0.8fr) minmax(110px, 0.55fr) minmax(180px, 1.3fr) 42px;
+  }
+
+  .odb-structure-meta-table.constraints .odb-meta-row {
+    grid-template-columns: 92px minmax(130px, 0.75fr) minmax(200px, 1.4fr) 42px;
   }
 }
 
