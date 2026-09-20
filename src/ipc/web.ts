@@ -65,6 +65,7 @@ export const webBackend: Backend = {
     pushHistory(id, sql);
     return r;
   },
+  listSchemas: (id) => sub(id).listSchemas(id),
   listTables: (id) => sub(id).listTables(id),
   listColumns: (id, table) => sub(id).listColumns(id, table),
   listForeignKeys: (id) => sub(id).listForeignKeys(id),
