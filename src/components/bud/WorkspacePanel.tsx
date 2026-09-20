@@ -17,7 +17,6 @@ import { motion } from "framer-motion";
 import type { ReactNode } from "react";
 import { viewV } from "../../lib/motion";
 import { confirmDialog } from "../../state/dialog";
-import { toast } from "../../state/toast";
 import type { TopView } from "../../state/store";
 import { useStore } from "../../state/store";
 
@@ -63,14 +62,18 @@ function ToolRow({
   title,
   description,
   action,
+  onClick,
+  disabled = false,
 }: {
   icon: ReactNode;
   title: string;
   description: string;
   action: string;
+  onClick?: () => void;
+  disabled?: boolean;
 }) {
   return (
-    <button className="odb-tool-row" onClick={() => toast(`${title} is planned for a later OrbitoDB milestone.`, "info")}>
+    <button className="odb-tool-row" onClick={onClick} disabled={disabled}>
       <span className="odb-tool-icon">{icon}</span>
       <span className="odb-tool-copy">
         <b>{title}</b>
@@ -89,25 +92,67 @@ function SchemaToolsPanel() {
       subtitle="Inspect and compare database structure without leaving the desktop client."
     >
       <div className="odb-section">
-        <ToolRow icon={<IconSchema size={18} stroke={1.6} />} title="ER diagram" description="Visualize tables and relationships." action="Open" />
-        <ToolRow icon={<IconGitCompare size={18} stroke={1.6} />} title="Schema diff" description="Compare structures across two connections." action="Compare" />
-        <ToolRow icon={<IconArrowsDiff size={18} stroke={1.6} />} title="Migration preview" description="Review DDL changes before applying them." action="Preview" />
+        <ToolRow
+          icon={<IconSchema size={18} stroke={1.6} />}
+          title="ER diagram"
+          description="Visualize tables, columns and foreign-key relationships."
+          action="Open"
+          onClick={() => window.dispatchEvent(new Event("orbitodb:erd"))}
+        />
+        <ToolRow
+          icon={<IconGitCompare size={18} stroke={1.6} />}
+          title="Schema diff"
+          description="Compare tables and column types across two saved connections."
+          action="Compare"
+          onClick={() => window.dispatchEvent(new Event("orbitodb:schema-diff"))}
+        />
+        <ToolRow
+          icon={<IconArrowsDiff size={18} stroke={1.6} />}
+          title="Migration preview"
+          description="Generate and review engine-aware schema migrations."
+          action="Planned"
+          disabled
+        />
       </div>
     </PanelShell>
   );
 }
 
 function UtilitiesPanel() {
+  const newEditor = useStore((s) => s.newEditor);
+  const activeId = useStore((s) => s.activeConnectionId);
+  const activeConnection = useStore((s) => s.connections.find((connection) => connection.id === s.activeConnectionId));
+  const openAndIntrospect = useStore((s) => s.openAndIntrospect);
+
   return (
     <PanelShell
       eyebrow="Workspace"
       title="Utilities"
-      subtitle="Database-focused utilities. No cloud account or hosted workspace required."
+      subtitle="Database-focused tools that run locally with the current OrbitoDB workspace."
     >
       <div className="odb-section">
-        <ToolRow icon={<IconDatabaseSearch size={18} stroke={1.6} />} title="Data search" description="Search values across selected tables." action="Search" />
-        <ToolRow icon={<IconTerminal2 size={18} stroke={1.6} />} title="SQL console" description="Open another isolated query session." action="Open" />
-        <ToolRow icon={<IconKey size={18} stroke={1.6} />} title="Credential check" description="Verify locally stored connection credentials." action="Check" />
+        <ToolRow
+          icon={<IconTerminal2 size={18} stroke={1.6} />}
+          title="New SQL console"
+          description="Open another isolated SQL editor tab."
+          action="Open"
+          onClick={newEditor}
+        />
+        <ToolRow
+          icon={<IconKey size={18} stroke={1.6} />}
+          title="Reconnect active connection"
+          description={activeConnection ? `Reconnect and refresh schema metadata for ${activeConnection.name}.` : "Select a connection first."}
+          action={activeId ? "Reconnect" : "Unavailable"}
+          disabled={!activeId}
+          onClick={() => activeId && void openAndIntrospect(activeId)}
+        />
+        <ToolRow
+          icon={<IconDatabaseSearch size={18} stroke={1.6} />}
+          title="Cross-table data search"
+          description="Search a value across multiple tables and columns."
+          action="Planned"
+          disabled
+        />
       </div>
     </PanelShell>
   );
