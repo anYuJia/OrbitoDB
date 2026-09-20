@@ -1,6 +1,6 @@
 use crate::drivers::Driver;
 use crate::error::AppResult;
-use crate::types::{ColumnInfo, ConstraintInfo, ForeignKey, IndexInfo, TableInfo};
+use crate::types::{ColumnInfo, ConstraintInfo, DatabaseObjectInfo, ForeignKey, IndexInfo, TableInfo};
 
 /// Introspection helpers the command layer calls. Thin pass-throughs today;
 /// the seam for caching / cross-engine normalization later.
@@ -24,4 +24,9 @@ pub async fn introspect_indexes(driver: &dyn Driver, table: &str) -> AppResult<V
 
 pub async fn introspect_constraints(driver: &dyn Driver, table: &str) -> AppResult<Vec<ConstraintInfo>> {
     driver.list_constraints(table).await
+}
+
+
+pub async fn introspect_database_objects(driver: &dyn Driver) -> AppResult<Vec<DatabaseObjectInfo>> {
+    driver.list_database_objects().await
 }
