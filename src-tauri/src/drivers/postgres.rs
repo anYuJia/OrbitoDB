@@ -226,7 +226,7 @@ impl Driver for PgDriver {
 
     async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
         let rows = sqlx::query(
-            "SELECT tc.table_name, kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column \
+            "SELECT tc.constraint_name, tc.table_name, kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column \
              FROM information_schema.table_constraints tc \
              JOIN information_schema.key_column_usage kcu \
                ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema \
@@ -241,6 +241,7 @@ impl Driver for PgDriver {
         Ok(rows
             .iter()
             .map(|row| ForeignKey {
+                name: row.try_get("constraint_name").ok(),
                 table: row.try_get("table_name").unwrap_or_default(),
                 column: row.try_get("column_name").unwrap_or_default(),
                 ref_table: row.try_get("ref_table").unwrap_or_default(),
