@@ -250,23 +250,7 @@ export function buildSqliteRebuildSql(
     };
   });
 
-  const escaped = editedColumn.replace(/[.*+?^$\{\}()|[\]\\]/g, "\\  const temp = `__orbitodb_rebuild_${table.replace(/[^A-Za-z0-9_]/g, "_")}`;
-  const mappedFks = foreignKeys
-    .filter((fk) => fk.table === table)
-    .map((fk) => ({
-      ...fk,
-      table: temp,
-      column: fk.column === editedColumn ? next.name.trim() : fk.column,
-      refColumn: fk.refTable === table && fk.refColumn === editedColumn ? next.name.trim() : fk.refColumn,
-    }));
-  const mappedConstraints = constraints.map((constraint) => ({
-    ...constraint,
-    columns: constraint.columns.map((column) => (column === editedColumn ? next.name.trim() : column)),
-    definition: constraint.definition,
-  }));
-
-  const create = buildTableDdl("sqlite", temp, nextColumns, mappedFks, indexes, mappedConstraints);
-  const q = (value: string) => quoteDdlIdentifier("sqlite", value);");
+  const escaped = editedColumn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const columnToken = new RegExp(`\\b${escaped}\\b`, "g");
   const mappedIndexes = indexes.map((index) => ({
     ...index,
