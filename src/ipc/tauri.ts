@@ -4,6 +4,7 @@ import type {
   ColumnInfo,
   ConnectionConfig,
   ConnectionDiagnostics,
+  ConstraintInfo,
   ForeignKey,
   IndexInfo,
   HistoryEntry,
@@ -39,6 +40,8 @@ export const tauriBackend: Backend = {
     invoke<ColumnInfo[]>("list_columns", { connectionId, table }),
   listForeignKeys: (connectionId) => invoke<ForeignKey[]>("list_foreign_keys", { connectionId }),
   listIndexes: (connectionId, table) => invoke<IndexInfo[]>("list_indexes", { connectionId, table }),
+  listConstraints: (connectionId, table) =>
+    invoke<ConstraintInfo[]>("list_constraints", { connectionId, table }),
   recentHistory: (limit) => invoke<HistoryEntry[]>("recent_history", { limit }),
   updateCell: (connectionId, table, pkColumn, pkValue, column, value) =>
     invoke<void>("update_cell", { connectionId, table, pkColumn, pkValue, column, value }),
