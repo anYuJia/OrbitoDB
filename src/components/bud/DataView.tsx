@@ -25,9 +25,9 @@ import { SqlPanel } from "./SqlPanel";
 
 type Icon = ComponentType<{ size?: number; stroke?: number }>;
 const TOOLS: { Icon: Icon; label: string }[] = [
-  { Icon: IconDownload, label: "Import" },
-  { Icon: IconUpload, label: "Export" },
-  { Icon: IconBolt, label: "Row actions" },
+  { Icon: IconDownload, label: "Import CSV" },
+  { Icon: IconUpload, label: "Export CSV" },
+  { Icon: IconBolt, label: "Rows" },
 ];
 
 type MenuState = { kind: "rowactions" | "generate"; x: number; y: number } | null;
@@ -81,13 +81,13 @@ export function DataView() {
 
   const onTool = (label: string, e: MouseEvent) => {
     switch (label) {
-      case "Import":
+      case "Import CSV":
         fileRef.current?.click();
         break;
-      case "Export":
+      case "Export CSV":
         if (result) download(`${table}.csv`, toCsv(result));
         break;
-      case "Row actions":
+      case "Rows":
         openMenu("rowactions", e);
         break;
       case "Generate":
@@ -176,29 +176,37 @@ export function DataView() {
         )}
       </div>
 
-      <div className="bud-toolbar">
-        {TOOLS.map((t) => (
-          <button
-            key={t.label}
-            className={`bud-tool ${t.label === "Row actions" && n ? "has-sel" : ""}`}
-            onClick={(e) => onTool(t.label, e)}
-          >
-            <t.Icon size={15} stroke={1.6} /> {t.label}
-            {t.label === "Row actions" && n > 0 && <span className="bud-sel-badge">{n}</span>}
-          </button>
-        ))}
-      </div>
+      {view === "data" && editTable && (
+        <div className="bud-toolbar odb-data-toolbar">
+          <span className="odb-data-context">
+            <IconTable size={14} stroke={1.7} />
+            <b>{editTable.table}</b>
+            <span>table data</span>
+          </span>
+          <span className="odb-toolbar-spacer" />
+          {TOOLS.map((t) => (
+            <button
+              key={t.label}
+              className={`bud-tool ${t.label === "Rows" && n ? "has-sel" : ""}`}
+              onClick={(e) => onTool(t.label, e)}
+            >
+              <t.Icon size={14} stroke={1.7} /> {t.label}
+              {t.label === "Rows" && n > 0 && <span className="bud-sel-badge">{n}</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && <div className="bud-error">⚠ {error.message ?? error.kind}</div>}
 
       {!activeId ? (
-        <div className="bud-empty">Add a server, then pick a source on the left.</div>
+        <div className="bud-empty">Create or select a connection from Database Explorer.</div>
       ) : view === "history" ? (
         <HistoryView />
       ) : view === "sql" ? (
         <SqlPanel key={activeEditorId} />
       ) : !editTable ? (
-        <div className="bud-empty">Pick a table on the left to view and edit its data.</div>
+        <div className="bud-empty">Select a table in Database Explorer to browse its rows.</div>
       ) : (
         <div className="bud-data-row">
           <DataGrid />
