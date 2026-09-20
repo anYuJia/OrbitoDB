@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions};
+use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode};
 use sqlx::{Column as _, Row, TypeInfo};
 
-use crate::drivers::Driver;
+use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
 use crate::executor::mysql_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
 
 pub struct MySqlDriver {
     pool: sqlx::MySqlPool,
@@ -21,12 +21,33 @@ fn server_options(cfg: &ConnectionConfig, password: Option<&str>) -> MySqlConnec
     let mut o = MySqlConnectOptions::new()
         .host(cfg.host.as_deref().unwrap_or("localhost"))
         .port(cfg.port.unwrap_or(3306));
+
     if let Some(u) = cfg.username.as_deref() {
         o = o.username(u);
     }
     if let Some(p) = password {
         o = o.password(p);
     }
+
+    let tls_mode = cfg.tls.as_ref().map(|tls| tls.mode).unwrap_or(TlsMode::Disable);
+    o = o.ssl_mode(match tls_mode {
+        TlsMode::Disable => MySqlSslMode::Disabled,
+        TlsMode::Prefer => MySqlSslMode::Preferred,
+        TlsMode::Require => MySqlSslMode::Required,
+        TlsMode::VerifyCa => MySqlSslMode::VerifyCa,
+        TlsMode::VerifyFull => MySqlSslMode::VerifyIdentity,
+    });
+
+    if let Some(ca_path) = cfg
+        .tls
+        .as_ref()
+        .and_then(|tls| tls.ca_path.as_deref())
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        o = o.ssl_ca(expand_home_path(ca_path));
+    }
+
     o
 }
 
