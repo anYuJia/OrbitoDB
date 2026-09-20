@@ -713,14 +713,14 @@ export function SqlPanel() {
 
       <div className="bud-sql-results">
         <div className="bud-results-tabs">
-          <button className={tab === "log" ? "on" : ""} onClick={() => setTab("log")}>
-            Log
+          <button className={tab === "result" ? "on" : ""} onClick={() => setTab("result")}>
+            {res ? `Result · ${res.rows.length.toLocaleString()}` : "Result"}
           </button>
           <button className={tab === "dbms" ? "on" : ""} onClick={() => setTab("dbms")}>
-            DBMS Output
+            Messages
           </button>
-          <button className={tab === "result" ? "on" : ""} onClick={() => setTab("result")}>
-            {res ? `1: Result [${res.rows.length}]` : "Result"}
+          <button className={tab === "log" ? "on" : ""} onClick={() => setTab("log")}>
+            Log
           </button>
         </div>
         <div className="bud-results-body">
@@ -766,7 +766,7 @@ export function SqlPanel() {
               );
             })()
           ) : tab === "dbms" ? (
-            <div className="bud-results-log">No DBMS output.</div>
+            <div className="bud-results-log">No messages for this query.</div>
           ) : err ? (
             <div className="bud-error">⚠ {err.message ?? err.kind}</div>
           ) : res && res.columns.length > 0 ? (
