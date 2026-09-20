@@ -14,7 +14,7 @@ import {
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import type { ConnEnv, ConnectionConfig, Engine, SshAuth } from "../../ipc/types";
+import type { ConnEnv, ConnectionConfig, Engine, SshAuth, TlsMode } from "../../ipc/types";
 import { getBackend, isTauri } from "../../ipc/backend";
 import { bridgeHealthy } from "../../ipc/http";
 import { backdropV, centeredModalV, MotionButton } from "../../lib/motion";
@@ -50,6 +50,29 @@ function defaultPortFor(engine: Engine): string {
 }
 
 
+function parseTlsMode(engine: Exclude<Engine, "sqlite">, url: URL): TlsMode {
+  const raw =
+    engine === "postgres"
+      ? url.searchParams.get("sslmode")
+      : url.searchParams.get("ssl-mode");
+  if (!raw) return "disable";
+
+  const value = raw.trim().toLowerCase().replace(/_/g, "-");
+  if (engine === "postgres") {
+    if (["disable", "allow", "prefer", "require", "verify-ca", "verify-full"].includes(value)) {
+      return value as TlsMode;
+    }
+    throw new Error(`Unsupported PostgreSQL sslmode: ${raw}`);
+  }
+
+  if (value === "disabled" || value === "disable") return "disable";
+  if (value === "preferred" || value === "prefer") return "prefer";
+  if (value === "required" || value === "require") return "require";
+  if (value === "verify-ca") return "verify-ca";
+  if (value === "verify-identity" || value === "verify-full") return "verify-full";
+  throw new Error(`Unsupported MySQL ssl-mode: ${raw}`);
+}
+
 function parseConnectionUrl(raw: string): {
   engine: Exclude<Engine, "sqlite">;
   host: string;
@@ -57,6 +80,9 @@ function parseConnectionUrl(raw: string): {
   database: string;
   username: string;
   password: string;
+  tlsMode: TlsMode;
+  tlsCaPath: string;
+  ignoredParams: string[];
 } {
   const value = raw.trim();
   if (!value) throw new Error("Paste a PostgreSQL or MySQL connection URL.");
@@ -82,6 +108,18 @@ function parseConnectionUrl(raw: string): {
   if (!url.hostname) throw new Error("The connection URL is missing a host.");
   if (!database) throw new Error("The connection URL is missing a database name.");
 
+  const tlsMode = parseTlsMode(engine, url);
+  const tlsCaPath =
+    engine === "postgres"
+      ? url.searchParams.get("sslrootcert") ?? ""
+      : url.searchParams.get("ssl-ca") ?? "";
+  const consumed = new Set(
+    engine === "postgres"
+      ? ["sslmode", "sslrootcert"]
+      : ["ssl-mode", "ssl-ca"],
+  );
+  const ignoredParams = [...url.searchParams.keys()].filter((key) => !consumed.has(key));
+
   return {
     engine,
     host: url.hostname,
@@ -89,6 +127,9 @@ function parseConnectionUrl(raw: string): {
     database,
     username: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
+    tlsMode,
+    tlsCaPath,
+    ignoredParams,
   };
 }
 
@@ -123,6 +164,8 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
   const [password, setPassword] = useState("");
   const [connectionUrl, setConnectionUrl] = useState("");
   const [showConnectionUrl, setShowConnectionUrl] = useState(false);
+  const [tlsMode, setTlsMode] = useState<TlsMode>(existing?.tls?.mode ?? "disable");
+  const [tlsCaPath, setTlsCaPath] = useState(existing?.tls?.caPath ?? "");
   const [sshEnabled, setSshEnabled] = useState(existing?.ssh?.enabled ?? false);
   const [sshHost, setSshHost] = useState(existing?.ssh?.host ?? "");
   const [sshPort, setSshPort] = useState(String(existing?.ssh?.port ?? 22));
@@ -147,9 +190,12 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
       setHost("localhost");
       setUsername("");
       setPassword("");
+      setTlsMode("disable");
+      setTlsCaPath("");
       setSshEnabled(false);
     }
     if (next === "postgres" && !schema.trim()) setSchema("public");
+    if (next === "mysql" && tlsMode === "allow") setTlsMode("prefer");
   };
 
   const applyConnectionUrl = () => {
@@ -161,15 +207,17 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
       setDatabase(parsed.database);
       setUsername(parsed.username);
       setPassword(parsed.password);
+      setTlsMode(parsed.tlsMode);
+      setTlsCaPath(parsed.tlsCaPath);
       setDatabases(null);
       if (!name.trim()) setName(`${engineLabel(parsed.engine)} · ${parsed.database}`);
-      const url = new URL(connectionUrl.trim());
-      const ignored = [...url.searchParams.keys()];
       setStatus({
         kind: "ok",
-        msg: ignored.length
-          ? `Imported URL · connection parameters filled. URL query options are not stored yet: ${ignored.join(", ")}`
-          : "Imported connection URL.",
+        msg: parsed.ignoredParams.length
+          ? `Imported URL · unsupported query options were ignored: ${parsed.ignoredParams.join(", ")}`
+          : parsed.tlsMode === "disable"
+            ? "Imported connection URL."
+            : `Imported connection URL · TLS ${parsed.tlsMode}.`,
       });
       setConnectionUrl("");
       setShowConnectionUrl(false);
@@ -189,6 +237,13 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
     env: env || null,
     group: group.trim() || null,
     schema: engine === "postgres" ? schema.trim() || "public" : null,
+    tls:
+      engine === "sqlite" || tlsMode === "disable"
+        ? null
+        : {
+            mode: tlsMode,
+            caPath: tlsCaPath.trim() || null,
+          },
     ssh:
       engine === "sqlite" || !sshEnabled
         ? null
@@ -260,10 +315,14 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
       !!sshHost.trim() &&
       !!sshUsername.trim() &&
       (sshAuth === "agent" || !!sshPrivateKeyPath.trim()));
+  const tlsValid =
+    tlsMode === "disable" ||
+    (!remoteInBrowser && !(sshEnabled && tlsMode === "verify-full"));
   const canSave =
     !!database.trim() &&
     remoteReady &&
     sshValid &&
+    tlsValid &&
     (engine === "sqlite" || !!host.trim());
 
   return (
@@ -536,6 +595,57 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
             <section className="odb-connection-section">
               <div className="odb-section-label">
                 <span>04</span>
+                <div>
+                  <b>TLS / SSL</b>
+                  <small>Transport encryption for the database connection.</small>
+                </div>
+              </div>
+
+              <div className="odb-form-grid credentials">
+                <label className="odb-form-field">
+                  <span>TLS mode</span>
+                  <select
+                    value={tlsMode}
+                    disabled={remoteInBrowser}
+                    onChange={(e) => setTlsMode(e.target.value as TlsMode)}
+                  >
+                    <option value="disable">Disabled</option>
+                    {engine === "postgres" && <option value="allow">Allow</option>}
+                    <option value="prefer">Prefer</option>
+                    <option value="require">Require</option>
+                    <option value="verify-ca">Verify CA</option>
+                    <option value="verify-full">{engine === "mysql" ? "Verify identity" : "Verify full"}</option>
+                  </select>
+                  <small>{remoteInBrowser ? "TLS profile controls are available in the desktop app." : "Disabled preserves OrbitoDB's existing non-TLS behavior."}</small>
+                </label>
+                <label className="odb-form-field">
+                  <span>CA certificate path</span>
+                  <input
+                    value={tlsCaPath}
+                    disabled={remoteInBrowser || tlsMode === "disable"}
+                    onChange={(e) => setTlsCaPath(e.target.value)}
+                    placeholder="Optional · ~/.config/orbitodb/ca.pem"
+                    spellCheck={false}
+                  />
+                  <small>Optional. Without a custom CA, verification uses the system root store.</small>
+                </label>
+              </div>
+
+              {sshEnabled && tlsMode === "verify-full" && (
+                <div className="odb-connection-alert warn">
+                  <IconAlertTriangle size={15} stroke={1.8} />
+                  <span>
+                    Verify full / identity is unavailable with OrbitoDB's local SSH forward because the driver connects to 127.0.0.1. Use Verify CA, Require, or connect directly.
+                  </span>
+                </div>
+              )}
+            </section>
+          )}
+
+          {engine !== "sqlite" && (
+            <section className="odb-connection-section">
+              <div className="odb-section-label">
+                <span>05</span>
                 <div>
                   <b>SSH tunnel</b>
                   <small>Optional local port forwarding through the system OpenSSH client.</small>
