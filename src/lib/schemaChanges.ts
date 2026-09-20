@@ -1,5 +1,5 @@
 import type { ColumnInfo, ConstraintInfo, Engine, ForeignKey, IndexInfo } from "../ipc/types";
-import { buildTableDdl, quoteDdlIdentifier, renderColumnDefault } from "./ddl";
+import { buildSecondaryIndexStatements, buildTableDdl, quoteDdlIdentifier, renderColumnDefault } from "./ddl";
 
 export interface ColumnEditDraft {
   name: string;
@@ -57,6 +57,14 @@ export function buildColumnAlterPlan(
 
   const currentDefault = normalized(current.defaultValue);
   const nextDefault = normalized(next.defaultValue);
+
+  const unchanged =
+    nextName === current.name &&
+    nextType.toLowerCase() === (current.dataType || "TEXT").trim().toLowerCase() &&
+    next.nullable === current.nullable &&
+    nextDefault === currentDefault &&
+    normalized(next.comment) === normalized(current.comment);
+  if (unchanged) return { statements: [], requiresReview: false };
   if (nextDefault && !isSafeSqlFragment(nextDefault)) {
     throw new Error("Default expression contains unsafe SQL tokens.");
   }
@@ -233,6 +241,7 @@ export function buildSqliteRebuildSql(
       ...fk,
       table: temp,
       column: fk.column === editedColumn ? next.name.trim() : fk.column,
+      refTable: fk.refTable === table ? temp : fk.refTable,
       refColumn: fk.refTable === table && fk.refColumn === editedColumn ? next.name.trim() : fk.refColumn,
     }));
 
@@ -257,7 +266,8 @@ export function buildSqliteRebuildSql(
     detail: renamed ? index.detail.replace(columnToken, next.name.trim()) : index.detail,
   }));
 
-  const create = buildTableDdl("sqlite", temp, nextColumns, mappedFks, mappedIndexes, mappedConstraints);
+  const create = buildTableDdl("sqlite", temp, nextColumns, mappedFks, [], mappedConstraints);
+  const recreateIndexes = buildSecondaryIndexStatements("sqlite", table, mappedIndexes, mappedConstraints);
   const sourceColumns = currentColumns.map((column) => q(column.name)).join(", ");
   const targetColumns = nextColumns.map((column) => q(column.name)).join(", ");
 
@@ -270,6 +280,7 @@ export function buildSqliteRebuildSql(
     `INSERT INTO ${q(temp)} (${targetColumns}) SELECT ${sourceColumns} FROM ${q(table)};`,
     `DROP TABLE ${q(table)};`,
     `ALTER TABLE ${q(temp)} RENAME TO ${q(table)};`,
+    ...(recreateIndexes.length ? ["", "-- Recreate secondary indexes", ...recreateIndexes] : []),
     "COMMIT;",
     "PRAGMA foreign_keys=ON;",
   ].join("\n");
