@@ -13,6 +13,7 @@ import type {
   ColumnInfo,
   ConnectionConfig,
   ForeignKey,
+  IndexInfo,
   HistoryEntry,
   QueryResult,
   TableInfo,
@@ -243,6 +244,17 @@ class LocalBackend implements Backend {
       }
     }
     return out;
+  }
+
+  async listIndexes(connectionId: string, table: string): Promise<IndexInfo[]> {
+    const db = await this.ensureDb(connectionId);
+    const res = db.exec(`PRAGMA index_list(${q(table)})`);
+    const rows = res.length ? res[0].values : [];
+    return rows.map((row) => ({
+      name: String(row[1] ?? ""),
+      unique: Number(row[2] ?? 0) === 1,
+      detail: row[3] == null ? "SQLite index" : `origin: ${String(row[3])}`,
+    }));
   }
 
   async recentHistory(limit: number): Promise<HistoryEntry[]> {
