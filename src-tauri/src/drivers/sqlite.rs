@@ -438,6 +438,17 @@ mod tests {
         assert!(email_index.unique);
         assert!(email_index.detail.contains("email"));
 
+        d.execute(
+            "CREATE TABLE constraint_t (a INTEGER, b INTEGER, code TEXT UNIQUE, age INTEGER CHECK(age >= 0), PRIMARY KEY(b, a))",
+        )
+        .await
+        .unwrap();
+        let constraints = d.list_constraints("constraint_t").await.unwrap();
+        let primary = constraints.iter().find(|item| item.kind == "primary").unwrap();
+        assert_eq!(primary.columns, vec!["b".to_string(), "a".to_string()]);
+        assert!(constraints.iter().any(|item| item.kind == "unique" && item.columns == vec!["code".to_string()]));
+        assert!(constraints.iter().any(|item| item.kind == "check" && item.definition.contains("age >= 0")));
+
         // Safe quoting: an arbitrary identifier is treated as an identifier,
         // never executed as SQL.
         assert!(d.list_columns("bad; DROP").await.unwrap().is_empty());
