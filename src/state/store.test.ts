@@ -45,6 +45,37 @@ describe("store", () => {
     expect(useStore.getState().error?.kind).toBe("notConnected");
   });
 
+  it("new SQL tabs inherit the active connection", async () => {
+    await useStore.getState().loadConnections();
+    const id = useStore.getState().connections[0].id;
+    await useStore.getState().openAndIntrospect(id);
+
+    useStore.getState().newEditor();
+    const state = useStore.getState();
+    const editor = state.editors.find((item) => item.id === state.activeEditorId);
+    expect(editor?.connectionId).toBe(id);
+  });
+
+  it("switching SQL tabs restores their pinned connection", async () => {
+    await useStore.getState().loadConnections();
+    const ids = useStore.getState().connections.map((connection) => connection.id);
+    expect(ids.length).toBeGreaterThan(1);
+
+    await useStore.getState().openAndIntrospect(ids[0]);
+    useStore.getState().newEditor();
+    const firstTab = useStore.getState().activeEditorId;
+
+    await useStore.getState().openAndIntrospect(ids[1]);
+    useStore.getState().newEditor();
+    const secondTab = useStore.getState().activeEditorId;
+
+    expect(useStore.getState().editors.find((item) => item.id === firstTab)?.connectionId).toBe(ids[0]);
+    expect(useStore.getState().editors.find((item) => item.id === secondTab)?.connectionId).toBe(ids[1]);
+
+    await useStore.getState().selectEditor(firstTab);
+    expect(useStore.getState().activeConnectionId).toBe(ids[0]);
+  });
+
   it("switching sources clears the previous source's tables and open table", async () => {
     await useStore.getState().loadConnections();
     const ids = useStore.getState().connections.map((c) => c.id);
