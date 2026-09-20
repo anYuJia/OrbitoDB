@@ -250,11 +250,29 @@ class LocalBackend implements Backend {
     const db = await this.ensureDb(connectionId);
     const res = db.exec(`PRAGMA index_list(${q(table)})`);
     const rows = res.length ? res[0].values : [];
-    return rows.map((row) => ({
-      name: String(row[1] ?? ""),
-      unique: Number(row[2] ?? 0) === 1,
-      detail: row[3] == null ? "SQLite index" : `origin: ${String(row[3])}`,
-    }));
+    return rows
+      .map((row) => {
+        const name = String(row[1] ?? "");
+        if (!name) return null;
+        const info = db.exec(`PRAGMA index_info(${q(name)})`);
+        const columns = (info.length ? info[0].values : [])
+          .map((item) => String(item[2] ?? ""))
+          .filter(Boolean);
+        const origin = row[3] == null ? "" : String(row[3]);
+        const detail = columns.length
+          ? origin && origin !== "c"
+            ? `${columns.join(", ")} · origin: ${origin}`
+            : columns.join(", ")
+          : origin
+            ? `origin: ${origin}`
+            : "SQLite index";
+        return {
+          name,
+          unique: Number(row[2] ?? 0) === 1,
+          detail,
+        } satisfies IndexInfo;
+      })
+      .filter((index): index is IndexInfo => index !== null);
   }
 
   async recentHistory(limit: number): Promise<HistoryEntry[]> {
