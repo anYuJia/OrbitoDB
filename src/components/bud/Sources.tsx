@@ -104,9 +104,11 @@ function ObjectGroup({
 export function Sources({
   onAddServer,
   onEditServer,
+  onCreateTable,
 }: {
   onAddServer: () => void;
   onEditServer: (conn: ConnectionConfig) => void;
+  onCreateTable: () => void;
 }) {
   const connections = useStore((s) => s.connections);
   const loadConnections = useStore((s) => s.loadConnections);
@@ -217,7 +219,13 @@ export function Sources({
                   <div className="bud-ds-empty">No connections yet</div>
                 ) : (
                   connections.map((c) => (
-                    <Datasource key={c.id} conn={c} onEditServer={onEditServer} filter={filter} />
+                    <Datasource
+                      key={c.id}
+                      conn={c}
+                      onEditServer={onEditServer}
+                      onCreateTable={onCreateTable}
+                      filter={filter}
+                    />
                   ))
                 )}
               </div>
@@ -279,10 +287,12 @@ function SavedList({ kind }: { kind: "Scripts" | "Starred" }) {
 function Datasource({
   conn,
   onEditServer,
+  onCreateTable,
   filter,
 }: {
   conn: ConnectionConfig;
   onEditServer: (conn: ConnectionConfig) => void;
+  onCreateTable: () => void;
   filter: string;
 }) {
   const [open, setOpen] = useState(true);
@@ -293,7 +303,6 @@ function Datasource({
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
   const deleteConnection = useStore((s) => s.deleteConnection);
   const saveConnection = useStore((s) => s.saveConnection);
-  const createTable = useStore((s) => s.createTable);
   const dropTables = useStore((s) => s.dropTables);
   const clearTables = useStore((s) => s.clearTables);
   const setTopView = useStore((s) => s.setTopView);
@@ -341,11 +350,9 @@ function Datasource({
   };
 
   const newTable = async () => {
-    const name = await promptDialog({ title: "New table", label: "Table name", placeholder: "e.g. invoices" });
-    if (!name?.trim()) return;
     if (!isActive) await openAndIntrospect(conn.id);
-    await createTable(name.trim(), [{ name: "id", dataType: "INTEGER", nullable: false, primaryKey: true }]);
     setOpen(true);
+    onCreateTable();
   };
   const rename = async () => {
     const name = await promptDialog({ title: "Rename data source", label: "Name", defaultValue: conn.name });
