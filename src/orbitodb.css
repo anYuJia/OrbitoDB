@@ -1,0 +1,1157 @@
+/* OrbitoDB product layer
+   Loaded after legacy styles.css so the new desktop system can evolve without
+   continually editing the imported MamaSQL stylesheet. */
+
+:root {
+  --odb-bg: #0d0f12;
+  --odb-surface: #13161a;
+  --odb-surface-2: #181c21;
+  --odb-surface-3: #1d2228;
+  --odb-border: #252b33;
+  --odb-border-strong: #313944;
+  --odb-text: #eceff3;
+  --odb-text-2: #a7b0ba;
+  --odb-text-3: #6f7782;
+  --odb-primary: #4c6fff;
+  --odb-primary-2: #7a70ff;
+  --odb-primary-soft: rgba(76, 111, 255, 0.13);
+  --odb-green: #55c58b;
+  --odb-red: #f06b78;
+  --odb-yellow: #d6a84b;
+  --odb-radius: 6px;
+  --odb-mono: "SFMono-Regular", "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  background: var(--odb-bg);
+}
+
+body {
+  color: var(--odb-text);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(76, 111, 255, 0.55);
+  outline-offset: 1px;
+}
+
+* {
+  scrollbar-color: #353c46 transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #353c46;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 10px;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Application frame */
+
+.bud-app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr) 24px;
+  background: var(--odb-bg);
+  color: var(--odb-text);
+}
+
+.bud-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--sidebar-w, 270px) minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--odb-bg);
+}
+
+.sidebar-hidden .bud-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sidebar-hidden .bud-sources {
+  display: none;
+}
+
+/* Native-like titlebar */
+
+.bud-titlebar.odb-titlebar {
+  height: 48px;
+  display: grid;
+  grid-template-columns: minmax(270px, 1fr) minmax(180px, 420px) minmax(420px, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--odb-border);
+  background: #101216;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.odb-title-left,
+.odb-title-center,
+.odb-title-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.odb-title-left {
+  gap: 9px;
+}
+
+.odb-title-center {
+  justify-content: center;
+}
+
+.odb-title-actions {
+  justify-content: flex-end;
+  gap: 3px;
+  -webkit-app-region: no-drag;
+}
+
+.odb-traffic {
+  display: flex;
+  gap: 7px;
+  margin-right: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.odb-traffic span {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.25);
+}
+
+.odb-traffic .r { background: #ff5f57; }
+.odb-traffic .y { background: #febc2e; }
+.odb-traffic .g { background: #28c840; }
+
+.odb-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 2px;
+  color: var(--odb-text);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.odb-brand img {
+  width: 19px;
+  height: 19px;
+}
+
+.odb-icon-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--odb-text-2);
+  -webkit-app-region: no-drag;
+}
+
+.odb-icon-btn:hover:not(:disabled),
+.odb-icon-btn.on {
+  background: var(--odb-surface-2);
+  color: var(--odb-text);
+  border-color: var(--odb-border);
+}
+
+.odb-icon-btn:disabled {
+  color: #4b525c;
+  cursor: default;
+}
+
+.odb-title-separator {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--odb-border);
+}
+
+.odb-connection-pill {
+  max-width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid var(--odb-border);
+  border-radius: 5px;
+  background: #0d1014;
+  color: var(--odb-text-3);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.odb-connection-pill.connected {
+  color: var(--odb-text-2);
+}
+
+.odb-connection-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #59616d;
+}
+
+.odb-connection-pill.connected .odb-connection-dot {
+  background: var(--odb-green);
+  box-shadow: 0 0 0 3px rgba(85, 197, 139, 0.09);
+}
+
+.odb-connection-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--odb-text);
+}
+
+.odb-connection-meta {
+  flex: none;
+  padding-left: 7px;
+  border-left: 1px solid var(--odb-border);
+  color: var(--odb-text-3);
+  text-transform: capitalize;
+}
+
+.odb-search-btn,
+.odb-run-btn {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 5px;
+  -webkit-app-region: no-drag;
+}
+
+.odb-search-btn {
+  margin-left: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--odb-border);
+  background: var(--odb-surface);
+  color: var(--odb-text-2);
+}
+
+.odb-search-btn:hover {
+  border-color: var(--odb-border-strong);
+  background: var(--odb-surface-2);
+  color: var(--odb-text);
+}
+
+.odb-search-btn kbd {
+  padding: 1px 5px;
+  border: 1px solid #343b45;
+  border-radius: 4px;
+  background: #0f1216;
+  color: var(--odb-text-3);
+  font-size: 10px;
+}
+
+.odb-run-btn {
+  margin-left: 4px;
+  padding: 0 11px;
+  border: 1px solid #5b78ff;
+  background: var(--odb-primary);
+  color: white;
+  font-weight: 650;
+}
+
+.odb-run-btn:hover:not(:disabled) {
+  background: #5878ff;
+}
+
+.odb-run-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+/* Database Explorer */
+
+.bud-sources {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--odb-surface);
+  border-right: 1px solid var(--odb-border);
+  overflow: hidden;
+}
+
+.odb-sidebar-head {
+  height: 53px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 7px 12px;
+  border-bottom: 1px solid var(--odb-border);
+}
+
+.odb-sidebar-head > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.odb-sidebar-kicker {
+  color: var(--odb-text-3);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.odb-sidebar-head strong {
+  color: var(--odb-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.odb-sidebar-add {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--odb-border);
+  border-radius: 5px;
+  background: var(--odb-surface-2);
+  color: var(--odb-text-2);
+}
+
+.odb-sidebar-add:hover {
+  border-color: #405071;
+  color: white;
+}
+
+.bud-panel-tabs {
+  height: 34px;
+  display: flex;
+  align-items: end;
+  gap: 1px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--odb-border);
+  background: var(--odb-surface);
+}
+
+.bud-panel-tab {
+  height: 33px;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--odb-text-3);
+  font-size: 11.5px;
+}
+
+.bud-panel-tab:hover {
+  color: var(--odb-text-2);
+  background: transparent;
+}
+
+.bud-panel-tab.on {
+  color: var(--odb-text);
+  border-bottom-color: var(--odb-primary);
+  background: transparent;
+}
+
+.bud-tree-toolbar {
+  min-height: 35px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--odb-border);
+  background: #111419;
+}
+
+.bud-tree-toolbar button {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--odb-text-3);
+}
+
+.bud-tree-toolbar button:hover,
+.bud-tree-toolbar button.on {
+  background: var(--odb-surface-2);
+  border-color: var(--odb-border);
+  color: var(--odb-text);
+}
+
+.bud-src-search {
+  margin: 7px 8px 5px;
+  min-height: 29px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  border: 1px solid var(--odb-border);
+  border-radius: 5px;
+  background: #0e1115;
+  color: var(--odb-text-3);
+}
+
+.bud-src-search:focus-within {
+  border-color: #465985;
+  box-shadow: 0 0 0 2px rgba(76, 111, 255, 0.08);
+}
+
+.bud-src-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--odb-text);
+  font-size: 12px;
+}
+
+.bud-src-search-x {
+  border: 0;
+  background: transparent;
+  color: var(--odb-text-3);
+}
+
+.bud-sources-list {
+  flex: 1;
+  overflow: auto;
+  padding: 5px 5px 12px;
+}
+
+.bud-tnode,
+.bud-src,
+.bud-table,
+.bud-objgroup-head,
+.bud-saved-row {
+  min-height: 27px;
+  border-radius: 4px !important;
+}
+
+.bud-tnode:hover,
+.bud-src:hover,
+.bud-table:hover,
+.bud-objgroup-head:hover,
+.bud-saved-row:hover {
+  background: #1a1f25 !important;
+}
+
+.bud-table.active,
+.bud-src.active,
+.bud-tnode.active {
+  background: var(--odb-primary-soft) !important;
+  color: #f4f6fa !important;
+}
+
+.bud-tnode-label,
+.bud-src-name,
+.bud-table,
+.bud-objgroup-label {
+  font-size: 12px;
+}
+
+.bud-objgroup-count {
+  color: var(--odb-text-3);
+  font-size: 10px;
+}
+
+/* Workspace tabs + context toolbar */
+
+.bud-main {
+  min-width: 0;
+  min-height: 0;
+  background: var(--odb-bg);
+}
+
+.bud-qtabs {
+  height: 36px;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 5px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--odb-border);
+  background: #111419;
+}
+
+.bud-qtab,
+.bud-qtab-new {
+  height: 35px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 0;
+  border-right: 1px solid rgba(37, 43, 51, 0.72);
+  border-radius: 0;
+  background: transparent;
+  color: var(--odb-text-3);
+  font-size: 11.5px;
+}
+
+.bud-qtab:hover {
+  background: #161a20;
+  color: var(--odb-text-2);
+}
+
+.bud-qtab.on {
+  background: var(--odb-surface-2);
+  color: var(--odb-text);
+  box-shadow: inset 0 -2px 0 var(--odb-primary);
+}
+
+.bud-qtab-x {
+  color: #626b77;
+  opacity: 0;
+}
+
+.bud-qtab:hover .bud-qtab-x,
+.bud-qtab.on .bud-qtab-x {
+  opacity: 1;
+}
+
+.bud-qtab-new {
+  width: 34px;
+  justify-content: center;
+  padding: 0;
+  border-right: 1px solid var(--odb-border);
+}
+
+.bud-qtab-new:hover {
+  background: var(--odb-surface-2);
+  color: var(--odb-text);
+}
+
+.bud-toolbar.odb-data-toolbar {
+  height: 37px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 11px;
+  border-bottom: 1px solid var(--odb-border);
+  background: var(--odb-surface);
+}
+
+.odb-data-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--odb-text-2);
+  font-size: 11.5px;
+}
+
+.odb-data-context b {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--odb-text);
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.odb-data-context > span {
+  color: var(--odb-text-3);
+}
+
+.odb-toolbar-spacer {
+  flex: 1;
+}
+
+.bud-tool {
+  height: 27px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid transparent !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  color: var(--odb-text-2) !important;
+  font-size: 11.5px !important;
+}
+
+.bud-tool:hover {
+  border-color: var(--odb-border) !important;
+  background: var(--odb-surface-2) !important;
+  color: var(--odb-text) !important;
+}
+
+/* SQL workbench */
+
+.bud-sqlpanel {
+  background: var(--odb-bg);
+}
+
+.bud-ide-toolbar {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--odb-border);
+  background: var(--odb-surface);
+}
+
+.bud-ide-toolbar button {
+  min-width: 27px;
+  height: 27px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--odb-text-2);
+}
+
+.bud-ide-toolbar button:hover:not(:disabled) {
+  border-color: var(--odb-border);
+  background: var(--odb-surface-2);
+  color: var(--odb-text);
+}
+
+.bud-ide-toolbar .bud-sql-run {
+  background: var(--odb-primary-soft);
+  color: #91a6ff;
+}
+
+.bud-tb-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--odb-border);
+}
+
+.bud-connbar {
+  min-height: 48px;
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  padding: 6px 10px 7px;
+  border-bottom: 1px solid var(--odb-border);
+  background: #111419;
+}
+
+.bud-cb-label {
+  margin-bottom: 3px;
+  color: var(--odb-text-3);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bud-cb-select,
+.bud-cb-input {
+  height: 25px;
+  border: 1px solid var(--odb-border) !important;
+  border-radius: 4px !important;
+  background: var(--odb-surface-2) !important;
+  color: var(--odb-text) !important;
+  font-size: 11.5px !important;
+}
+
+.bud-cb-check {
+  color: var(--odb-text-2);
+  font-size: 11px;
+}
+
+.bud-sql-editor-wrap {
+  background: #101318;
+}
+
+.bud-sql-code,
+.bud-sql-edit,
+.bud-sql-editor,
+.bud-sql-hl {
+  background: #101318 !important;
+}
+
+.bud-sql-editor,
+.bud-sql-hl {
+  font-family: var(--odb-mono) !important;
+  font-size: 12.5px !important;
+  line-height: 1.62 !important;
+}
+
+.bud-sql-gutter {
+  border-right: 1px solid #20262d !important;
+  background: #0e1115 !important;
+  color: #58616d !important;
+  font-family: var(--odb-mono) !important;
+}
+
+.bud-sql-gutter .cur {
+  color: #bdc5cf !important;
+}
+
+.bud-sql-bar {
+  min-height: 26px;
+  border-top: 1px solid var(--odb-border);
+  background: #111419;
+  color: var(--odb-text-3);
+}
+
+.bud-sql-exec {
+  border-color: #405596 !important;
+  background: #1c2850 !important;
+  color: #b9c6ff !important;
+}
+
+.bud-vsplit {
+  height: 4px;
+  background: var(--odb-border);
+  cursor: row-resize;
+}
+
+.bud-vsplit:hover {
+  background: #42537a;
+}
+
+.bud-sql-results {
+  background: var(--odb-bg);
+}
+
+.bud-results-tabs {
+  min-height: 32px;
+  display: flex;
+  align-items: end;
+  gap: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--odb-border);
+  background: var(--odb-surface);
+}
+
+.bud-results-tabs button {
+  height: 31px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--odb-text-3);
+  font-size: 11.5px;
+}
+
+.bud-results-tabs button.on {
+  border-bottom-color: var(--odb-primary);
+  color: var(--odb-text);
+  background: transparent;
+}
+
+.bud-results-body {
+  background: var(--odb-bg);
+}
+
+.bud-res-toolbar {
+  min-height: 36px;
+  border-bottom: 1px solid var(--odb-border);
+  background: #111419;
+}
+
+.bud-grid-wrap {
+  background: var(--odb-bg);
+}
+
+.bud-grid {
+  font-family: var(--odb-mono);
+  font-size: 11.5px;
+}
+
+.bud-grid th {
+  background: #15191e !important;
+  color: var(--odb-text-2) !important;
+  border-color: var(--odb-border) !important;
+}
+
+.bud-grid td {
+  border-color: #20262d !important;
+  background: #0f1216;
+  color: #cdd3da;
+}
+
+.bud-grid tbody tr:nth-child(even) td {
+  background: #11151a;
+}
+
+.bud-grid tbody tr:hover td {
+  background: #18202d;
+}
+
+/* Empty/error states */
+
+.bud-empty {
+  color: var(--odb-text-3);
+}
+
+.bud-error {
+  border-bottom: 1px solid rgba(240, 107, 120, 0.22);
+  background: rgba(240, 107, 120, 0.07);
+  color: #ff98a2;
+}
+
+/* Honest utility/settings pages */
+
+.odb-page {
+  overflow: auto;
+  padding: 34px clamp(24px, 5vw, 72px);
+}
+
+.odb-page-head {
+  max-width: 840px;
+  margin: 0 auto 26px;
+}
+
+.odb-page-eyebrow {
+  display: block;
+  margin-bottom: 7px;
+  color: #7f91ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.odb-page-head h1 {
+  margin: 0;
+  color: var(--odb-text);
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.odb-page-head p {
+  margin: 7px 0 0;
+  max-width: 620px;
+  color: var(--odb-text-2);
+  line-height: 1.55;
+}
+
+.odb-page-body {
+  max-width: 840px;
+  margin: 0 auto;
+}
+
+.odb-section,
+.odb-settings-list {
+  border-top: 1px solid var(--odb-border);
+}
+
+.odb-tool-row {
+  width: 100%;
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--odb-border);
+  background: transparent;
+  color: var(--odb-text);
+  text-align: left;
+}
+
+.odb-tool-row:hover {
+  background: rgba(255,255,255,0.018);
+}
+
+.odb-tool-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--odb-border);
+  border-radius: 5px;
+  color: #98a8ff;
+  background: var(--odb-surface);
+}
+
+.odb-tool-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.odb-tool-copy b {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.odb-tool-copy span {
+  color: var(--odb-text-3);
+  font-size: 11.5px;
+}
+
+.odb-tool-action {
+  color: var(--odb-text-2);
+  font-size: 11.5px;
+}
+
+.odb-setting-line {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  border-bottom: 1px solid var(--odb-border);
+}
+
+.odb-setting-line > span {
+  color: var(--odb-text-3);
+  font-size: 11.5px;
+}
+
+.odb-setting-line code {
+  color: var(--odb-text);
+  font-family: var(--odb-mono);
+  font-size: 11.5px;
+}
+
+.odb-danger-zone {
+  margin-top: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(240, 107, 120, 0.28);
+}
+
+.odb-danger-zone > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.odb-danger-zone b {
+  font-size: 12px;
+}
+
+.odb-danger-zone span {
+  color: var(--odb-text-3);
+  font-size: 11.5px;
+}
+
+.odb-danger-zone button {
+  height: 29px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid rgba(240, 107, 120, 0.35);
+  border-radius: 5px;
+  background: rgba(240, 107, 120, 0.07);
+  color: #ff9aa4;
+}
+
+.odb-empty-state {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--odb-text-3);
+}
+
+.odb-empty-state b {
+  color: var(--odb-text);
+  font-weight: 600;
+}
+
+.odb-empty-state span {
+  font-size: 11.5px;
+}
+
+/* Status bar */
+
+.bud-statusbar.odb-statusbar {
+  min-width: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 8px;
+  border-top: 1px solid var(--odb-border);
+  background: #0f1216;
+  color: var(--odb-text-3);
+  font-size: 10.5px;
+  overflow: hidden;
+}
+
+.odb-status-left,
+.odb-status-right,
+.odb-status-connection,
+.odb-txn {
+  display: flex;
+  align-items: center;
+}
+
+.odb-status-left,
+.odb-status-right {
+  min-width: 0;
+  gap: 9px;
+}
+
+.odb-status-connection {
+  min-width: 0;
+  gap: 6px;
+  color: var(--odb-text-2);
+}
+
+.odb-status-connection b {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--odb-text);
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.odb-status-connection > span {
+  color: var(--odb-text-3);
+  text-transform: capitalize;
+}
+
+.odb-status-connection.muted {
+  color: var(--odb-text-3);
+}
+
+.odb-env-tag,
+.odb-readonly {
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.odb-env-tag.prod {
+  background: rgba(240, 107, 120, 0.11);
+  color: #ff8d98;
+}
+
+.odb-env-tag.dev {
+  background: rgba(85, 197, 139, 0.10);
+  color: #77d7a7;
+}
+
+.odb-env-tag.staging {
+  background: rgba(214, 168, 75, 0.11);
+  color: #e4ba67;
+}
+
+.odb-readonly {
+  background: rgba(122, 112, 255, 0.1);
+  color: #aaa4ff;
+}
+
+.odb-status-right {
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.odb-txn {
+  gap: 5px;
+  color: #e3b95e;
+}
+
+.odb-txn button {
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--odb-border);
+  border-radius: 3px;
+  background: var(--odb-surface);
+  color: var(--odb-text-2);
+  font-size: 9.5px;
+}
+
+.odb-txn button.primary {
+  border-color: #4765d6;
+  background: rgba(76, 111, 255, 0.16);
+  color: #b4c0ff;
+}
+
+/* Split handle follows the sidebar width without looking like a separate column. */
+
+.bud-hsplit {
+  position: fixed;
+  z-index: 8;
+  top: 48px;
+  bottom: 24px;
+  left: calc(var(--sidebar-w, 270px) - 2px);
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+}
+
+.bud-hsplit:hover {
+  background: rgba(76, 111, 255, 0.34);
+}
+
+/* Smaller windows: keep the product usable without inventing a mobile layout. */
+
+@media (max-width: 980px) {
+  .bud-titlebar.odb-titlebar {
+    grid-template-columns: minmax(185px, 1fr) auto;
+  }
+
+  .odb-title-center {
+    display: none;
+  }
+
+  .odb-search-btn span,
+  .odb-search-btn kbd,
+  .odb-run-btn span {
+    display: none;
+  }
+
+  .odb-search-btn,
+  .odb-run-btn {
+    width: 30px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .odb-brand span {
+    display: none;
+  }
+}
