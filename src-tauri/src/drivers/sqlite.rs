@@ -274,12 +274,24 @@ impl Driver for SqliteDriver {
     async fn list_constraints(&self, table: &str) -> AppResult<Vec<ConstraintInfo>> {
         let mut out = Vec::new();
 
-        let columns = self.list_columns(table).await?;
-        let primary = columns
+        let pk_rows = sqlx::query(&format!("PRAGMA table_xinfo({})", quote_ident(table)))
+            .fetch_all(&self.pool)
+            .await?;
+        let mut primary = pk_rows
             .iter()
-            .filter(|column| column.is_primary_key)
-            .map(|column| column.name.clone())
+            .filter_map(|row| {
+                let ordinal = row.try_get::<i64, _>("pk").unwrap_or(0);
+                if ordinal <= 0 {
+                    return None;
+                }
+                Some((
+                    ordinal,
+                    row.try_get::<String, _>("name").unwrap_or_default(),
+                ))
+            })
             .collect::<Vec<_>>();
+        primary.sort_by_key(|(ordinal, _)| *ordinal);
+        let primary = primary.into_iter().map(|(_, name)| name).collect::<Vec<_>>();
         if !primary.is_empty() {
             out.push(ConstraintInfo {
                 name: None,
