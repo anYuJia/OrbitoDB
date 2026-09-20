@@ -35,8 +35,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Cross-table SQL unit test
+      - name: Frontend unit tests
         run: npx vitest run src/lib/crossTableSearch.test.ts src/lib/ddl.test.ts
+
+      - name: Bridge syntax check
+        run: node --check server/bridge.mjs
 
       - name: TypeScript + Vite build
         run: npm run build
