@@ -3,7 +3,7 @@ use crate::error::{AppError, AppResult};
 use crate::schema;
 use crate::secrets;
 use crate::store::{HistoryEntry, Store};
-use crate::types::{ColumnDef, ColumnInfo, ConnectionConfig, Engine, ForeignKey, IndexInfo, QueryResult, TableInfo};
+use crate::types::{ColumnDef, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, Engine, ForeignKey, IndexInfo, QueryResult, TableInfo};
 use tauri::State;
 
 /// Shared application state, managed by Tauri and injected into commands.
@@ -158,6 +158,15 @@ pub async fn cancel_query(
 ) -> AppResult<bool> {
     let driver = state.registry.get(&connection_id).await?;
     driver.cancel().await
+}
+
+#[tauri::command]
+pub async fn connection_diagnostics(
+    state: State<'_, AppState>,
+    connection_id: String,
+) -> AppResult<ConnectionDiagnostics> {
+    let driver = state.registry.get(&connection_id).await?;
+    driver.diagnostics().await
 }
 
 #[tauri::command]
