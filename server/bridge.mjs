@@ -525,6 +525,12 @@ const handlers = {
                 ? "STORED (expression unavailable)"
                 : null,
           comment: null,
+          extra:
+            hidden === 2
+              ? "VIRTUAL GENERATED"
+              : hidden === 3
+                ? "STORED GENERATED"
+                : null,
         };
       });
     }
@@ -536,7 +542,8 @@ const handlers = {
                CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END AS is_pk,
                CASE WHEN a.attgenerated = '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS column_default,
                CASE WHEN a.attgenerated <> '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS generation_expression,
-               pg_catalog.col_description(a.attrelid, a.attnum) AS column_comment
+               pg_catalog.col_description(a.attrelid, a.attnum) AS column_comment,
+               CASE a.attidentity WHEN 'a' THEN 'IDENTITY ALWAYS' WHEN 'd' THEN 'IDENTITY BY DEFAULT' ELSE NULL END AS column_extra
         FROM pg_catalog.pg_attribute a
         JOIN pg_catalog.pg_class cls ON cls.oid = a.attrelid
         JOIN pg_catalog.pg_namespace ns ON ns.oid = cls.relnamespace
@@ -560,10 +567,11 @@ const handlers = {
         defaultValue: r[4] == null ? null : String(r[4]),
         generated: r[5] == null ? null : String(r[5]),
         comment: r[6] == null ? null : String(r[6]),
+        extra: r[7] == null ? null : String(r[7]),
       }));
     }
     const sql =
-      "SELECT column_name, column_type, is_nullable, column_key, column_default, generation_expression, column_comment FROM information_schema.columns WHERE table_name = ? AND table_schema = database() ORDER BY ordinal_position";
+      "SELECT column_name, column_type, is_nullable, column_key, column_default, generation_expression, column_comment, extra FROM information_schema.columns WHERE table_name = ? AND table_schema = database() ORDER BY ordinal_position";
     const raw = await rawArrayRows(engine, conn, sql, [table]);
     return raw.rows.map((r) => ({
       name: String(r[0]),
@@ -573,6 +581,7 @@ const handlers = {
       defaultValue: r[4] == null ? null : String(r[4]),
       generated: r[5] == null || String(r[5]).trim() === "" ? null : String(r[5]),
       comment: r[6] == null || String(r[6]) === "" ? null : String(r[6]),
+      extra: r[7] == null || String(r[7]) === "" ? null : String(r[7]),
     }));
   },
 
