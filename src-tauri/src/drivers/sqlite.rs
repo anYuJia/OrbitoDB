@@ -249,6 +249,7 @@ mod tests {
         let indexes = d.list_indexes("users").await.unwrap();
         let email_index = indexes.iter().find(|index| index.name == "idx_users_email").unwrap();
         assert!(email_index.unique);
+        assert!(email_index.detail.contains("email"));
 
         // Safe quoting: an arbitrary identifier is treated as an identifier,
         // never executed as SQL.
