@@ -335,34 +335,36 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
               </div>
             </div>
 
-            <div className="odb-url-import">
-              <div className="odb-url-import-head">
-                <span>
-                  <IconLink size={14} stroke={1.8} />
-                  Connection URL
-                </span>
-                <small>Optional · fills the fields below, then OrbitoDB stores the profile normally.</small>
+            {engine !== "sqlite" && (
+              <div className="odb-url-import">
+                <div className="odb-url-import-head">
+                  <span>
+                    <IconLink size={14} stroke={1.8} />
+                    Connection URL
+                  </span>
+                  <small>Optional · fills the fields below, then OrbitoDB stores the profile normally.</small>
+                </div>
+                <div className="odb-url-import-row">
+                  <input
+                    type="password"
+                    value={connectionUrl}
+                    onChange={(e) => setConnectionUrl(e.target.value)}
+                    placeholder="postgresql://user:password@localhost:5432/database"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        applyConnectionUrl();
+                      }
+                    }}
+                  />
+                  <button onClick={applyConnectionUrl} disabled={!connectionUrl.trim()}>
+                    Apply
+                  </button>
+                </div>
               </div>
-              <div className="odb-url-import-row">
-                <input
-                  type="password"
-                  value={connectionUrl}
-                  onChange={(e) => setConnectionUrl(e.target.value)}
-                  placeholder="postgresql://user:password@localhost:5432/database"
-                  autoComplete="off"
-                  spellCheck={false}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      applyConnectionUrl();
-                    }
-                  }}
-                />
-                <button onClick={applyConnectionUrl} disabled={!connectionUrl.trim()}>
-                  Apply
-                </button>
-              </div>
-            </div>
+            )}
 
             {remoteInBrowser && engine !== "sqlite" && (
               <div className={`odb-connection-alert ${bridgeUp === false ? "warn" : bridgeUp ? "ok" : ""}`}>
