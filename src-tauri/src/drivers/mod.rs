@@ -3,7 +3,7 @@ pub mod postgres;
 pub mod sqlite;
 
 use crate::error::AppResult;
-use crate::types::{ColumnInfo, ForeignKey, IndexInfo, QueryResult, TableInfo};
+use crate::types::{ColumnInfo, ConnectionDiagnostics, ForeignKey, IndexInfo, QueryResult, TableInfo};
 use async_trait::async_trait;
 
 /// The seam every database engine plugs into. SQLite is implemented here;
@@ -16,6 +16,8 @@ pub trait Driver: Send + Sync {
     /// Cancel the currently executing user query when the engine supports it.
     /// Returns false when there is no active query or cancellation is unsupported.
     async fn cancel(&self) -> AppResult<bool>;
+    /// Return live server/session information for the active connection.
+    async fn diagnostics(&self) -> AppResult<ConnectionDiagnostics>;
     /// List schemas/namespaces available to the active connection.
     async fn list_schemas(&self) -> AppResult<Vec<String>>;
     /// List tables and views.
