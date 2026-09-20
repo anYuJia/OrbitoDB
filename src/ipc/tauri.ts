@@ -5,6 +5,7 @@ import type {
   ConnectionConfig,
   ConnectionDiagnostics,
   ConstraintInfo,
+  DatabaseObjectInfo,
   ForeignKey,
   IndexInfo,
   HistoryEntry,
@@ -36,6 +37,8 @@ export const tauriBackend: Backend = {
   listSchemas: (connectionId) => invoke<string[]>("list_schemas", { connectionId }),
   listTables: (connectionId) =>
     invoke<TableInfo[]>("list_tables", { connectionId }),
+  listDatabaseObjects: (connectionId) =>
+    invoke<DatabaseObjectInfo[]>("list_database_objects", { connectionId }),
   listColumns: (connectionId, table) =>
     invoke<ColumnInfo[]>("list_columns", { connectionId, table }),
   listForeignKeys: (connectionId) => invoke<ForeignKey[]>("list_foreign_keys", { connectionId }),
