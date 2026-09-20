@@ -134,19 +134,33 @@ export function SchemaDiff() {
     if (!target || !desired) return;
 
     const q = (value: string) => quoteIdentifier(target.engine, value);
+    const sameEngine = target.engine === desired.engine;
     const lines: string[] = [
       "-- OrbitoDB migration preview",
       `-- Target: ${target.name}`,
       `-- Desired schema: ${desired.name}`,
       "-- Review every statement before executing.",
       "-- Destructive removals are commented out by default.",
+      ...(sameEngine
+        ? []
+        : [
+            `-- WARNING: cross-engine preview (${target.engine} ← ${desired.engine}).`,
+            "-- Type DDL is emitted as TODO comments because database type systems are not directly interchangeable.",
+          ]),
       "",
     ];
 
     for (const table of diff.onlyB) {
       const cols = schemaB[table] ?? {};
       const defs = Object.entries(cols).map(([name, type]) => `  ${q(name)} ${type || "TEXT"}`);
-      if (defs.length) {
+      if (!sameEngine) {
+        lines.push(
+          `-- TODO cross-engine: create table ${table} with columns: ${Object.entries(cols)
+            .map(([name, type]) => `${name} ${type}`)
+            .join(", ")}`,
+          "",
+        );
+      } else if (defs.length) {
         lines.push(`CREATE TABLE ${q(table)} (`, defs.join(",\n"), ");", "");
       } else {
         lines.push(`-- TODO: CREATE TABLE ${q(table)}; -- column metadata unavailable`, "");
@@ -156,12 +170,22 @@ export function SchemaDiff() {
     for (const changed of diff.changed) {
       const desiredCols = schemaB[changed.table] ?? {};
       for (const column of changed.onlyB) {
-        lines.push(
-          `ALTER TABLE ${q(changed.table)} ADD COLUMN ${q(column)} ${desiredCols[column] || "TEXT"};`,
-        );
+        if (sameEngine) {
+          lines.push(
+            `ALTER TABLE ${q(changed.table)} ADD COLUMN ${q(column)} ${desiredCols[column] || "TEXT"};`,
+          );
+        } else {
+          lines.push(
+            `-- TODO cross-engine: add ${changed.table}.${column} as ${desiredCols[column] || "TEXT"}`,
+          );
+        }
       }
       for (const change of changed.typeChanged) {
-        if (target.engine === "postgres") {
+        if (!sameEngine) {
+          lines.push(
+            `-- TODO cross-engine type mapping: ${changed.table}.${change.col} ${change.a} -> ${change.b}`,
+          );
+        } else if (target.engine === "postgres") {
           lines.push(
             `ALTER TABLE ${q(changed.table)} ALTER COLUMN ${q(change.col)} TYPE ${change.b};`,
           );
