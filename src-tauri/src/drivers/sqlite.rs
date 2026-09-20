@@ -195,9 +195,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn introspects_tables_and_columns() {
+    async fn introspects_tables_columns_foreign_keys_and_indexes() {
         let d = SqliteDriver::connect(&mem_cfg()).await.unwrap();
-        d.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)")
+        d.execute("CREATE TABLE teams (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+            .await
+            .unwrap();
+        d.execute(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, team_id INTEGER, email TEXT NOT NULL, \
+             FOREIGN KEY(team_id) REFERENCES teams(id))",
+        )
+        .await
+        .unwrap();
+        d.execute("CREATE UNIQUE INDEX idx_users_email ON users(email)")
             .await
             .unwrap();
         d.execute("CREATE VIEW v AS SELECT id FROM users")
@@ -214,6 +223,20 @@ mod tests {
         let email = cols.iter().find(|c| c.name == "email").unwrap();
         assert!(!email.nullable);
 
-        assert!(d.list_columns("bad; DROP").await.is_err());
+        let foreign_keys = d.list_foreign_keys().await.unwrap();
+        assert!(foreign_keys.iter().any(|fk| {
+            fk.table == "users"
+                && fk.column == "team_id"
+                && fk.ref_table == "teams"
+                && fk.ref_column == "id"
+        }));
+
+        let indexes = d.list_indexes("users").await.unwrap();
+        let email_index = indexes.iter().find(|index| index.name == "idx_users_email").unwrap();
+        assert!(email_index.unique);
+
+        // Safe quoting: an arbitrary identifier is treated as an identifier,
+        // never executed as SQL.
+        assert!(d.list_columns("bad; DROP").await.unwrap().is_empty());
     }
 }
