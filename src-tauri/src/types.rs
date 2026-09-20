@@ -117,6 +117,8 @@ pub struct ColumnInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForeignKey {
+    #[serde(default)]
+    pub name: Option<String>,
     pub table: String,
     pub column: String,
     pub ref_table: String,
