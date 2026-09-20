@@ -349,7 +349,7 @@ impl Driver for PgDriver {
     }
     async fn list_constraints(&self, table: &str) -> AppResult<Vec<ConstraintInfo>> {
         let rows = sqlx::query(
-            "SELECT con.conname, con.contype, pg_catalog.pg_get_constraintdef(con.oid, true) AS definition, \
+            "SELECT con.conname, con.contype::text AS contype, pg_catalog.pg_get_constraintdef(con.oid, true) AS definition, \
                     COALESCE(string_agg(att.attname, ',' ORDER BY ord.ordinality), '') AS columns_csv \
              FROM pg_catalog.pg_constraint con \
              JOIN pg_catalog.pg_class rel ON rel.oid = con.conrelid \
