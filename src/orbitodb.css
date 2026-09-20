@@ -886,8 +886,21 @@ textarea:focus-visible {
   text-align: left;
 }
 
-.odb-tool-row:hover {
+.odb-tool-row:hover:not(:disabled) {
   background: rgba(255,255,255,0.018);
+}
+
+.odb-tool-row:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.odb-tool-row:disabled .odb-tool-icon {
+  color: #626a76;
+}
+
+.odb-tool-row:disabled .odb-tool-action {
+  color: #59616b;
 }
 
 .odb-tool-icon {
