@@ -142,6 +142,16 @@ pub async fn run_query(
 }
 
 #[tauri::command]
+pub async fn run_query_silent(
+    state: State<'_, AppState>,
+    connection_id: String,
+    sql: String,
+) -> AppResult<QueryResult> {
+    let driver = state.registry.get(&connection_id).await?;
+    driver.execute(&sql).await
+}
+
+#[tauri::command]
 pub async fn list_schemas(
     state: State<'_, AppState>,
     connection_id: String,
