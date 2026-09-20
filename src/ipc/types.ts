@@ -36,6 +36,13 @@ export interface ConnectionConfig {
   ssh?: SshTunnelConfig | null;
 }
 
+export interface ConnectionDiagnostics {
+  serverVersion: string;
+  database: string;
+  schema: string | null;
+  latencyMs: number;
+}
+
 export interface Column {
   name: string;
   dataType: string;
