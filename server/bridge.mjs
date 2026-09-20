@@ -346,8 +346,36 @@ const handlers = {
     const existing = pools.get(id);
     if (existing) await closeConn(existing);
     const conn = await connect(cfg, password);
-    pools.set(id, { engine: cfg.engine, conn });
+    const session =
+      cfg.engine === "postgres"
+        ? await rawArrayRows("postgres", conn, "SELECT pg_backend_pid()")
+        : await rawArrayRows("mysql", conn, "SELECT CONNECTION_ID()");
+    const sessionId = Number(session.rows?.[0]?.[0] ?? 0);
+    pools.set(id, { engine: cfg.engine, conn, cfg: { ...cfg }, password, sessionId });
     return { ok: true };
+  },
+
+  async cancel({ id }) {
+    const e = need(id);
+    if (e.engine === "sqlite") return false;
+    if (!e.sessionId || !e.cfg) return false;
+
+    const control = await connect(e.cfg, e.password ?? null);
+    try {
+      if (e.engine === "postgres") {
+        const raw = await rawArrayRows(
+          "postgres",
+          control,
+          "SELECT pg_cancel_backend($1)",
+          [e.sessionId],
+        );
+        return Boolean(raw.rows?.[0]?.[0]);
+      }
+      await control.query(`KILL QUERY ${Number(e.sessionId)}`);
+      return true;
+    } finally {
+      await closeConn({ engine: e.engine, conn: control });
+    }
   },
 
   async close({ id }) {
