@@ -125,25 +125,51 @@ export function TableStructure({ table }: { table: string }) {
 
   const createIndexTemplate = async () => {
     if (readOnly) return;
-    const column = await promptDialog({
+    const rawColumns = await promptDialog({
       title: "Create index",
-      label: "Column",
+      label: "Columns",
       defaultValue: columns[0]?.name ?? "",
-      placeholder: "column_name",
+      placeholder: "email, created_at",
     });
-    if (!column?.trim()) return;
-    const defaultName = `idx_${table}_${column.trim()}`.replace(/[^a-zA-Z0-9_]+/g, "_");
+    if (!rawColumns?.trim()) return;
+
+    const requested = rawColumns
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (requested.length === 0) return;
+
+    const known = new Set(columns.map((column) => column.name));
+    const invalid = requested.filter((column) => !known.has(column));
+    if (invalid.length) {
+      await confirmDialog({
+        title: "Unknown index columns",
+        message: `These columns are not present in the loaded table metadata: ${invalid.join(", ")}`,
+        confirmLabel: "Close",
+      });
+      return;
+    }
+
+    const defaultName = `idx_${table}_${requested.join("_")}`.replace(/[^a-zA-Z0-9_]+/g, "_");
     const name = await promptDialog({
       title: "Create index",
       label: "Index name",
       defaultValue: defaultName,
     });
     if (!name?.trim()) return;
+
+    const unique = await confirmDialog({
+      title: "Index type",
+      message: "Create this as a UNIQUE index? Choose Cancel for a normal index.",
+      confirmLabel: "Unique",
+    });
+
     const q = (value: string) => quoteIdentifier(engine, value);
-    openSqlTab(
-      `Index · ${name.trim()}`,
-      `CREATE INDEX ${q(name.trim())} ON ${q(table)} (${q(column.trim())});`,
-    );
+    const sql = `CREATE ${unique ? "UNIQUE " : ""}INDEX ${q(name.trim())} ON ${q(table)} (${requested.map(q).join(", ")});`;
+    openSqlTab(`Index · ${name.trim()}`, [
+      `-- ${unique ? "Unique" : "Non-unique"} index on ${requested.join(", ")}.`,
+      sql,
+    ].join("\n"));
   };
 
   const dropIndexTemplate = (indexName: string) => {
