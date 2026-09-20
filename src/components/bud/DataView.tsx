@@ -21,6 +21,7 @@ import { useStore } from "../../state/store";
 import { DataGrid } from "./DataGrid";
 import { RowInspector } from "./RowInspector";
 import { SqlPanel } from "./SqlPanel";
+import { TableStructure } from "./TableStructure";
 
 type Icon = ComponentType<{ size?: number; stroke?: number }>;
 const TOOLS: { Icon: Icon; label: string }[] = [
@@ -54,7 +55,12 @@ export function DataView() {
   const closeEditor = useStore((s) => s.closeEditor);
   const newEditor = useStore((s) => s.newEditor);
   const [menu, setMenu] = useState<MenuState>(null);
+  const [tableMode, setTableMode] = useState<"data" | "structure">("data");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTableMode("data");
+  }, [editTable?.table]);
 
   const table = editTable?.table ?? "export";
   const n = selection.length;
@@ -176,19 +182,38 @@ export function DataView() {
           <span className="odb-data-context">
             <IconTable size={14} stroke={1.7} />
             <b>{editTable.table}</b>
-            <span>table data</span>
+            <span>{tableMode === "data" ? "rows" : "structure"}</span>
           </span>
-          <span className="odb-toolbar-spacer" />
-          {TOOLS.map((t) => (
+          <div className="odb-table-mode" role="tablist" aria-label="Table workspace">
             <button
-              key={t.label}
-              className={`bud-tool ${t.label === "Rows" && n ? "has-sel" : ""}`}
-              onClick={(e) => onTool(t.label, e)}
+              className={tableMode === "data" ? "on" : ""}
+              onClick={() => setTableMode("data")}
+              role="tab"
+              aria-selected={tableMode === "data"}
             >
-              <t.Icon size={14} stroke={1.7} /> {t.label}
-              {t.label === "Rows" && n > 0 && <span className="bud-sel-badge">{n}</span>}
+              Data
             </button>
-          ))}
+            <button
+              className={tableMode === "structure" ? "on" : ""}
+              onClick={() => setTableMode("structure")}
+              role="tab"
+              aria-selected={tableMode === "structure"}
+            >
+              Structure
+            </button>
+          </div>
+          <span className="odb-toolbar-spacer" />
+          {tableMode === "data" &&
+            TOOLS.map((t) => (
+              <button
+                key={t.label}
+                className={`bud-tool ${t.label === "Rows" && n ? "has-sel" : ""}`}
+                onClick={(e) => onTool(t.label, e)}
+              >
+                <t.Icon size={14} stroke={1.7} /> {t.label}
+                {t.label === "Rows" && n > 0 && <span className="bud-sel-badge">{n}</span>}
+              </button>
+            ))}
         </div>
       )}
 
@@ -202,6 +227,8 @@ export function DataView() {
         <SqlPanel key={activeEditorId} />
       ) : !editTable ? (
         <div className="bud-empty">Select a table in Database Explorer to browse its rows.</div>
+      ) : tableMode === "structure" ? (
+        <TableStructure table={editTable.table} />
       ) : (
         <div className="bud-data-row">
           <DataGrid />
