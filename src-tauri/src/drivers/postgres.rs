@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use crate::drivers::Driver;
 use crate::error::AppResult;
 use crate::executor::pg_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, QueryResult, TableInfo, MAX_ROWS};
 
 pub struct PgDriver {
     pool: sqlx::PgPool,
@@ -205,6 +205,55 @@ impl Driver for PgDriver {
             })
             .collect())
     }
+
+    async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
+        let rows = sqlx::query(
+            "SELECT tc.table_name, kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column \
+             FROM information_schema.table_constraints tc \
+             JOIN information_schema.key_column_usage kcu \
+               ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema \
+             JOIN information_schema.constraint_column_usage ccu \
+               ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema \
+             WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = current_schema() \
+             ORDER BY tc.table_name, kcu.ordinal_position",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|row| ForeignKey {
+                table: row.try_get("table_name").unwrap_or_default(),
+                column: row.try_get("column_name").unwrap_or_default(),
+                ref_table: row.try_get("ref_table").unwrap_or_default(),
+                ref_column: row.try_get("ref_column").unwrap_or_default(),
+            })
+            .collect())
+    }
+
+    async fn list_indexes(&self, table: &str) -> AppResult<Vec<IndexInfo>> {
+        let rows = sqlx::query(
+            "SELECT indexname, indexdef FROM pg_indexes \
+             WHERE schemaname = current_schema() AND tablename = $1 \
+             ORDER BY indexname",
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|row| {
+                let definition: String = row.try_get("indexdef").unwrap_or_default();
+                IndexInfo {
+                    name: row.try_get("indexname").unwrap_or_default(),
+                    unique: definition.to_uppercase().contains("CREATE UNIQUE INDEX"),
+                    detail: definition,
+                }
+            })
+            .collect())
+    }
+
 }
 
 #[cfg(test)]
