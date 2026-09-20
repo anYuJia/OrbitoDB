@@ -277,6 +277,9 @@ mod tests {
             database: std::env::var("ORBITODB_MYSQL_DB").unwrap_or_else(|_| "orbitodb_test".into()),
             username: Some(std::env::var("ORBITODB_MYSQL_USER").unwrap_or_else(|_| "root".into())),
             env: None,
+            group: None,
+            schema: None,
+            ssh: None,
         };
         Some((cfg, std::env::var("ORBITODB_MYSQL_PASS").ok()))
     }
