@@ -5,7 +5,7 @@ use sqlx::{Column as _, Row, TypeInfo};
 use crate::drivers::Driver;
 use crate::error::AppResult;
 use crate::executor::sqlite_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ForeignKey, IndexInfo, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, ForeignKey, IndexInfo, QueryResult, TableInfo, MAX_ROWS};
 
 pub struct SqliteDriver {
     pub(crate) pool: sqlx::SqlitePool,
@@ -13,6 +13,55 @@ pub struct SqliteDriver {
 
 fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+fn sqlite_checks(create_sql: &str) -> Vec<String> {
+    let upper = create_sql.to_uppercase();
+    let bytes = create_sql.as_bytes();
+    let mut out = Vec::new();
+    let mut search_from = 0usize;
+
+    while let Some(rel) = upper[search_from..].find("CHECK") {
+        let check_at = search_from + rel;
+        let Some(open_rel) = create_sql[check_at + 5..].find('(') else {
+            break;
+        };
+        let open = check_at + 5 + open_rel;
+        let mut depth = 0i32;
+        let mut quote: Option<u8> = None;
+        let mut close = None;
+        let mut i = open;
+        while i < bytes.len() {
+            let ch = bytes[i];
+            if let Some(q) = quote {
+                if ch == q {
+                    if i + 1 < bytes.len() && bytes[i + 1] == q {
+                        i += 2;
+                        continue;
+                    }
+                    quote = None;
+                }
+            } else if ch == b'\'' || ch == b'"' {
+                quote = Some(ch);
+            } else if ch == b'(' {
+                depth += 1;
+            } else if ch == b')' {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(i);
+                    break;
+                }
+            }
+            i += 1;
+        }
+        if let Some(close) = close {
+            out.push(create_sql[open + 1..close].trim().to_string());
+            search_from = close + 1;
+        } else {
+            break;
+        }
+    }
+    out
 }
 
 /// Build a sqlx connection URL. `:memory:` maps to a shared in-memory DB;
@@ -217,6 +266,74 @@ impl Driver for SqliteDriver {
         }
         Ok(out)
     }
+    async fn list_constraints(&self, table: &str) -> AppResult<Vec<ConstraintInfo>> {
+        let mut out = Vec::new();
+
+        let columns = self.list_columns(table).await?;
+        let primary = columns
+            .iter()
+            .filter(|column| column.is_primary_key)
+            .map(|column| column.name.clone())
+            .collect::<Vec<_>>();
+        if !primary.is_empty() {
+            out.push(ConstraintInfo {
+                name: None,
+                kind: "primary".into(),
+                definition: format!("PRIMARY KEY ({})", primary.join(", ")),
+                columns: primary,
+            });
+        }
+
+        let indexes = sqlx::query(&format!("PRAGMA index_list({})", quote_ident(table)))
+            .fetch_all(&self.pool)
+            .await?;
+        for row in indexes {
+            let origin = row.try_get::<String, _>("origin").unwrap_or_default();
+            if origin != "u" {
+                continue;
+            }
+            let name = row.try_get::<String, _>("name").unwrap_or_default();
+            if name.is_empty() {
+                continue;
+            }
+            let info = sqlx::query(&format!("PRAGMA index_info({})", quote_ident(&name)))
+                .fetch_all(&self.pool)
+                .await?;
+            let cols = info
+                .iter()
+                .filter_map(|item| item.try_get::<String, _>("name").ok())
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>();
+            out.push(ConstraintInfo {
+                name: None,
+                kind: "unique".into(),
+                definition: format!("UNIQUE ({})", cols.join(", ")),
+                columns: cols,
+            });
+        }
+
+        let row = sqlx::query(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+        )
+        .bind(table)
+        .fetch_optional(&self.pool)
+        .await?;
+        if let Some(row) = row {
+            if let Ok(Some(sql)) = row.try_get::<Option<String>, _>("sql") {
+                for expression in sqlite_checks(&sql) {
+                    out.push(ConstraintInfo {
+                        name: None,
+                        kind: "check".into(),
+                        definition: format!("CHECK ({expression})"),
+                        columns: vec![],
+                    });
+                }
+            }
+        }
+
+        Ok(out)
+    }
+
 }
 
 #[cfg(test)]
