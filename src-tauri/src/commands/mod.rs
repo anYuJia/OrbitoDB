@@ -152,6 +152,15 @@ pub async fn run_query_silent(
 }
 
 #[tauri::command]
+pub async fn cancel_query(
+    state: State<'_, AppState>,
+    connection_id: String,
+) -> AppResult<bool> {
+    let driver = state.registry.get(&connection_id).await?;
+    driver.cancel().await
+}
+
+#[tauri::command]
 pub async fn list_schemas(
     state: State<'_, AppState>,
     connection_id: String,
