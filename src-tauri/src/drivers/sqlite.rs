@@ -262,7 +262,8 @@ mod tests {
             .await
             .unwrap();
         d.execute(
-            "CREATE TABLE users (id INTEGER PRIMARY KEY, team_id INTEGER, email TEXT NOT NULL, \
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, team_id INTEGER, email TEXT NOT NULL DEFAULT 'unknown', \
+             normalized TEXT GENERATED ALWAYS AS (lower(email)) VIRTUAL, \
              FOREIGN KEY(team_id) REFERENCES teams(id))",
         )
         .await
@@ -283,6 +284,12 @@ mod tests {
         assert!(id.is_primary_key);
         let email = cols.iter().find(|c| c.name == "email").unwrap();
         assert!(!email.nullable);
+        assert_eq!(email.default_value.as_deref(), Some("'unknown'"));
+        let normalized = cols.iter().find(|c| c.name == "normalized").unwrap();
+        assert_eq!(
+            normalized.generated.as_deref(),
+            Some("VIRTUAL (expression unavailable)")
+        );
 
         let foreign_keys = d.list_foreign_keys().await.unwrap();
         assert!(foreign_keys.iter().any(|fk| {
