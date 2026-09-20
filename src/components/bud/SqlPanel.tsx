@@ -250,9 +250,22 @@ export function SqlPanel() {
     }
   };
 
-  const stop = () => {
-    runId.current++; // any in-flight result will be ignored
+  const stop = async () => {
+    runId.current++; // Ignore any response that races with cancellation.
     setRunning(false);
+    if (!connId) return;
+    try {
+      const cancelled = await getBackend().cancelQuery(connId);
+      toast(
+        cancelled
+          ? "Query cancelled"
+          : "This database backend cannot interrupt the active query; its eventual result will be ignored.",
+        cancelled ? "success" : "info",
+      );
+    } catch (error) {
+      const normalized = normalize(error);
+      toast(normalized.message ?? "Could not cancel query", "error");
+    }
   };
 
   /** The highlighted selection if there is one, otherwise the whole editor. */
@@ -525,7 +538,7 @@ export function SqlPanel() {
         <button className="bud-tb-exec" title="Execute as script" onClick={() => void exec()} disabled={running || !connId}>
           <IconPlayerSkipForward size={15} stroke={1.8} />
         </button>
-        <button title="Stop" onClick={stop} disabled={!running}>
+        <button title="Stop" onClick={() => void stop()} disabled={!running}>
           <IconPlayerStop size={15} stroke={1.8} />
         </button>
         <span className="bud-tb-sep" />
