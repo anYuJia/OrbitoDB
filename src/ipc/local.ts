@@ -208,6 +208,10 @@ class LocalBackend implements Backend {
     return { columns, rows, rowsAffected: db.getRowsModified(), elapsedMs, truncated: false };
   }
 
+  async listSchemas(_connectionId: string): Promise<string[]> {
+    return ["main", "temp"];
+  }
+
   async listTables(connectionId: string): Promise<TableInfo[]> {
     const db = await this.ensureDb(connectionId);
     const res = db.exec(
