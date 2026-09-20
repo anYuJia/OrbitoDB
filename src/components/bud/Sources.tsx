@@ -568,7 +568,6 @@ function Datasource({
       });
       if (!raw?.trim()) return;
       table = raw.trim();
-      if (!baseTables.some((item) => item.name === table)) return;
     }
     try {
       const sql = buildDatabaseObjectTemplate(conn.engine, kind, table);
@@ -600,7 +599,6 @@ function Datasource({
         items.push({
           label: `New ${kind} template…`,
           icon: (<IconPlus size={15} stroke={1.7} />),
-          disabled: isReadOnly,
           onClick: () => void newObjectTemplate(kind),
         });
       }
