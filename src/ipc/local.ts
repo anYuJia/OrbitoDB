@@ -308,6 +308,12 @@ class LocalBackend implements Backend {
               ? "STORED (expression unavailable)"
               : null,
         comment: null,
+        extra:
+          hidden === 2
+            ? "VIRTUAL GENERATED"
+            : hidden === 3
+              ? "STORED GENERATED"
+              : null,
       };
     });
   }
