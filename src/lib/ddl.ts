@@ -125,6 +125,9 @@ export function buildTableDdl(
   const q = (value: string) => quoteDdlIdentifier(engine, value);
   if (!columns.length) return `-- No column information available for ${table}`;
 
+  const primaryConstraint = constraints.find(
+    (constraint) => constraint.kind === "primary" && constraint.columns.length > 0,
+  );
   const primaryKeys = columns.filter((column) => column.isPrimaryKey);
   const defs = columns.map((column) => {
     let line = `  ${q(column.name)} ${column.dataType || "TEXT"}`;
@@ -142,7 +145,7 @@ export function buildTableDdl(
       const defaultSql = renderColumnDefault(engine, column);
       if (defaultSql != null) line += ` DEFAULT ${defaultSql}`;
     }
-    if (primaryKeys.length === 1 && column.isPrimaryKey) line += " PRIMARY KEY";
+    if (!primaryConstraint && primaryKeys.length === 1 && column.isPrimaryKey) line += " PRIMARY KEY";
     else if (!column.nullable) line += " NOT NULL";
     if (!column.generated && !identity) {
       const extra = renderColumnExtra(engine, column);
@@ -152,7 +155,12 @@ export function buildTableDdl(
     return line;
   });
 
-  if (primaryKeys.length > 1) {
+  if (primaryConstraint) {
+    const prefix = primaryConstraint.name ? `CONSTRAINT ${q(primaryConstraint.name)} ` : "";
+    defs.push(
+      `  ${prefix}PRIMARY KEY (${primaryConstraint.columns.map(q).join(", ")})`,
+    );
+  } else if (primaryKeys.length > 1) {
     defs.push(`  PRIMARY KEY (${primaryKeys.map((column) => q(column.name)).join(", ")})`);
   }
 
