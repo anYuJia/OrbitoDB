@@ -143,6 +143,12 @@ pub struct ColumnInfo {
     pub data_type: String,
     pub nullable: bool,
     pub is_primary_key: bool,
+    #[serde(default)]
+    pub default_value: Option<String>,
+    #[serde(default)]
+    pub generated: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
 }
 
 /// A column definition for the visual create-table designer.
