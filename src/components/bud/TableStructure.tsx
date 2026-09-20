@@ -146,6 +146,22 @@ export function TableStructure({ table }: { table: string }) {
     );
   };
 
+  const dropIndexTemplate = (indexName: string) => {
+    if (readOnly) return;
+    const q = (value: string) => quoteIdentifier(engine, value);
+    const sql =
+      engine === "mysql"
+        ? `DROP INDEX ${q(indexName)} ON ${q(table)};`
+        : `DROP INDEX ${q(indexName)};`;
+    openSqlTab(`Drop index · ${indexName}`, [
+      "-- Review before executing. Dropping an index can affect query performance.",
+      sql,
+    ].join("\n"));
+  };
+
+  const isManagedIndex = (name: string) =>
+    name === "PRIMARY" || name.startsWith("sqlite_autoindex_") || (engine === "postgres" && name.endsWith("_pkey"));
+
   const createForeignKeyTemplate = async () => {
     if (readOnly || engine === "sqlite") return;
     const column = await promptDialog({
@@ -273,22 +289,35 @@ export function TableStructure({ table }: { table: string }) {
           )}
         </div>
       ) : (
-        <div className="odb-structure-meta-table">
+        <div className="odb-structure-meta-table indexes">
           <div className="odb-meta-row header">
-            <span>Name</span><span>Type</span><span>Definition / columns</span>
+            <span>Name</span><span>Type</span><span>Definition / columns</span><span />
           </div>
           {metaLoading ? (
             <div className="odb-structure-empty">Loading indexes…</div>
           ) : indexes.length === 0 ? (
             <div className="odb-structure-empty">No indexes reported for this table.</div>
           ) : (
-            indexes.map((index) => (
-              <div className="odb-meta-row" key={index.name}>
-                <code>{index.name}</code>
-                <span>{index.unique ? "UNIQUE" : "INDEX"}</span>
-                <code className="detail">{index.detail}</code>
-              </div>
-            ))
+            indexes.map((index) => {
+              const managed = isManagedIndex(index.name);
+              return (
+                <div className="odb-meta-row" key={index.name}>
+                  <code>{index.name}</code>
+                  <span>{managed ? "PRIMARY / SYSTEM" : index.unique ? "UNIQUE" : "INDEX"}</span>
+                  <code className="detail">{index.detail}</code>
+                  <span className="actions">
+                    <button
+                      className="danger"
+                      title={managed ? "Managed primary/system indexes are changed through their constraint" : "Generate DROP INDEX SQL"}
+                      onClick={() => dropIndexTemplate(index.name)}
+                      disabled={readOnly || managed}
+                    >
+                      <IconTrash size={13} stroke={1.8} />
+                    </button>
+                  </span>
+                </div>
+              );
+            })
           )}
         </div>
       )}
