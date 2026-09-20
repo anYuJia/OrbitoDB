@@ -6,6 +6,7 @@ import {
   IconLock,
   IconLockOpen,
   IconPencil,
+  IconPlus,
   IconPlugConnected,
   IconRefresh,
   IconSchema,
@@ -23,13 +24,15 @@ import { useStore } from "../../state/store";
 export function WorkspacePanel({
   view,
   onEditConnection,
+  onAddConnection,
 }: {
   view: TopView;
   onEditConnection: (conn: import("../../ipc/types").ConnectionConfig) => void;
+  onAddConnection: () => void;
 }) {
   if (view === "design") return <SchemaToolsPanel />;
   if (view === "automation") return <UtilitiesPanel />;
-  return <SettingsPanel onEditConnection={onEditConnection} />;
+  return <SettingsPanel onEditConnection={onEditConnection} onAddConnection={onAddConnection} />;
 }
 
 function PanelShell({
@@ -112,93 +115,163 @@ function UtilitiesPanel() {
 
 function SettingsPanel({
   onEditConnection,
+  onAddConnection,
 }: {
   onEditConnection: (conn: import("../../ipc/types").ConnectionConfig) => void;
+  onAddConnection: () => void;
 }) {
-  const conn = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
+  const connections = useStore((s) => s.connections);
+  const activeId = useStore((s) => s.activeConnectionId);
+  const conn = connections.find((connection) => connection.id === activeId) ?? null;
   const deleteConnection = useStore((s) => s.deleteConnection);
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
   const toggleReadOnly = useStore((s) => s.toggleReadOnly);
-  const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
+  const readOnlyConns = useStore((s) => s.readOnlyConns);
+  const readOnly = !!conn && readOnlyConns.includes(conn.id);
 
-  if (!conn) {
-    return (
-      <PanelShell eyebrow="Connection" title="Connection settings" subtitle="Select a connection from Database Explorer to inspect it.">
-        <div className="odb-empty-state">
-          <IconPlugConnected size={26} stroke={1.4} />
-          <b>No connection selected</b>
-          <span>Your saved connections stay local to this device.</span>
-        </div>
-      </PanelShell>
-    );
-  }
-
-  const fields: [string, string][] = [
-    ["Name", conn.name],
-    ["Engine", conn.engine === "postgres" ? "PostgreSQL" : conn.engine === "mysql" ? "MySQL / MariaDB" : "SQLite"],
-    ["Host", conn.host ?? "Local"],
-    ["Port", conn.port != null ? String(conn.port) : "—"],
-    ["Database", conn.database],
-    ["Username", conn.username ?? "—"],
-  ];
+  const engineName = (engine: string) =>
+    engine === "postgres" ? "PostgreSQL" : engine === "mysql" ? "MySQL / MariaDB" : "SQLite";
 
   return (
-    <PanelShell eyebrow="Connection" title={conn.name} subtitle="Connection metadata and local safety controls.">
-      <div className="odb-connection-settings-actions">
-        <button onClick={() => onEditConnection(conn)}>
-          <IconPencil size={14} stroke={1.8} />
-          Edit connection
-        </button>
-        <button onClick={() => void openAndIntrospect(conn.id)}>
-          <IconRefresh size={14} stroke={1.8} />
-          Reconnect
+    <PanelShell
+      eyebrow="Workspace"
+      title="Connections"
+      subtitle="Manage local database profiles, safety settings and the active workspace connection."
+    >
+      <div className="odb-connection-manager-head">
+        <div>
+          <b>Saved connections</b>
+          <span>{connections.length} {connections.length === 1 ? "profile" : "profiles"} stored locally</span>
+        </div>
+        <button className="primary" onClick={onAddConnection}>
+          <IconPlus size={14} stroke={2} />
+          New connection
         </button>
       </div>
 
-      <div className="odb-settings-list">
-        {fields.map(([label, value]) => (
-          <div key={label} className="odb-setting-line">
-            <span>{label}</span>
-            <code>{value}</code>
+      <div className="odb-connection-manager-list">
+        {connections.length === 0 ? (
+          <button className="odb-connection-manager-empty" onClick={onAddConnection}>
+            <IconPlugConnected size={22} stroke={1.5} />
+            <b>Create your first connection</b>
+            <span>Profiles and credentials stay on this device.</span>
+          </button>
+        ) : (
+          connections.map((item) => {
+            const active = item.id === activeId;
+            const ro = readOnlyConns.includes(item.id);
+            return (
+              <div key={item.id} className={`odb-connection-manager-row ${active ? "active" : ""}`}>
+                <button className="odb-connection-manager-main" onClick={() => void openAndIntrospect(item.id)}>
+                  <span className="odb-connection-manager-dot" />
+                  <span className="odb-connection-manager-copy">
+                    <span className="odb-connection-manager-name">
+                      <b>{item.name}</b>
+                      {active && <em>Active</em>}
+                      {item.env && <em className={`env ${item.env}`}>{item.env.toUpperCase()}</em>}
+                      {ro && <em className="readonly">Read-only</em>}
+                    </span>
+                    <span>
+                      {engineName(item.engine)}
+                      <i>·</i>
+                      {item.host ?? "Local"}
+                      {item.port ? `:${item.port}` : ""}
+                      <i>·</i>
+                      {item.database}
+                    </span>
+                  </span>
+                </button>
+                <button className="odb-connection-manager-edit" title="Edit connection" onClick={() => onEditConnection(item)}>
+                  <IconPencil size={13} stroke={1.8} />
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="odb-connection-detail-divider" />
+
+      {!conn ? (
+        <div className="odb-empty-state compact">
+          <IconPlugConnected size={24} stroke={1.4} />
+          <b>No active connection</b>
+          <span>Select a saved profile above or create a new one.</span>
+        </div>
+      ) : (
+        <>
+          <div className="odb-connection-detail-head">
+            <div>
+              <span className="odb-page-eyebrow">Active connection</span>
+              <h2>{conn.name}</h2>
+              <p>{engineName(conn.engine)} · {conn.database}</p>
+            </div>
+            <div className="odb-connection-settings-actions">
+              <button onClick={() => onEditConnection(conn)}>
+                <IconPencil size={14} stroke={1.8} />
+                Edit
+              </button>
+              <button onClick={() => void openAndIntrospect(conn.id)}>
+                <IconRefresh size={14} stroke={1.8} />
+                Reconnect
+              </button>
+            </div>
           </div>
-        ))}
-      </div>
 
-      <div className="odb-safety-section">
-        <div>
-          <span className="odb-page-eyebrow">Safety</span>
-          <b>Read-only mode</b>
-          <p>Block INSERT, UPDATE, DELETE and other write statements for this connection.</p>
-        </div>
-        <button className={readOnly ? "on" : ""} onClick={() => toggleReadOnly(conn.id)}>
-          {readOnly ? <IconLock size={14} stroke={2} /> : <IconLockOpen size={14} stroke={1.8} />}
-          {readOnly ? "Enabled" : "Disabled"}
-        </button>
-      </div>
+          <div className="odb-settings-list">
+            {([
+              ["Engine", engineName(conn.engine)],
+              ["Host", conn.host ?? "Local"],
+              ["Port", conn.port != null ? String(conn.port) : "—"],
+              ["Database", conn.database],
+              ["Username", conn.username ?? "—"],
+              ["Environment", conn.env ? conn.env.toUpperCase() : "None"],
+            ] as [string, string][]).map(([label, value]) => (
+              <div key={label} className="odb-setting-line">
+                <span>{label}</span>
+                <code>{value}</code>
+              </div>
+            ))}
+          </div>
 
-      <div className="odb-danger-zone">
-        <div>
-          <b>Remove saved connection</b>
-          <span>This only removes the local OrbitoDB profile. It does not change the database server.</span>
-        </div>
-        <button
-          onClick={async () => {
-            if (
-              await confirmDialog({
-                title: "Delete connection",
-                message: `Delete "${conn.name}"? This removes the saved local connection only.`,
-                confirmLabel: "Delete",
-                danger: true,
-              })
-            ) {
-              void deleteConnection(conn.id);
-            }
-          }}
-        >
-          <IconTrash size={14} stroke={1.8} />
-          Delete
-        </button>
-      </div>
+          <div className="odb-safety-section">
+            <div>
+              <span className="odb-page-eyebrow">Safety</span>
+              <b>Read-only mode</b>
+              <p>Block INSERT, UPDATE, DELETE and other write statements for this connection.</p>
+            </div>
+            <button className={readOnly ? "on" : ""} onClick={() => toggleReadOnly(conn.id)}>
+              {readOnly ? <IconLock size={14} stroke={2} /> : <IconLockOpen size={14} stroke={1.8} />}
+              {readOnly ? "Enabled" : "Disabled"}
+            </button>
+          </div>
+
+          <div className="odb-danger-zone">
+            <div>
+              <b>Remove saved connection</b>
+              <span>This only removes the local OrbitoDB profile. It does not change the database server.</span>
+            </div>
+            <button
+              onClick={async () => {
+                if (
+                  await confirmDialog({
+                    title: "Delete connection",
+                    message: `Delete "${conn.name}"? This removes the saved local connection only.`,
+                    confirmLabel: "Delete",
+                    danger: true,
+                  })
+                ) {
+                  void deleteConnection(conn.id);
+                }
+              }}
+            >
+              <IconTrash size={14} stroke={1.8} />
+              Delete
+            </button>
+          </div>
+        </>
+      )}
     </PanelShell>
   );
 }
+
