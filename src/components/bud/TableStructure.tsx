@@ -354,6 +354,117 @@ export function TableStructure({ table }: { table: string }) {
     constraintOwnedIndexes.has(name) ||
     (engine === "postgres" && name.endsWith("_pkey"));
 
+  const createConstraintTemplate = async () => {
+    if (readOnly || engine === "sqlite") return;
+
+    const kindValue = await promptDialog({
+      title: "New constraint",
+      label: "Type",
+      defaultValue: "unique",
+      placeholder: "primary, unique or check",
+    });
+    if (!kindValue?.trim()) return;
+    const kind = kindValue.trim().toLowerCase();
+    if (kind !== "primary" && kind !== "unique" && kind !== "check") {
+      toast('Constraint type must be "primary", "unique", or "check".', "error");
+      return;
+    }
+    if (kind === "primary" && constraints.some((constraint) => constraint.kind === "primary")) {
+      toast("This table already has a primary key.", "error");
+      return;
+    }
+
+    let columnsForConstraint: string[] = [];
+    let expression: string | undefined;
+    if (kind === "check") {
+      const raw = await promptDialog({
+        title: "New CHECK constraint",
+        label: "Expression",
+        placeholder: "age >= 0",
+      });
+      if (!raw?.trim()) return;
+      expression = raw.trim();
+    } else {
+      const raw = await promptDialog({
+        title: "New constraint",
+        label: "Columns",
+        defaultValue: columns[0]?.name ?? "",
+        placeholder: "email, tenant_id",
+      });
+      if (!raw?.trim()) return;
+      columnsForConstraint = raw
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const known = new Set(columns.map((column) => column.name));
+      const invalid = columnsForConstraint.filter((column) => !known.has(column));
+      if (!columnsForConstraint.length || invalid.length) {
+        toast(
+          invalid.length
+            ? `Unknown constraint columns: ${invalid.join(", ")}`
+            : "Select at least one constraint column.",
+          "error",
+        );
+        return;
+      }
+    }
+
+    let name: string | null = null;
+    if (!(engine === "mysql" && kind === "primary")) {
+      const base =
+        kind === "primary"
+          ? `${table}_pkey`
+          : kind === "unique"
+            ? `${table}_${columnsForConstraint.join("_")}_key`
+            : `${table}_check`;
+      const rawName = await promptDialog({
+        title: "New constraint",
+        label: "Constraint name",
+        defaultValue: base.replace(/[^A-Za-z0-9_]+/g, "_"),
+      });
+      if (!rawName?.trim()) return;
+      name = rawName.trim();
+    }
+
+    try {
+      const sql = buildConstraintAddSql(
+        engine,
+        table,
+        kind,
+        name,
+        columnsForConstraint,
+        expression,
+      );
+      await executeStructureSql(
+        sql,
+        `Created ${kind.toUpperCase()} constraint`,
+        kind === "primary"
+          ? `Add a primary key to “${table}”? Existing rows must satisfy uniqueness and NOT NULL requirements.`
+          : undefined,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMetaError(message);
+      toast(message, "error");
+    }
+  };
+
+  const dropConstraint = async (constraint: ConstraintInfo) => {
+    if (readOnly || engine === "sqlite") return;
+    try {
+      const sql = buildConstraintDropSql(engine, table, constraint);
+      await executeStructureSql(
+        sql,
+        `Dropped ${constraint.kind.toUpperCase()} constraint`,
+        `Drop ${constraint.kind.toUpperCase()} constraint “${constraint.name ?? constraint.definition}” from “${table}”? Data-integrity enforcement changes immediately.`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMetaError(message);
+      toast(message, "error");
+    }
+  };
+
   const createForeignKeyTemplate = async () => {
     if (readOnly || engine === "sqlite" || !activeId) return;
     const column = await promptDialog({
