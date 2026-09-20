@@ -1155,3 +1155,516 @@ textarea:focus-visible {
     display: none;
   }
 }
+
+
+/* Phase 2: database explorer depth, query context and data grid */
+
+.bud-src.ds {
+  min-height: 46px;
+  align-items: center;
+  gap: 7px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.bud-src.ds .bud-ds-arrow {
+  align-self: center;
+}
+
+.odb-ds-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.odb-ds-main .bud-src-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--odb-text);
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.odb-ds-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--odb-text-3);
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.odb-ds-context {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 3px 4px 20px;
+  padding: 0 7px;
+  border-left: 1px solid #2a313a;
+  color: var(--odb-text-3);
+}
+
+.odb-ds-context-label {
+  font-size: 9px;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.odb-ds-context-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--odb-text-2);
+  font-family: var(--odb-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.bud-ds-tables {
+  padding-left: 7px !important;
+}
+
+.bud-objgroup {
+  position: relative;
+}
+
+.bud-objgroup-head {
+  min-height: 26px;
+  padding-top: 3px !important;
+  padding-bottom: 3px !important;
+}
+
+.bud-objgroup-body {
+  margin-left: 11px;
+  padding-left: 6px;
+  border-left: 1px solid #20262d;
+}
+
+.bud-table {
+  min-height: 25px !important;
+  gap: 6px !important;
+  padding-top: 3px !important;
+  padding-bottom: 3px !important;
+  color: var(--odb-text-2) !important;
+}
+
+.bud-table .bud-table-ic {
+  color: #7885a6 !important;
+}
+
+.bud-table.active {
+  box-shadow: inset 2px 0 0 var(--odb-primary);
+}
+
+/* Query context is a compact IDE status strip, not a settings form. */
+
+.odb-query-context {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 9px;
+  border-bottom: 1px solid var(--odb-border);
+  background: #111419;
+}
+
+.odb-query-connection,
+.odb-query-limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.odb-query-connection > span,
+.odb-query-limit > span,
+.odb-query-context-item > span {
+  color: var(--odb-text-3);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.odb-query-connection select {
+  max-width: 230px;
+  min-width: 140px;
+  height: 25px;
+  padding: 0 24px 0 7px;
+  border: 1px solid var(--odb-border);
+  border-radius: 4px;
+  background: var(--odb-surface-2);
+  color: var(--odb-text);
+  font-size: 11.5px;
+}
+
+.odb-query-context-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.odb-query-context-item b {
+  color: var(--odb-text-2);
+  font-family: var(--odb-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.odb-query-separator {
+  width: 1px;
+  height: 18px;
+  background: var(--odb-border);
+}
+
+.odb-query-context-spacer {
+  flex: 1;
+}
+
+.odb-query-limit input {
+  width: 54px;
+  height: 25px;
+  padding: 0 6px;
+  border: 1px solid var(--odb-border);
+  border-radius: 4px;
+  outline: none;
+  background: var(--odb-surface-2);
+  color: var(--odb-text);
+  font-family: var(--odb-mono);
+  font-size: 10.5px;
+  text-align: right;
+}
+
+.odb-query-limit input:focus {
+  border-color: #465985;
+}
+
+/* SQL editor should read as the primary surface. */
+
+.bud-sql-editor-wrap {
+  min-height: 180px;
+}
+
+.bud-sql-editor,
+.bud-sql-hl {
+  padding-top: 12px !important;
+  padding-bottom: 14px !important;
+}
+
+.bud-sql-gutter {
+  padding-top: 12px !important;
+}
+
+.bud-sql-bar {
+  padding-left: 7px !important;
+  padding-right: 7px !important;
+}
+
+.bud-ed-status,
+.bud-ed-mode,
+.bud-ed-eol {
+  color: #606a76 !important;
+}
+
+.bud-ed-meta {
+  color: #8f9baa !important;
+}
+
+.bud-ed-uncommitted {
+  color: #e4ba67 !important;
+}
+
+/* Data grid toolbar */
+
+.bud-grid-area {
+  background: var(--odb-bg);
+}
+
+.bud-grid-toolbar.odb-grid-toolbar {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--odb-border);
+  background: #111419;
+}
+
+.odb-grid-summary {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.odb-grid-summary b {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--odb-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.odb-grid-summary span {
+  color: var(--odb-text-3);
+  font-size: 10.5px;
+}
+
+.bud-grid-search {
+  width: min(280px, 32vw);
+  height: 27px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border: 1px solid var(--odb-border) !important;
+  border-radius: 4px !important;
+  background: #0e1115 !important;
+  color: var(--odb-text-3);
+}
+
+.bud-grid-search:focus-within {
+  border-color: #465985 !important;
+}
+
+.bud-grid-search input {
+  min-width: 0;
+  height: 24px;
+  flex: 1;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  color: var(--odb-text) !important;
+  font-size: 11.5px !important;
+}
+
+.bud-grid-toolbar-info {
+  color: #8191a5 !important;
+  font-size: 10.5px !important;
+}
+
+/* Column headers expose schema metadata without becoming tall cards. */
+
+.bud-grid thead th {
+  height: 39px !important;
+  min-width: 110px;
+  padding: 0 !important;
+  vertical-align: middle;
+}
+
+.bud-grid thead th.bud-checkcol,
+.bud-grid thead th.bud-rownum {
+  min-width: 34px;
+}
+
+.bud-th-sort.odb-th-sort {
+  min-width: 0;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 24px 0 8px !important;
+  border: 0 !important;
+  background: transparent !important;
+  text-align: left;
+}
+
+.odb-th-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.odb-th-name-line {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.odb-th-name-line .bud-th-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #d7dce2;
+  font-size: 10.8px;
+  font-weight: 590;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.odb-th-type {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #626d79;
+  font-family: var(--odb-mono);
+  font-size: 9px;
+  font-weight: 450;
+  line-height: 1.15;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.odb-pk-tag {
+  flex: none;
+  padding: 0 3px;
+  border: 1px solid rgba(214, 168, 75, 0.3);
+  border-radius: 3px;
+  color: #d8ae59;
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.bud-th-ic {
+  width: 19px;
+  color: #7182a3 !important;
+  font-family: var(--odb-mono);
+  font-size: 8.5px !important;
+  text-align: center;
+}
+
+.bud-th-menu {
+  position: absolute;
+  right: 3px;
+  top: 7px;
+  width: 20px !important;
+  height: 24px !important;
+  opacity: 0;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--odb-text-3) !important;
+}
+
+.bud-grid th:hover .bud-th-menu,
+.bud-grid th.sorted .bud-th-menu {
+  opacity: 1;
+}
+
+.bud-grid th.sorted {
+  box-shadow: inset 0 -2px 0 rgba(76, 111, 255, 0.72);
+}
+
+.bud-grid th.sorted .odb-th-name-line .bud-th-name {
+  color: #edf0f5;
+}
+
+/* Cell density and selection */
+
+.bud-grid tbody td {
+  height: 30px !important;
+  padding: 0 8px !important;
+  font-family: var(--odb-mono) !important;
+  font-size: 10.8px !important;
+  line-height: 30px !important;
+}
+
+.bud-grid td.sel {
+  position: relative;
+  background: rgba(76, 111, 255, 0.11) !important;
+  box-shadow: inset 0 0 0 1px rgba(97, 128, 255, 0.45);
+}
+
+.bud-grid tr.selected td {
+  background: rgba(76, 111, 255, 0.055) !important;
+}
+
+.bud-grid tr.selected td.sel {
+  background: rgba(76, 111, 255, 0.14) !important;
+}
+
+.bud-null::after {
+  content: "NULL";
+  color: #525b67;
+  font-size: 9px;
+  font-style: italic;
+}
+
+.odb-value-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: 19px;
+  padding: 0 6px;
+  border: 1px solid #303944;
+  border-radius: 4px;
+  background: #171d24;
+  color: #aab4c0;
+  line-height: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.bud-fk-jump {
+  margin-left: 5px;
+  color: #879bff !important;
+}
+
+.bud-grid-foot {
+  min-height: 30px !important;
+  padding: 0 8px !important;
+  border-top: 1px solid var(--odb-border) !important;
+  background: #0f1216 !important;
+  color: var(--odb-text-3) !important;
+}
+
+.bud-grid-foot-info,
+.bud-pager-info,
+.bud-pagesize {
+  font-size: 10px !important;
+}
+
+.bud-pager button {
+  width: 24px !important;
+  height: 22px !important;
+  border-color: var(--odb-border) !important;
+  background: var(--odb-surface) !important;
+  color: var(--odb-text-2) !important;
+}
+
+.bud-pagesize select {
+  height: 22px !important;
+  border: 1px solid var(--odb-border) !important;
+  border-radius: 4px !important;
+  background: var(--odb-surface) !important;
+  color: var(--odb-text-2) !important;
+  font-size: 10px !important;
+}
+
+/* Result panel hierarchy */
+
+.bud-results-tabs {
+  padding-left: 6px !important;
+}
+
+.bud-results-tabs button {
+  min-width: 68px;
+  justify-content: center;
+}
+
+.bud-res-toolbar {
+  padding: 4px 8px !important;
+}
+
+@media (max-width: 1080px) {
+  .odb-query-context-item:nth-of-type(2) {
+    display: none;
+  }
+
+  .odb-grid-summary span {
+    display: none;
+  }
+}
