@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
 use crate::executor::pg_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
 
 pub struct PgDriver {
     pool: sqlx::PgPool,
@@ -345,6 +345,48 @@ impl Driver for PgDriver {
             })
             .collect())
     }
+    async fn list_constraints(&self, table: &str) -> AppResult<Vec<ConstraintInfo>> {
+        let rows = sqlx::query(
+            "SELECT con.conname, con.contype, pg_catalog.pg_get_constraintdef(con.oid, true) AS definition, \
+                    COALESCE(string_agg(att.attname, ',' ORDER BY ord.ordinality), '') AS columns_csv \
+             FROM pg_catalog.pg_constraint con \
+             JOIN pg_catalog.pg_class rel ON rel.oid = con.conrelid \
+             JOIN pg_catalog.pg_namespace ns ON ns.oid = rel.relnamespace \
+             LEFT JOIN LATERAL unnest(con.conkey) WITH ORDINALITY ord(attnum, ordinality) ON true \
+             LEFT JOIN pg_catalog.pg_attribute att ON att.attrelid = rel.oid AND att.attnum = ord.attnum \
+             WHERE ns.nspname = current_schema() AND rel.relname = $1 \
+               AND con.contype IN ('p', 'u', 'c') \
+             GROUP BY con.oid, con.conname, con.contype \
+             ORDER BY CASE con.contype WHEN 'p' THEN 0 WHEN 'u' THEN 1 ELSE 2 END, con.conname",
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|row| {
+                let kind = match row.try_get::<String, _>("contype").unwrap_or_default().as_str() {
+                    "p" => "primary",
+                    "u" => "unique",
+                    _ => "check",
+                };
+                let columns_csv: String = row.try_get("columns_csv").unwrap_or_default();
+                ConstraintInfo {
+                    name: row.try_get("conname").ok(),
+                    kind: kind.into(),
+                    definition: row.try_get("definition").unwrap_or_default(),
+                    columns: columns_csv
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)
+                        .collect(),
+                }
+            })
+            .collect())
+    }
+
 
 }
 
