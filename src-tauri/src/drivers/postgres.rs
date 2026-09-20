@@ -41,6 +41,7 @@ fn base_options(cfg: &ConnectionConfig, password: Option<&str>) -> PgConnectOpti
     let tls_mode = cfg.tls.as_ref().map(|tls| tls.mode).unwrap_or(TlsMode::Disable);
     o = o.ssl_mode(match tls_mode {
         TlsMode::Disable => PgSslMode::Disable,
+        TlsMode::Allow => PgSslMode::Allow,
         TlsMode::Prefer => PgSslMode::Prefer,
         TlsMode::Require => PgSslMode::Require,
         TlsMode::VerifyCa => PgSslMode::VerifyCa,
