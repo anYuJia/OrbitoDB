@@ -21,6 +21,7 @@ import type {
   ColumnDef,
   ColumnInfo,
   ConnectionConfig,
+  ConstraintInfo,
   HistoryEntry,
   ForeignKey,
   IndexInfo,
@@ -554,17 +555,19 @@ export const useStore = create<AppStore>((set, get) => ({
     const engine = get().connections.find((connection) => connection.id === id)?.engine ?? "sqlite";
     let foreignKeys: ForeignKey[] = [];
     let indexes: IndexInfo[] = [];
+    let constraints: ConstraintInfo[] = [];
     try {
-      [foreignKeys, indexes] = await Promise.all([
+      [foreignKeys, indexes, constraints] = await Promise.all([
         backend.listForeignKeys(id),
         backend.listIndexes(id, table),
+        backend.listConstraints(id, table),
       ]);
     } catch {
       // Column metadata is still enough to produce a useful partial DDL preview.
       // buildTableDdl labels the output as metadata-derived and review-first.
     }
 
-    const ddl = buildTableDdl(engine, table, cols, foreignKeys, indexes);
+    const ddl = buildTableDdl(engine, table, cols, foreignKeys, indexes, constraints);
     get().openSqlTab("DDL · " + table, ddl);
   },
 
