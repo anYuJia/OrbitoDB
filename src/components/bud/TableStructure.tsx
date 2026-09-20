@@ -553,11 +553,17 @@ export function TableStructure({ table }: { table: string }) {
       ? { label: "Add column", run: add, disabled: readOnly || metaLoading }
       : mode === "indexes"
         ? { label: "New index", run: createIndexTemplate, disabled: readOnly || metaLoading }
-        : {
-            label: engine === "sqlite" ? "DDL required" : "New foreign key",
-            run: createForeignKeyTemplate,
-            disabled: readOnly || metaLoading || engine === "sqlite",
-          };
+        : mode === "constraints"
+          ? {
+              label: engine === "sqlite" ? "Rebuild required" : "New constraint",
+              run: createConstraintTemplate,
+              disabled: readOnly || metaLoading || engine === "sqlite",
+            }
+          : {
+              label: engine === "sqlite" ? "Rebuild required" : "New foreign key",
+              run: createForeignKeyTemplate,
+              disabled: readOnly || metaLoading || engine === "sqlite",
+            };
 
   return (
     <div className="odb-structure">
@@ -565,7 +571,16 @@ export function TableStructure({ table }: { table: string }) {
         <div>
           <span className="odb-structure-eyebrow">Table structure</span>
           <strong>{table}</strong>
-          <span>{count} {mode === "columns" ? (count === 1 ? "column" : "columns") : mode === "foreignKeys" ? (count === 1 ? "foreign key" : "foreign keys") : (count === 1 ? "index" : "indexes")}</span>
+          <span>
+            {count}{" "}
+            {mode === "columns"
+              ? count === 1 ? "column" : "columns"
+              : mode === "foreignKeys"
+                ? count === 1 ? "foreign key" : "foreign keys"
+                : mode === "constraints"
+                  ? count === 1 ? "constraint" : "constraints"
+                  : count === 1 ? "index" : "indexes"}
+          </span>
         </div>
         <div className="odb-structure-actions">
           <button onClick={() => void showTableDdl(table)}>
@@ -581,8 +596,9 @@ export function TableStructure({ table }: { table: string }) {
 
       <div className="odb-structure-tabs" role="tablist" aria-label="Table metadata">
         <button className={mode === "columns" ? "on" : ""} onClick={() => setMode("columns")}>Columns <span>{columns.length}</span></button>
-        <button className={mode === "foreignKeys" ? "on" : ""} onClick={() => setMode("foreignKeys")}>Foreign Keys <span>{foreignKeys.length}</span></button>
         <button className={mode === "indexes" ? "on" : ""} onClick={() => setMode("indexes")}>Indexes <span>{indexes.length}</span></button>
+        <button className={mode === "constraints" ? "on" : ""} onClick={() => setMode("constraints")}>Constraints <span>{constraints.length}</span></button>
+        <button className={mode === "foreignKeys" ? "on" : ""} onClick={() => setMode("foreignKeys")}>Foreign Keys <span>{foreignKeys.length}</span></button>
       </div>
 
       {metaError && <div className="odb-structure-meta-error">{metaError}</div>}
@@ -628,7 +644,7 @@ export function TableStructure({ table }: { table: string }) {
                   {column.comment || "—"}
                 </span>
                 <span className="actions">
-                  <button title="Rename column" onClick={() => void rename(column.name)} disabled={readOnly}>
+                  <button title="Edit column properties" onClick={() => void editColumn(column)} disabled={readOnly || metaLoading}>
                     <IconPencil size={13} stroke={1.8} />
                   </button>
                   <button
