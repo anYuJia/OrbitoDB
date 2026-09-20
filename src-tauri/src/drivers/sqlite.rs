@@ -144,20 +144,29 @@ impl Driver for SqliteDriver {
     }
 
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>> {
-        let rows = sqlx::query(&format!("PRAGMA table_info({})", quote_ident(table)))
+        let rows = sqlx::query(&format!("PRAGMA table_xinfo({})", quote_ident(table)))
             .fetch_all(&self.pool)
             .await?;
         Ok(rows
             .iter()
-            .map(|r| ColumnInfo {
-                name: r.try_get::<String, _>("name").unwrap_or_default(),
-                data_type: r.try_get::<String, _>("type").unwrap_or_default(),
-                nullable: r.try_get::<i64, _>("notnull").unwrap_or(0) == 0,
-                is_primary_key: r.try_get::<i64, _>("pk").unwrap_or(0) > 0,
+            .map(|r| {
+                let hidden = r.try_get::<i64, _>("hidden").unwrap_or(0);
+                ColumnInfo {
+                    name: r.try_get::<String, _>("name").unwrap_or_default(),
+                    data_type: r.try_get::<String, _>("type").unwrap_or_default(),
+                    nullable: r.try_get::<i64, _>("notnull").unwrap_or(0) == 0,
+                    is_primary_key: r.try_get::<i64, _>("pk").unwrap_or(0) > 0,
+                    default_value: r.try_get::<Option<String>, _>("dflt_value").ok().flatten(),
+                    generated: match hidden {
+                        2 => Some("VIRTUAL (expression unavailable)".into()),
+                        3 => Some("STORED (expression unavailable)".into()),
+                        _ => None,
+                    },
+                    comment: None,
+                }
             })
             .collect())
     }
-
     async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
         let mut out = Vec::new();
         for table in self.list_tables().await?.into_iter().filter(|table| table.kind == "table") {
