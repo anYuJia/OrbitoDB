@@ -10,6 +10,15 @@ import type { ColumnDef, HistoryEntry } from "./types";
 
 const HIST_KEY = "orbitodb.history";
 
+function assertWebConnection(cfg: import("./types").ConnectionConfig): void {
+  if (cfg.ssh?.enabled) {
+    throw {
+      kind: "notSupported",
+      message: "SSH tunnels are available in the OrbitoDB desktop app only.",
+    };
+  }
+}
+
 /** Engine work for every connection goes through the bridge. */
 function sub(_id: string): Backend {
   return httpBackend;
@@ -55,12 +64,32 @@ export const webBackend: Backend = {
   },
 
   /* cfg-driven ops — all engines go through the bridge */
-  testConnection: (cfg, password = null) => httpBackend.testConnection(cfg, password),
-  listDatabases: (cfg, password = null) => httpBackend.listDatabases(cfg, password),
-  createDatabase: (cfg, password, name) => httpBackend.createDatabase(cfg, password, name),
+  testConnection: (cfg, password = null) => {
+    assertWebConnection(cfg);
+    return httpBackend.testConnection(cfg, password);
+  },
+  listDatabases: (cfg, password = null) => {
+    assertWebConnection(cfg);
+    return httpBackend.listDatabases(cfg, password);
+  },
+  createDatabase: (cfg, password, name) => {
+    assertWebConnection(cfg);
+    return httpBackend.createDatabase(cfg, password, name);
+  },
 
   /* id-driven ops route by the connection's engine */
-  openConnection: (id) => sub(id).openConnection(id),
+  openConnection: (id) => {
+    const cfg = (() => {
+      try {
+        const raw = JSON.parse(localStorage.getItem("orbitodb.connections") ?? "[]");
+        return Array.isArray(raw) ? raw.find((item) => item?.id === id) : null;
+      } catch {
+        return null;
+      }
+    })();
+    if (cfg) assertWebConnection(cfg);
+    return sub(id).openConnection(id);
+  },
   closeConnection: (id) => sub(id).closeConnection(id),
   runQuery: async (id, sql) => {
     const r = await sub(id).runQuery(id, sql);
