@@ -261,11 +261,35 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
     setTesting(true);
     setStatus(null);
     try {
-      const dbs = await getBackend().listDatabases(draftCfg(""), password || null);
-      setDatabases(dbs);
-      setStatus({ kind: "ok", msg: `Connected · ${dbs.length} database${dbs.length === 1 ? "" : "s"} available` });
-      if (dbs.length && !dbs.includes(database)) {
-        setDatabase(dbs.find((d) => !SYSTEM_DBS.has(d)) ?? dbs[0]);
+      const backend = getBackend();
+      const targetDatabase = database.trim();
+
+      // First validate the database the user actually intends to open.
+      // PostgreSQL users can legitimately have access to the target DB but not
+      // the maintenance "postgres" database used for server-wide discovery.
+      if (targetDatabase) {
+        await backend.testConnection(draftCfg(targetDatabase), password || null);
+      }
+
+      try {
+        const dbs = await backend.listDatabases(draftCfg(""), password || null);
+        setDatabases(dbs);
+        if (dbs.length && !targetDatabase) {
+          setDatabase(dbs.find((d) => !SYSTEM_DBS.has(d)) ?? dbs[0]);
+        }
+        setStatus({
+          kind: "ok",
+          msg: targetDatabase
+            ? `Connected to ${targetDatabase} · ${dbs.length} database${dbs.length === 1 ? "" : "s"} visible`
+            : `Server reachable · ${dbs.length} database${dbs.length === 1 ? "" : "s"} available`,
+        });
+      } catch (listError) {
+        if (!targetDatabase) throw listError;
+        setDatabases(null);
+        setStatus({
+          kind: "ok",
+          msg: `Connected to ${targetDatabase}. Database discovery is unavailable for this account.`,
+        });
       }
     } catch (e) {
       setDatabases(null);
