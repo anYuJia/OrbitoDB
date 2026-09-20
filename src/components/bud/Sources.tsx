@@ -32,8 +32,9 @@ import {
 } from "@tabler/icons-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { confirmDialog, promptDialog } from "../../state/dialog";
-import type { ConnectionConfig, Engine } from "../../ipc/types";
+import type { ConnectionConfig, DatabaseObjectInfo, DatabaseObjectKind, Engine } from "../../ipc/types";
 import { useStore } from "../../state/store";
+import { buildDatabaseObjectTemplate } from "../../lib/databaseObjects";
 import { ContextMenu, type CtxAnchor, type MenuItem } from "./ContextMenu";
 
 const PANELS = ["Objects", "Scripts", "Starred"] as const;
@@ -402,6 +403,7 @@ function Datasource({
   const [ctx, setCtx] = useState<CtxAnchor | null>(null);
   const activeId = useStore((s) => s.activeConnectionId);
   const tables = useStore((s) => s.schema.tables);
+  const objects = useStore((s) => s.schema.objects);
   const loadingTables = useStore((s) => s.loadingTables);
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
   const deleteConnection = useStore((s) => s.deleteConnection);
@@ -410,11 +412,25 @@ function Datasource({
   const clearTables = useStore((s) => s.clearTables);
   const setTopView = useStore((s) => s.setTopView);
   const toggleReadOnly = useStore((s) => s.toggleReadOnly);
+  const openSqlTab = useStore((s) => s.openSqlTab);
+  const createDatabaseView = useStore((s) => s.createDatabaseView);
+  const refreshDatabaseObjects = useStore((s) => s.refreshDatabaseObjects);
   const isReadOnly = useStore((s) => s.readOnlyConns.includes(conn.id));
   const isActive = activeId === conn.id;
-  const shownTables = filter
-    ? tables.filter((t) => t.name.toLowerCase().includes(filter.toLowerCase()))
-    : tables;
+  const filterText = filter.trim().toLowerCase();
+  const baseTables = tables.filter((table) => table.kind === "table");
+  const shownTables = filterText
+    ? baseTables.filter((table) => table.name.toLowerCase().includes(filterText))
+    : baseTables;
+  const shownObjects = filterText
+    ? objects.filter((object) =>
+        [object.name, object.table, object.signature]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(filterText)),
+      )
+    : objects;
+  const objectsOf = (kind: DatabaseObjectKind) =>
+    shownObjects.filter((object) => object.kind === kind);
 
   // Multi-select of tables (Ctrl/Cmd-click toggles, Shift-click ranges).
   const [selTables, setSelTables] = useState<string[]>([]);
@@ -520,12 +536,84 @@ function Datasource({
   ];
 
   const refresh = () => void openAndIntrospect(conn.id);
-  // Views/Indexes/Sequences/… don't have a create flow yet, so the folder menu
-  // is just Refresh (no permanently-disabled "New …" placeholder).
-  const folderMenu = (_singular: string): MenuItem[] => [
-    { label: "Refresh", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: refresh },
-  ];
-  const allNames = tables.map((t) => t.name);
+
+  const newView = async () => {
+    if (!isActive) await openAndIntrospect(conn.id);
+    if (isReadOnly) return;
+    const name = await promptDialog({
+      title: "New database view",
+      label: "View name",
+      placeholder: "active_users",
+    });
+    if (!name?.trim()) return;
+    const query = await promptDialog({
+      title: "New database view",
+      label: "SELECT / WITH query",
+      defaultValue: baseTables[0] ? `SELECT * FROM ${baseTables[0].name}` : "SELECT 1 AS value",
+      placeholder: "SELECT * FROM users WHERE active = true",
+    });
+    if (!query?.trim()) return;
+    await createDatabaseView(name.trim(), query.trim());
+  };
+
+  const newObjectTemplate = async (kind: Exclude<DatabaseObjectKind, "view" | "index">) => {
+    if (!isActive) await openAndIntrospect(conn.id);
+    let table: string | null = null;
+    if (kind === "trigger") {
+      const raw = await promptDialog({
+        title: "New trigger template",
+        label: "Table",
+        defaultValue: baseTables[0]?.name ?? "",
+        placeholder: "users",
+      });
+      if (!raw?.trim()) return;
+      table = raw.trim();
+      if (!baseTables.some((item) => item.name === table)) return;
+    }
+    try {
+      const sql = buildDatabaseObjectTemplate(conn.engine, kind, table);
+      openSqlTab(`New ${kind}`, sql);
+    } catch {
+      // Unsupported engine/object combinations are not exposed below.
+    }
+  };
+
+  const folderMenu = (kind: DatabaseObjectKind): MenuItem[] => {
+    const items: MenuItem[] = [];
+    if (kind === "view") {
+      items.push({
+        label: "New view…",
+        icon: (<IconPlus size={15} stroke={1.7} />),
+        disabled: isReadOnly,
+        onClick: () => void newView(),
+      });
+    } else if (
+      kind === "sequence" ||
+      kind === "procedure" ||
+      kind === "function" ||
+      kind === "trigger"
+    ) {
+      const unsupported =
+        (conn.engine === "sqlite" && (kind === "procedure" || kind === "function" || kind === "sequence")) ||
+        (conn.engine === "mysql" && kind === "sequence");
+      if (!unsupported) {
+        items.push({
+          label: `New ${kind} template…`,
+          icon: (<IconPlus size={15} stroke={1.7} />),
+          disabled: isReadOnly,
+          onClick: () => void newObjectTemplate(kind),
+        });
+      }
+    }
+    if (items.length) items.push({ divider: true });
+    items.push({
+      label: "Refresh",
+      icon: (<IconRefresh size={15} stroke={1.7} />),
+      onClick: () => void refreshDatabaseObjects(),
+    });
+    return items;
+  };
+  const allNames = baseTables.map((t) => t.name);
   const tablesMenu: MenuItem[] = [
     { label: "New table…", icon: (<IconTablePlus size={15} stroke={1.7} />), onClick: () => void newTable() },
     { label: "Refresh", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: refresh },
@@ -598,11 +686,42 @@ function Datasource({
                   ))
                 )}
               </ObjectGroup>
-              <ObjectGroup label="Views" count={0} menu={folderMenu("view")} />
-              <ObjectGroup label="Indexes" count={0} menu={folderMenu("index")} />
-              {conn.engine === "postgres" && <ObjectGroup label="Sequences" count={0} menu={folderMenu("sequence")} />}
-              <ObjectGroup label="Procedures" count={0} menu={folderMenu("procedure")} />
-              <ObjectGroup label="Functions" count={0} menu={folderMenu("function")} />
+              <ObjectGroup label="Views" count={objectsOf("view").length} menu={folderMenu("view")}>
+                {objectsOf("view").map((object) => (
+                  <DatabaseObjectRow key={`view:${object.name}`} object={object} conn={conn} />
+                ))}
+              </ObjectGroup>
+              <ObjectGroup label="Indexes" count={objectsOf("index").length} menu={folderMenu("index")}>
+                {objectsOf("index").map((object) => (
+                  <DatabaseObjectRow key={`index:${object.table ?? ""}:${object.name}`} object={object} conn={conn} />
+                ))}
+              </ObjectGroup>
+              <ObjectGroup label="Triggers" count={objectsOf("trigger").length} menu={folderMenu("trigger")}>
+                {objectsOf("trigger").map((object) => (
+                  <DatabaseObjectRow key={`trigger:${object.table ?? ""}:${object.name}`} object={object} conn={conn} />
+                ))}
+              </ObjectGroup>
+              {conn.engine === "postgres" && (
+                <ObjectGroup label="Sequences" count={objectsOf("sequence").length} menu={folderMenu("sequence")}>
+                  {objectsOf("sequence").map((object) => (
+                    <DatabaseObjectRow key={`sequence:${object.name}`} object={object} conn={conn} />
+                  ))}
+                </ObjectGroup>
+              )}
+              {conn.engine !== "sqlite" && (
+                <ObjectGroup label="Procedures" count={objectsOf("procedure").length} menu={folderMenu("procedure")}>
+                  {objectsOf("procedure").map((object) => (
+                    <DatabaseObjectRow key={`procedure:${object.name}:${object.signature ?? ""}`} object={object} conn={conn} />
+                  ))}
+                </ObjectGroup>
+              )}
+              {conn.engine !== "sqlite" && (
+                <ObjectGroup label="Functions" count={objectsOf("function").length} menu={folderMenu("function")}>
+                  {objectsOf("function").map((object) => (
+                    <DatabaseObjectRow key={`function:${object.name}:${object.signature ?? ""}`} object={object} conn={conn} />
+                  ))}
+                </ObjectGroup>
+              )}
             </>
           )}
         </div>
