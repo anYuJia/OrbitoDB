@@ -110,6 +110,7 @@ export function SqlPanel() {
   const connections = useStore((s) => s.connections);
   const conn = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
+  const saveConnection = useStore((s) => s.saveConnection);
   const loadHistory = useStore((s) => s.loadHistory);
   const history = useStore((s) => s.history);
   const tables = useStore((s) => s.schema.tables);
@@ -134,6 +135,7 @@ export function SqlPanel() {
   const [running, setRunning] = useState(false);
   const [tab, setTab] = useState<Tab>("result");
   const [maxRows, setMaxRows] = useState("1000");
+  const [schemas, setSchemas] = useState<string[]>([]);
   const [caretLine, setCaretLine] = useState(1);
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const [editorH, setEditorH] = useState<number | null>(null);
@@ -152,7 +154,41 @@ export function SqlPanel() {
   const pendingSel = useRef<{ s: number; e: number } | null>(null);
   const runId = useRef(0);
 
-  const schemaName = conn?.engine === "postgres" ? "public" : conn?.database || "main";
+  const schemaName =
+    conn?.engine === "postgres" ? conn.schema?.trim() || "public" : conn?.database || "main";
+
+  useEffect(() => {
+    if (!connId || conn?.engine !== "postgres") {
+      setSchemas([]);
+      return;
+    }
+    let alive = true;
+    void getBackend()
+      .listSchemas(connId)
+      .then((items) => {
+        if (!alive) return;
+        const unique = [...new Set([schemaName, ...items.filter(Boolean)])];
+        setSchemas(unique);
+      })
+      .catch(() => {
+        if (alive) setSchemas([schemaName]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [connId, conn?.engine, schemaName]);
+
+  const switchSchema = async (nextSchema: string) => {
+    if (!conn || conn.engine !== "postgres" || !nextSchema || nextSchema === schemaName) return;
+    try {
+      await saveConnection({ ...conn, schema: nextSchema }, null);
+      await openAndIntrospect(conn.id);
+      toast(`Schema · ${nextSchema}`, "success");
+    } catch (error) {
+      const normalized = normalize(error);
+      toast(normalized.message ?? "Could not switch schema", "error");
+    }
+  };
   const explainPrefix = conn?.engine === "sqlite" ? "EXPLAIN QUERY PLAN " : "EXPLAIN ";
 
   const exec = async (text = sql) => {
@@ -520,7 +556,7 @@ export function SqlPanel() {
         <button title="Save as script" onClick={() => void saveAs("script")} disabled={!sql.trim()}>
           <IconDeviceFloppy size={15} stroke={1.8} />
         </button>
-        <button title="Add to favorites" onClick={() => void saveAs("favorite")} disabled={!sql.trim()}>
+        <button title="Add to Starred" onClick={() => void saveAs("favorite")} disabled={!sql.trim()}>
           <IconStar size={15} stroke={1.8} />
         </button>
         <button title="Clear editor" onClick={() => setSql("")} disabled={!sql}>
@@ -546,10 +582,21 @@ export function SqlPanel() {
           </select>
         </label>
         <span className="odb-query-separator" />
-        <div className="odb-query-context-item">
-          <span>Schema</span>
-          <b>{schemaName}</b>
-        </div>
+        {conn?.engine === "postgres" ? (
+          <label className="odb-query-schema">
+            <span>Schema</span>
+            <select value={schemaName} onChange={(e) => void switchSchema(e.target.value)}>
+              {(schemas.length ? schemas : [schemaName]).map((schema) => (
+                <option key={schema} value={schema}>{schema}</option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <div className="odb-query-context-item">
+            <span>Database</span>
+            <b>{schemaName}</b>
+          </div>
+        )}
         <div className="odb-query-context-item">
           <span>Engine</span>
           <b>{conn?.engine === "postgres" ? "PostgreSQL" : conn?.engine === "mysql" ? "MySQL" : conn?.engine === "sqlite" ? "SQLite" : "—"}</b>
