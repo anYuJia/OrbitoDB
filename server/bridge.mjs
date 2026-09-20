@@ -551,7 +551,18 @@ const handlers = {
       const indexes = await rawArrayRows(
         engine,
         conn,
-        "SELECT schemaname, tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = current_schema() ORDER BY tablename, indexname",
+        `SELECT pgi.schemaname, pgi.tablename, pgi.indexname, pgi.indexdef
+         FROM pg_indexes pgi
+         WHERE pgi.schemaname = current_schema()
+           AND NOT EXISTS (
+             SELECT 1 FROM pg_constraint con
+             JOIN pg_class idx ON idx.oid = con.conindid
+             JOIN pg_namespace ns ON ns.oid = idx.relnamespace
+             WHERE con.conindid <> 0
+               AND ns.nspname = pgi.schemaname
+               AND idx.relname = pgi.indexname
+           )
+         ORDER BY pgi.tablename, pgi.indexname`,
       );
       for (const row of indexes.rows) {
         out.push({
@@ -668,8 +679,9 @@ const handlers = {
         grouped.set(name, item);
       }
       for (const [name, item] of grouped.entries()) {
+        if (name === "PRIMARY") continue;
         const definition =
-          name === "PRIMARY" || !item.columns.length
+          !item.columns.length
             ? null
             : `CREATE ${item.unique ? "UNIQUE " : ""}INDEX ${quote.mysql(name)} ON ${quote.mysql(table)} (${item.columns
                 .map((column) => quote.mysql(column))
