@@ -107,7 +107,7 @@ export function Sources({
   const scanLocal = useStore((s) => s.scanLocal);
   const [filter, setFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [panel, setPanel] = useState<(typeof PANELS)[number]>("Databases");
+  const [panel, setPanel] = useState<(typeof PANELS)[number]>("Objects");
   const [rootOpen, setRootOpen] = useState(true);
   const [rootCtx, setRootCtx] = useState<CtxAnchor | null>(null);
   const [compact, setCompact] = useState(false);
@@ -124,6 +124,15 @@ export function Sources({
 
   return (
     <aside className={`bud-sources ${compact ? "compact" : ""}`}>
+      <div className="odb-sidebar-head">
+        <div>
+          <span className="odb-sidebar-kicker">Database Explorer</span>
+          <strong>{connections.length} {connections.length === 1 ? "connection" : "connections"}</strong>
+        </div>
+        <button className="odb-sidebar-add" title="New connection" onClick={onAddServer}>
+          <IconPlus size={14} stroke={2} />
+        </button>
+      </div>
       <nav className="bud-panel-tabs">
         {PANELS.map((p) => (
           <button key={p} className={`bud-panel-tab ${panel === p ? "on" : ""}`} onClick={() => setPanel(p)}>
