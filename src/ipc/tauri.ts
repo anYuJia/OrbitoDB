@@ -26,6 +26,8 @@ export const tauriBackend: Backend = {
   closeConnection: (id) => invoke<void>("close_connection", { id }),
   runQuery: (connectionId, sql) =>
     invoke<QueryResult>("run_query", { connectionId, sql }),
+  runQuerySilent: (connectionId, sql) =>
+    invoke<QueryResult>("run_query_silent", { connectionId, sql }),
   listSchemas: (connectionId) => invoke<string[]>("list_schemas", { connectionId }),
   listTables: (connectionId) =>
     invoke<TableInfo[]>("list_tables", { connectionId }),
