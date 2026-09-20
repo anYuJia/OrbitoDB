@@ -13,6 +13,8 @@ pub trait Driver: Send + Sync {
     /// Run a statement. SELECT-like statements return columns + rows;
     /// others return `rows_affected`.
     async fn execute(&self, sql: &str) -> AppResult<QueryResult>;
+    /// List schemas/namespaces available to the active connection.
+    async fn list_schemas(&self) -> AppResult<Vec<String>>;
     /// List tables and views.
     async fn list_tables(&self) -> AppResult<Vec<TableInfo>>;
     /// List columns of a table.
