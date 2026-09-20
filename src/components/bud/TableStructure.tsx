@@ -166,17 +166,21 @@ export function TableStructure({ table }: { table: string }) {
     });
     if (!dataType?.trim()) return;
 
-    const nullableValue = await promptDialog({
-      title: "Column properties",
-      label: "Nullable",
-      defaultValue: column.nullable ? "yes" : "no",
-      placeholder: "yes or no",
-    });
-    if (!nullableValue?.trim()) return;
-    const nullableNormalized = nullableValue.trim().toLowerCase();
-    if (!["yes", "no", "true", "false"].includes(nullableNormalized)) {
-      toast('Nullable must be "yes" or "no".', "error");
-      return;
+    let nullable = column.nullable;
+    if (!column.isPrimaryKey) {
+      const nullableValue = await promptDialog({
+        title: "Column properties",
+        label: "Nullable",
+        defaultValue: column.nullable ? "yes" : "no",
+        placeholder: "yes or no",
+      });
+      if (!nullableValue?.trim()) return;
+      const nullableNormalized = nullableValue.trim().toLowerCase();
+      if (!["yes", "no", "true", "false"].includes(nullableNormalized)) {
+        toast('Nullable must be "yes" or "no".', "error");
+        return;
+      }
+      nullable = nullableNormalized === "yes" || nullableNormalized === "true";
     }
 
     let defaultValue = column.defaultValue ?? "";
@@ -205,7 +209,7 @@ export function TableStructure({ table }: { table: string }) {
     const next = {
       name: name.trim(),
       dataType: dataType.trim(),
-      nullable: nullableNormalized === "yes" || nullableNormalized === "true",
+      nullable,
       defaultValue: defaultValue.trim() ? defaultValue.trim() : null,
       comment: comment.trim() ? comment.trim() : null,
     };
