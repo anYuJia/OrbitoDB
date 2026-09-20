@@ -3,7 +3,7 @@ use crate::error::{AppError, AppResult};
 use crate::schema;
 use crate::secrets;
 use crate::store::{HistoryEntry, Store};
-use crate::types::{ColumnDef, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, Engine, ForeignKey, IndexInfo, QueryResult, TableInfo};
+use crate::types::{ColumnDef, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, Engine, ForeignKey, IndexInfo, QueryResult, TableInfo};
 use tauri::State;
 
 /// Shared application state, managed by Tauri and injected into commands.
@@ -185,6 +185,15 @@ pub async fn list_tables(
 ) -> AppResult<Vec<TableInfo>> {
     let driver = state.registry.get(&connection_id).await?;
     schema::introspect_tables(driver.as_ref()).await
+}
+
+#[tauri::command]
+pub async fn list_database_objects(
+    state: State<'_, AppState>,
+    connection_id: String,
+) -> AppResult<Vec<DatabaseObjectInfo>> {
+    let driver = state.registry.get(&connection_id).await?;
+    schema::introspect_database_objects(driver.as_ref()).await
 }
 
 #[tauri::command]
