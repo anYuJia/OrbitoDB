@@ -73,6 +73,16 @@ fn try_get_text(row: &sqlx::mysql::MySqlRow, col: &str) -> String {
     String::new()
 }
 
+fn try_get_optional_text(row: &sqlx::mysql::MySqlRow, col: &str) -> Option<String> {
+    if let Ok(value) = row.try_get::<Option<String>, _>(col) {
+        return value;
+    }
+    if let Ok(value) = row.try_get::<Option<Vec<u8>>, _>(col) {
+        return value.map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+    }
+    None
+}
+
 impl MySqlDriver {
     pub async fn connect(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<Self> {
         let pool = MySqlPoolOptions::new()
@@ -238,7 +248,8 @@ impl Driver for MySqlDriver {
 
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>> {
         let rows = sqlx::query(
-            "SELECT column_name, data_type, is_nullable, column_key \
+            "SELECT column_name, column_type, is_nullable, column_key, column_default, \
+                    generation_expression, column_comment \
              FROM information_schema.columns \
              WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position",
         )
@@ -252,13 +263,17 @@ impl Driver for MySqlDriver {
                 ColumnInfo {
                     is_primary_key: try_get_text(r, "column_key") == "PRI",
                     nullable: try_get_text(r, "is_nullable") == "YES",
-                    data_type: try_get_text(r, "data_type"),
+                    data_type: try_get_text(r, "column_type"),
+                    default_value: try_get_optional_text(r, "column_default"),
+                    generated: try_get_optional_text(r, "generation_expression")
+                        .filter(|value| !value.trim().is_empty()),
+                    comment: try_get_optional_text(r, "column_comment")
+                        .filter(|value| !value.is_empty()),
                     name,
                 }
             })
             .collect())
     }
-
     async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
         let rows = sqlx::query(
             "SELECT constraint_name, table_name, column_name, referenced_table_name, referenced_column_name \
