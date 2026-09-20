@@ -172,12 +172,26 @@ describe("schemaChanges", () => {
       "age",
       { name: "age", dataType: "REAL", nullable: false, defaultValue: "0", comment: null },
       [],
-      [],
+      [{ name: "idx_users_age", unique: false, detail: "age" }],
       [],
     );
     expect(sql).toContain("PRAGMA foreign_keys=OFF;");
     expect(sql).toContain('CREATE TABLE "__orbitodb_rebuild_users"');
     expect(sql).toContain('"age" REAL DEFAULT 0 NOT NULL');
     expect(sql).toContain('ALTER TABLE "__orbitodb_rebuild_users" RENAME TO "users";');
+    expect(sql).toContain('CREATE INDEX "idx_users_age" ON "users" ("age");');
+    expect(sql.indexOf('CREATE INDEX "idx_users_age"')).toBeGreaterThan(
+      sql.indexOf('ALTER TABLE "__orbitodb_rebuild_users" RENAME TO "users";'),
+    );
+  });
+
+  it("treats unchanged SQLite column properties as a no-op", () => {
+    const plan = buildColumnAlterPlan(
+      "sqlite",
+      "users",
+      { name: "age", dataType: "INTEGER", nullable: true, isPrimaryKey: false, defaultValue: null },
+      { name: "age", dataType: "INTEGER", nullable: true, defaultValue: null, comment: null },
+    );
+    expect(plan).toEqual({ statements: [], requiresReview: false });
   });
 });
