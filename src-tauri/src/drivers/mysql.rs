@@ -5,7 +5,7 @@ use sqlx::{Column as _, Row, TypeInfo};
 use crate::drivers::Driver;
 use crate::error::AppResult;
 use crate::executor::mysql_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, QueryResult, TableInfo, MAX_ROWS};
 
 pub struct MySqlDriver {
     pool: sqlx::MySqlPool,
@@ -191,6 +191,69 @@ impl Driver for MySqlDriver {
             })
             .collect())
     }
+
+    async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
+        let rows = sqlx::query(
+            "SELECT table_name, column_name, referenced_table_name, referenced_column_name \
+             FROM information_schema.key_column_usage \
+             WHERE referenced_table_name IS NOT NULL AND table_schema = database() \
+             ORDER BY table_name, ordinal_position",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|row| ForeignKey {
+                table: try_get_text(row, "table_name"),
+                column: try_get_text(row, "column_name"),
+                ref_table: try_get_text(row, "referenced_table_name"),
+                ref_column: try_get_text(row, "referenced_column_name"),
+            })
+            .collect())
+    }
+
+    async fn list_indexes(&self, table: &str) -> AppResult<Vec<IndexInfo>> {
+        use std::collections::BTreeMap;
+
+        let rows = sqlx::query(
+            "SELECT index_name, non_unique, column_name, seq_in_index \
+             FROM information_schema.statistics \
+             WHERE table_schema = database() AND table_name = ? \
+             ORDER BY index_name, seq_in_index",
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut grouped: BTreeMap<String, (bool, Vec<String>)> = BTreeMap::new();
+        for row in rows {
+            let name = try_get_text(&row, "index_name");
+            if name.is_empty() {
+                continue;
+            }
+            let unique = row.try_get::<i64, _>("non_unique").unwrap_or(1) == 0;
+            let column = try_get_text(&row, "column_name");
+            let entry = grouped.entry(name).or_insert((unique, Vec::new()));
+            if !column.is_empty() {
+                entry.1.push(column);
+            }
+        }
+
+        Ok(grouped
+            .into_iter()
+            .map(|(name, (unique, columns))| IndexInfo {
+                name,
+                unique,
+                detail: if columns.is_empty() {
+                    "MySQL index".into()
+                } else {
+                    columns.join(", ")
+                },
+            })
+            .collect())
+    }
+
 }
 
 #[cfg(test)]
