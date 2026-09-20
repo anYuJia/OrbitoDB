@@ -297,6 +297,12 @@ function SettingsPanel({
               ["Group", conn.group?.trim() || "Ungrouped"],
               ["Environment", conn.env ? conn.env.toUpperCase() : "None"],
               [
+                "TLS / SSL",
+                conn.tls
+                  ? `${conn.tls.mode}${conn.tls.caPath ? " · custom CA" : " · system roots"}`
+                  : "Disabled",
+              ],
+              [
                 "SSH tunnel",
                 conn.ssh?.enabled
                   ? `${conn.ssh.username}@${conn.ssh.host}:${conn.ssh.port} · ${conn.ssh.auth === "agent" ? "Agent" : "Private key"}`
