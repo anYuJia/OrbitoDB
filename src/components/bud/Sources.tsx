@@ -731,6 +731,132 @@ function Datasource({
   );
 }
 
+function DatabaseObjectRow({
+  object,
+  conn,
+}: {
+  object: DatabaseObjectInfo;
+  conn: ConnectionConfig;
+}) {
+  const [ctx, setCtx] = useState<CtxAnchor | null>(null);
+  const openSqlTab = useStore((s) => s.openSqlTab);
+  const openTableData = useStore((s) => s.openTableData);
+  const dropDatabaseObject = useStore((s) => s.dropDatabaseObject);
+  const isReadOnly = useStore((s) => s.readOnlyConns.includes(conn.id));
+
+  const showDdl = () => {
+    if (!object.definition?.trim()) return;
+    openSqlTab(`${object.kind} · ${object.name}`, object.definition);
+  };
+
+  const openObject = () => {
+    if (object.kind === "view") {
+      void openTableData(object.name);
+      return;
+    }
+    if (object.kind === "index" && object.table) {
+      void openTableData(object.table);
+      return;
+    }
+    if (object.definition?.trim()) {
+      showDdl();
+      return;
+    }
+    if (object.table) void openTableData(object.table);
+  };
+
+  const copyName = () => void navigator.clipboard?.writeText(object.name).catch(() => {});
+
+  const drop = async () => {
+    if (isReadOnly) return;
+    if (
+      !(await confirmDialog({
+        title: `Drop ${object.kind}?`,
+        message: `Drop “${object.name}”?${object.table ? ` It belongs to “${object.table}”.` : ""} This changes the database schema immediately.`,
+        confirmLabel: "Drop",
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+    await dropDatabaseObject(object);
+  };
+
+  const canOpen =
+    object.kind === "view" ||
+    (!!object.table && object.kind === "index") ||
+    !!object.definition?.trim() ||
+    !!object.table;
+
+  const items: MenuItem[] = [
+    {
+      label: "Open",
+      icon: (<IconFolderOpen size={15} stroke={1.7} />),
+      disabled: !canOpen,
+      onClick: openObject,
+    },
+    {
+      label: "Show DDL",
+      icon: (<IconSchema size={15} stroke={1.7} />),
+      disabled: !object.definition?.trim(),
+      onClick: showDdl,
+    },
+    {
+      label: "Copy name",
+      icon: (<IconCopy size={15} stroke={1.7} />),
+      onClick: copyName,
+    },
+    { divider: true },
+    {
+      label: `Drop ${object.kind}`,
+      icon: (<IconTrash size={15} stroke={1.7} />),
+      danger: true,
+      disabled: isReadOnly,
+      onClick: () => void drop(),
+    },
+  ];
+
+  const icon =
+    object.kind === "view" ? (
+      <IconEye size={14} stroke={1.7} />
+    ) : object.kind === "index" ? (
+      <IconHash size={14} stroke={1.7} />
+    ) : object.kind === "sequence" ? (
+      <IconSchema size={14} stroke={1.7} />
+    ) : (
+      <IconCode size={14} stroke={1.7} />
+    );
+
+  const meta =
+    object.signature?.trim() ||
+    (object.table ? `on ${object.table}` : null);
+
+  return (
+    <>
+      <div
+        className="bud-table odb-object-row"
+        title={[
+          object.kind,
+          object.table ? `table: ${object.table}` : "",
+          object.signature ? `signature: ${object.signature}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+        onClick={openObject}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setCtx({ x: event.clientX, y: event.clientY, items });
+        }}
+      >
+        <span className="bud-table-ic">{icon}</span>
+        <span className="bud-src-name">{object.name}</span>
+        {meta && <span className="odb-object-meta">{meta}</span>}
+      </div>
+      {ctx && <ContextMenu anchor={ctx} onClose={() => setCtx(null)} />}
+    </>
+  );
+}
+
 function TableRow({
   table,
   connectionId,
