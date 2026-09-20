@@ -121,6 +121,7 @@ export function SqlPanel() {
   const editors = useStore((s) => s.editors);
   const selectEditor = useStore((s) => s.selectEditor);
   const renameEditor = useStore((s) => s.renameEditor);
+  const bindEditorConnection = useStore((s) => s.bindEditorConnection);
   const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
   const res = useStore((s) => s.editorResults[s.activeEditorId] ?? null);
   const err = useStore((s) => s.editorErrors[s.activeEditorId] ?? null);
@@ -193,6 +194,8 @@ export function SqlPanel() {
 
   const exec = async (text = sql) => {
     if (!connId || running) return;
+    const editor = editors.find((item) => item.id === activeEditorId);
+    if (!editor?.connectionId) bindEditorConnection(activeEditorId, connId);
     if (readOnly && isWrite(text)) {
       toast("Connection is read-only — writes are blocked.", "error");
       return;
@@ -570,7 +573,10 @@ export function SqlPanel() {
           <select
             value={connId ?? ""}
             onChange={(e) => {
-              if (e.target.value && e.target.value !== connId) void openAndIntrospect(e.target.value);
+              const nextId = e.target.value;
+              if (!nextId || nextId === connId) return;
+              bindEditorConnection(activeEditorId, nextId);
+              void openAndIntrospect(nextId);
             }}
           >
             {!connId && <option value="">No connection</option>}
