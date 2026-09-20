@@ -228,6 +228,7 @@ mod tests {
             ),
             database: std::env::var("ORBITODB_PG_DB").unwrap_or_else(|_| "postgres".into()),
             username: Some(std::env::var("ORBITODB_PG_USER").unwrap_or_else(|_| "postgres".into())),
+            env: None,
         };
         Some((cfg, std::env::var("ORBITODB_PG_PASS").ok()))
     }
