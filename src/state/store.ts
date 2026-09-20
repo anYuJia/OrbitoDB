@@ -22,6 +22,8 @@ import type {
   ColumnInfo,
   ConnectionConfig,
   HistoryEntry,
+  ForeignKey,
+  IndexInfo,
   QueryResult,
   TableInfo,
 } from "../ipc/types";
@@ -550,8 +552,8 @@ export const useStore = create<AppStore>((set, get) => ({
     }
 
     const engine = get().connections.find((connection) => connection.id === id)?.engine ?? "sqlite";
-    let foreignKeys = [];
-    let indexes = [];
+    let foreignKeys: ForeignKey[] = [];
+    let indexes: IndexInfo[] = [];
     try {
       [foreignKeys, indexes] = await Promise.all([
         backend.listForeignKeys(id),
