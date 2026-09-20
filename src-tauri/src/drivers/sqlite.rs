@@ -141,6 +141,7 @@ mod tests {
             port: None,
             database: ":memory:".into(),
             username: None,
+            env: None,
         }
     }
 
