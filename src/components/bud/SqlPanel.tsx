@@ -548,12 +548,12 @@ export function SqlPanel() {
         </div>
         <span className="odb-query-context-spacer" />
         <label className="odb-query-limit">
-          <span>Row limit</span>
+          <span>Display limit</span>
           <input
             inputMode="numeric"
             value={maxRows}
             onChange={(e) => setMaxRows(e.target.value.replace(/\D/g, ""))}
-            aria-label="Query result row limit"
+            aria-label="Displayed query result row limit"
           />
         </label>
       </div>
