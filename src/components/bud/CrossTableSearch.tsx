@@ -43,11 +43,15 @@ function isSearchable(column: ColumnInfo): boolean {
 function buildSearchSql(engine: Engine, table: string, columns: ColumnInfo[], term: string): string {
   const q = (value: string) => quoteIdentifier(engine, value);
   const selected = columns.slice(0, MAX_COLUMNS_PER_TABLE);
-  const needle = sqlLiteral("%" + term.toLowerCase() + "%");
+  const needle = sqlLiteral(term.toLowerCase());
   const castType = engine === "mysql" ? "CHAR" : "TEXT";
-  const where = selected
-    .map((column) => `LOWER(CAST(${q(column.name)} AS ${castType})) LIKE ${needle}`)
-    .join(" OR ");
+  const contains = (column: ColumnInfo) => {
+    const value = `LOWER(CAST(${q(column.name)} AS ${castType}))`;
+    return engine === "mysql"
+      ? `LOCATE(${needle}, ${value}) > 0`
+      : `INSTR(${value}, ${needle}) > 0`;
+  };
+  const where = selected.map(contains).join(" OR ");
   return `SELECT ${selected.map((column) => q(column.name)).join(", ")} FROM ${q(table)} WHERE ${where} LIMIT ${ROWS_PER_TABLE}`;
 }
 
