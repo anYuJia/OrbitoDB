@@ -367,8 +367,11 @@ class LocalBackend implements Backend {
   async listConstraints(connectionId: string, table: string): Promise<ConstraintInfo[]> {
     const db = await this.ensureDb(connectionId);
     const out: ConstraintInfo[] = [];
-    const columns = await this.listColumns(connectionId, table);
-    const primary = columns.filter((column) => column.isPrimaryKey).map((column) => column.name);
+    const pkResult = db.exec(`PRAGMA table_xinfo(${q(table)})`);
+    const primary = (pkResult.length ? pkResult[0].values : [])
+      .filter((row) => Number(row[5] ?? 0) > 0)
+      .sort((a, b) => Number(a[5] ?? 0) - Number(b[5] ?? 0))
+      .map((row) => String(row[1]));
     if (primary.length) {
       out.push({
         name: null,
