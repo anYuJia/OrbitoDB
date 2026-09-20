@@ -158,11 +158,23 @@ export function TableStructure({ table }: { table: string }) {
     });
     if (!name?.trim()) return;
 
-    const unique = await confirmDialog({
+    const type = await promptDialog({
       title: "Index type",
-      message: "Create this as a UNIQUE index? Choose Cancel for a normal index.",
-      confirmLabel: "Unique",
+      label: "Type",
+      defaultValue: "normal",
+      placeholder: "normal or unique",
     });
+    if (!type?.trim()) return;
+    const normalizedType = type.trim().toLowerCase();
+    if (normalizedType !== "normal" && normalizedType !== "unique") {
+      await confirmDialog({
+        title: "Invalid index type",
+        message: 'Use "normal" or "unique".',
+        confirmLabel: "Close",
+      });
+      return;
+    }
+    const unique = normalizedType === "unique";
 
     const q = (value: string) => quoteIdentifier(engine, value);
     const sql = `CREATE ${unique ? "UNIQUE " : ""}INDEX ${q(name.trim())} ON ${q(table)} (${requested.map(q).join(", ")});`;
