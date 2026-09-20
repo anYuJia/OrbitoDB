@@ -13,15 +13,12 @@ use crate::drivers::{sqlite::SqliteDriver, Driver};
 use crate::error::{AppError, AppResult};
 use crate::types::{ConnectionConfig, Engine, SshAuth};
 
-/// A database connection can optionally be reached through the user's system
-/// OpenSSH client. We intentionally use non-interactive auth only: ssh-agent or
-/// an unencrypted/private key already usable by OpenSSH.
-pub async fn prepare_connection(
-    cfg: &ConnectionConfig,
-) -> AppResult<(ConnectionConfig, Option<Child>)> {
-    let Some(ssh) = cfg.ssh.as_ref().filter(|ssh| ssh.enabled) else {
-        return Ok((cfg.clone(), None));
-    };
+fn build_ssh_args(cfg: &ConnectionConfig, local_port: u16) -> AppResult<Vec<String>> {
+    let ssh = cfg
+        .ssh
+        .as_ref()
+        .filter(|ssh| ssh.enabled)
+        .ok_or_else(|| AppError::ConnectionFailed("SSH tunnel is not enabled".into()))?;
 
     if cfg.engine == Engine::Sqlite {
         return Err(AppError::ConnectionFailed(
@@ -40,7 +37,6 @@ pub async fn prepare_connection(
         Engine::MySql => 3306,
         Engine::Sqlite => unreachable!(),
     });
-    let local_port = reserve_local_port()?;
 
     let mut args = vec![
         "-N".to_string(),
@@ -81,6 +77,21 @@ pub async fn prepare_connection(
     }
 
     args.push(format!("{}@{}", ssh.username.trim(), ssh.host.trim()));
+    Ok(args)
+}
+
+/// A database connection can optionally be reached through the user's system
+/// OpenSSH client. We intentionally use non-interactive auth only: ssh-agent or
+/// an unencrypted/private key already usable by OpenSSH.
+pub async fn prepare_connection(
+    cfg: &ConnectionConfig,
+) -> AppResult<(ConnectionConfig, Option<Child>)> {
+    let Some(ssh) = cfg.ssh.as_ref().filter(|ssh| ssh.enabled) else {
+        return Ok((cfg.clone(), None));
+    };
+
+    let local_port = reserve_local_port()?;
+    let args = build_ssh_args(cfg, local_port)?;
 
     let mut command = Command::new("ssh");
     command
@@ -298,6 +309,54 @@ mod tests {
     #[test]
     fn reserves_ephemeral_local_port() {
         assert!(reserve_local_port().unwrap() > 0);
+    }
+
+    #[test]
+    fn builds_non_interactive_agent_tunnel_args() {
+        let mut c = cfg();
+        c.engine = Engine::Postgres;
+        c.host = Some("db.internal".into());
+        c.port = Some(5432);
+        c.ssh = Some(crate::types::SshTunnelConfig {
+            enabled: true,
+            host: "bastion.example.com".into(),
+            port: 2222,
+            username: "deploy".into(),
+            auth: SshAuth::Agent,
+            private_key_path: None,
+        });
+
+        let args = build_ssh_args(&c, 45678).unwrap();
+        assert!(args.iter().any(|arg| arg == "BatchMode=yes"));
+        assert!(args.iter().any(|arg| arg == "ExitOnForwardFailure=yes"));
+        assert!(args.iter().any(|arg| arg == "StrictHostKeyChecking=accept-new"));
+        assert!(args.iter().any(|arg| arg == "127.0.0.1:45678:db.internal:5432"));
+        assert_eq!(args.last().map(String::as_str), Some("deploy@bastion.example.com"));
+        assert!(!args.iter().any(|arg| arg == "-i"));
+    }
+
+    #[test]
+    fn key_tunnel_requires_and_passes_private_key_path() {
+        let mut c = cfg();
+        c.engine = Engine::MySql;
+        c.host = Some("mysql.internal".into());
+        c.port = Some(3306);
+        c.ssh = Some(crate::types::SshTunnelConfig {
+            enabled: true,
+            host: "jump.example.com".into(),
+            port: 22,
+            username: "ops".into(),
+            auth: SshAuth::Key,
+            private_key_path: Some("/tmp/id_ed25519".into()),
+        });
+
+        let args = build_ssh_args(&c, 40001).unwrap();
+        let key_pos = args.iter().position(|arg| arg == "-i").unwrap();
+        assert_eq!(args.get(key_pos + 1).map(String::as_str), Some("/tmp/id_ed25519"));
+        assert!(args.iter().any(|arg| arg == "127.0.0.1:40001:mysql.internal:3306"));
+
+        c.ssh.as_mut().unwrap().private_key_path = None;
+        assert!(build_ssh_args(&c, 40002).is_err());
     }
 
     #[test]
