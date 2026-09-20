@@ -12,33 +12,56 @@ OrbitoDB is a desktop-first database client for developers who want a lightweigh
 
 ## What already works
 
-- connection management
-- schema and table browsing
-- SQL editor with schema-aware completion
-- query history
-- result grid and export
-- inline row editing
-- visual table operations
-- statistics and chart views
-- local SQLite creation
-- Tauri desktop runtime
-- optional browser + bridge runtime
+- saved connection profiles with groups and environment labels
+- PostgreSQL schema selection and switching
+- optional SSH tunneling through the system OpenSSH client
+- PostgreSQL / MySQL connection URL import
+- local credential storage through the OS keychain
+- database / schema / table browsing
+- column, foreign-key and index introspection
+- ER diagrams and schema diff
+- multi-tab SQL editor with persistent tab names
+- schema-aware SQL completion
+- query history, Scripts and Starred queries
+- result grid, sorting, filtering and export
+- inline row editing and row operations
+- table structure editing
+- engine-aware DDL templates for indexes and foreign keys
+- production write guard and per-connection read-only mode
+- local SQLite database creation
+- optional browser + local bridge runtime
 
-## Where OrbitoDB is going
+## SSH tunneling
 
-The goal is a clean, native-feeling database workbench with the everyday capabilities people expect from tools such as Navicat, without requiring an account or a cloud service.
+The desktop app can connect to PostgreSQL or MySQL/MariaDB through a local SSH tunnel.
+
+OrbitoDB uses the system `ssh` command instead of embedding a separate SSH stack:
+
+- local forwarding uses an ephemeral `127.0.0.1` port
+- authentication supports `ssh-agent` or a private-key path
+- interactive password / passphrase prompts are intentionally disabled
+- encrypted private keys should already be loaded into `ssh-agent`
+- host keys use OpenSSH `StrictHostKeyChecking=accept-new`
+- OrbitoDB does not store SSH passphrases
+- the tunnel process is terminated when the database connection closes
+
+Database passwords are still stored separately in the operating system credential store.
+
+## Project direction
+
+The goal is a clean, native-feeling database workbench with the everyday capabilities expected from tools such as Navicat, while remaining local-first and account-free.
 
 Next areas of work:
 
-- complete desktop UI/UX redesign
-- stronger driver abstraction
 - SQL Server, Redis and Oracle
 - TiDB, OceanBase and other domestic database engines
-- import / export workflows
-- SSH tunnel and proxy support
-- ER diagrams and schema diff
-- safer destructive-operation flows
-- connection groups, favorites and workspace persistence
+- richer import / export workflows
+- migration preview and schema migration generation
+- cross-table data search
+- richer constraint and index editing
+- SSH proxy / jump-host improvements
+- connection health diagnostics
+- packaging, signing and release automation
 
 ## Stack
 
@@ -46,6 +69,7 @@ Next areas of work:
 Tauri 2
 ├── Rust 2021
 ├── SQLx 0.8 + Tokio
+├── system OpenSSH
 └── OS credential store
 
 React 19
@@ -63,10 +87,12 @@ npm install
 npm run tauri dev
 ```
 
-Rust tests:
+Run frontend and Rust validation:
 
 ```bash
+npm run build
 cd src-tauri
+cargo check
 cargo test
 ```
 
@@ -78,7 +104,9 @@ npm run tauri build
 
 ## Local-first
 
-The desktop build connects directly to databases from the Rust backend. No OrbitoDB account is required. Database passwords are stored through the operating system credential service instead of plain-text project configuration.
+The desktop build connects directly to databases from the Rust backend. No OrbitoDB account is required.
+
+Saved connection metadata stays in OrbitoDB's local application database. Database passwords are stored through the operating system credential service rather than plain-text project configuration.
 
 ## Origin
 
