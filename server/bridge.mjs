@@ -239,6 +239,8 @@ async function connect(cfg, password) {
         connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
       });
       await client.connect();
+      const schema = String(cfg.schema || "public").trim() || "public";
+      await client.query("SELECT set_config('search_path', quote_ident($1), false)", [schema]);
       return client;
     }
     if (cfg.engine === "mysql") {
@@ -364,6 +366,21 @@ const handlers = {
     if (e.engine === "sqlite") return sqliteQuery(e.fileKey, sql, started);
     const raw = await rawArrayRows(e.engine, e.conn, sql);
     return toResult(raw, started);
+  },
+
+  async schemas({ id }) {
+    const { engine, conn } = need(id);
+    if (engine === "sqlite") return ["main", "temp"];
+    if (engine === "postgres") {
+      const raw = await rawArrayRows(
+        engine,
+        conn,
+        "SELECT schema_name FROM information_schema.schemata WHERE schema_name <> 'information_schema' AND schema_name NOT LIKE 'pg_%' ORDER BY schema_name",
+      );
+      return raw.rows.map((row) => String(row[0]));
+    }
+    const raw = await rawArrayRows(engine, conn, "SELECT database()");
+    return raw.rows.length && raw.rows[0][0] ? [String(raw.rows[0][0])] : [];
   },
 
   async tables({ id }) {
