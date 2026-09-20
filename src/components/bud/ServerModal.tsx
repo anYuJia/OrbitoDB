@@ -14,7 +14,7 @@ import {
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import type { ConnEnv, ConnectionConfig, Engine } from "../../ipc/types";
+import type { ConnEnv, ConnectionConfig, Engine, SshAuth } from "../../ipc/types";
 import { getBackend, isTauri } from "../../ipc/backend";
 import { bridgeHealthy } from "../../ipc/http";
 import { backdropV, centeredModalV, MotionButton } from "../../lib/motion";
@@ -114,6 +114,8 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
 
   const [name, setName] = useState(existing?.name ?? "");
   const [env, setEnv] = useState<ConnEnv | "">(existing?.env ?? "");
+  const [group, setGroup] = useState(existing?.group ?? "");
+  const [schema, setSchema] = useState(existing?.schema ?? "public");
   const [host, setHost] = useState(existing?.host ?? "localhost");
   const [port, setPort] = useState(existing?.port != null ? String(existing.port) : defaultPortFor(existing?.engine ?? "sqlite"));
   const [database, setDatabase] = useState(existing?.database ?? "");
@@ -121,6 +123,12 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
   const [password, setPassword] = useState("");
   const [connectionUrl, setConnectionUrl] = useState("");
   const [showConnectionUrl, setShowConnectionUrl] = useState(false);
+  const [sshEnabled, setSshEnabled] = useState(existing?.ssh?.enabled ?? false);
+  const [sshHost, setSshHost] = useState(existing?.ssh?.host ?? "");
+  const [sshPort, setSshPort] = useState(String(existing?.ssh?.port ?? 22));
+  const [sshUsername, setSshUsername] = useState(existing?.ssh?.username ?? "");
+  const [sshAuth, setSshAuth] = useState<SshAuth>(existing?.ssh?.auth ?? "agent");
+  const [sshPrivateKeyPath, setSshPrivateKeyPath] = useState(existing?.ssh?.privateKeyPath ?? "");
   const [databases, setDatabases] = useState<string[] | null>(null);
   const [status, setStatus] = useState<{ kind: "ok" | "error"; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
@@ -139,7 +147,9 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
       setHost("localhost");
       setUsername("");
       setPassword("");
+      setSshEnabled(false);
     }
+    if (next === "postgres" && !schema.trim()) setSchema("public");
   };
 
   const applyConnectionUrl = () => {
@@ -177,6 +187,19 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
     database: db,
     username: engine === "sqlite" ? null : username.trim() || null,
     env: env || null,
+    group: group.trim() || null,
+    schema: engine === "postgres" ? schema.trim() || "public" : null,
+    ssh:
+      engine === "sqlite" || !sshEnabled
+        ? null
+        : {
+            enabled: true,
+            host: sshHost.trim(),
+            port: Number(sshPort || 22) || 22,
+            username: sshUsername.trim(),
+            auth: sshAuth,
+            privateKeyPath: sshAuth === "key" ? sshPrivateKeyPath.trim() || null : null,
+          },
   });
 
   const testAndList = async () => {
@@ -231,7 +254,17 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
     }
   };
 
-  const canSave = !!database.trim() && remoteReady && (engine === "sqlite" || !!host.trim());
+  const sshValid =
+    !sshEnabled ||
+    (!remoteInBrowser &&
+      !!sshHost.trim() &&
+      !!sshUsername.trim() &&
+      (sshAuth === "agent" || !!sshPrivateKeyPath.trim()));
+  const canSave =
+    !!database.trim() &&
+    remoteReady &&
+    sshValid &&
+    (engine === "sqlite" || !!host.trim());
 
   return (
     <>
@@ -308,6 +341,10 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
               <label className="odb-form-field grow">
                 <span>Name</span>
                 <input value={name} onChange={(e) => setName(e.target.value)} placeholder={`${engineLabel(engine)} connection`} />
+              </label>
+              <label className="odb-form-field group">
+                <span>Group</span>
+                <input value={group} onChange={(e) => setGroup(e.target.value)} placeholder="e.g. Work" />
               </label>
               <label className="odb-form-field env">
                 <span>Environment</span>
@@ -478,9 +515,87 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                     </button>
                   </div>
                 </label>
+
+                {engine === "postgres" && (
+                  <label className="odb-form-field">
+                    <span>Default schema</span>
+                    <input
+                      value={schema}
+                      onChange={(e) => setSchema(e.target.value)}
+                      placeholder="public"
+                      spellCheck={false}
+                    />
+                    <small>After connecting, available schemas can be switched from the SQL workspace.</small>
+                  </label>
+                )}
               </>
             )}
           </section>
+
+          {engine !== "sqlite" && (
+            <section className="odb-connection-section">
+              <div className="odb-section-label">
+                <span>04</span>
+                <div>
+                  <b>SSH tunnel</b>
+                  <small>Optional local port forwarding through the system OpenSSH client.</small>
+                </div>
+              </div>
+
+              <label className="odb-ssh-toggle">
+                <input
+                  type="checkbox"
+                  checked={sshEnabled}
+                  disabled={remoteInBrowser}
+                  onChange={(e) => setSshEnabled(e.target.checked)}
+                />
+                <span>
+                  <b>Connect through SSH</b>
+                  <small>{remoteInBrowser ? "Available in the desktop app only." : "Uses ssh-agent or a private key without interactive prompts."}</small>
+                </span>
+              </label>
+
+              {sshEnabled && (
+                <div className="odb-ssh-panel">
+                  <div className="odb-form-grid host">
+                    <label className="odb-form-field grow">
+                      <span>SSH host</span>
+                      <input value={sshHost} onChange={(e) => setSshHost(e.target.value)} placeholder="bastion.example.com" />
+                    </label>
+                    <label className="odb-form-field port">
+                      <span>SSH port</span>
+                      <input inputMode="numeric" value={sshPort} onChange={(e) => setSshPort(e.target.value.replace(/\D/g, ""))} placeholder="22" />
+                    </label>
+                  </div>
+                  <div className="odb-form-grid credentials">
+                    <label className="odb-form-field">
+                      <span>SSH username</span>
+                      <input value={sshUsername} onChange={(e) => setSshUsername(e.target.value)} placeholder="ubuntu" autoComplete="off" />
+                    </label>
+                    <label className="odb-form-field">
+                      <span>Authentication</span>
+                      <select value={sshAuth} onChange={(e) => setSshAuth(e.target.value as SshAuth)}>
+                        <option value="agent">ssh-agent</option>
+                        <option value="key">Private key file</option>
+                      </select>
+                    </label>
+                  </div>
+                  {sshAuth === "key" && (
+                    <label className="odb-form-field">
+                      <span>Private key path</span>
+                      <input
+                        value={sshPrivateKeyPath}
+                        onChange={(e) => setSshPrivateKeyPath(e.target.value)}
+                        placeholder="~/.ssh/id_ed25519"
+                        spellCheck={false}
+                      />
+                      <small>Encrypted keys should already be loaded into ssh-agent. OrbitoDB never stores an SSH passphrase.</small>
+                    </label>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
         </div>
 
         <footer className="odb-connection-footer">
