@@ -75,7 +75,7 @@ pub async fn prepare_connection(
                     )
                 })?;
             args.push("-i".to_string());
-            args.push(key.to_string());
+            args.push(expand_home(key));
         }
     }
 
@@ -133,6 +133,19 @@ pub async fn stop_tunnel(mut tunnel: Option<Child>) {
         let _ = child.kill().await;
         let _ = child.wait().await;
     }
+}
+
+fn expand_home(path: &str) -> String {
+    if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
+        if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+            let suffix = path.trim_start_matches('~').trim_start_matches(['/', '\\']);
+            return std::path::PathBuf::from(home)
+                .join(suffix)
+                .to_string_lossy()
+                .into_owned();
+        }
+    }
+    path.to_string()
 }
 
 fn reserve_local_port() -> AppResult<u16> {
