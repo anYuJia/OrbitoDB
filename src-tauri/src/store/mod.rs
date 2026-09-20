@@ -1,5 +1,5 @@
 use crate::error::AppResult;
-use crate::types::{ConnectionConfig, Engine, SshTunnelConfig};
+use crate::types::{ConnectionConfig, Engine, SshTunnelConfig, TlsConfig};
 use serde::Serialize;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::Row;
@@ -34,7 +34,7 @@ impl Store {
             "CREATE TABLE IF NOT EXISTS connections (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, engine TEXT NOT NULL,
                 host TEXT, port INTEGER, database TEXT NOT NULL, username TEXT, env TEXT,
-                group_name TEXT, schema_name TEXT, ssh_json TEXT)",
+                group_name TEXT, schema_name TEXT, tls_json TEXT, ssh_json TEXT)",
         )
         .execute(&pool)
         .await?;
@@ -58,6 +58,7 @@ impl Store {
         for (name, ddl) in [
             ("group_name", "ALTER TABLE connections ADD COLUMN group_name TEXT"),
             ("schema_name", "ALTER TABLE connections ADD COLUMN schema_name TEXT"),
+            ("tls_json", "ALTER TABLE connections ADD COLUMN tls_json TEXT"),
             ("ssh_json", "ALTER TABLE connections ADD COLUMN ssh_json TEXT"),
         ] {
             let exists = connection_cols
@@ -80,7 +81,7 @@ impl Store {
 
     pub async fn list_connections(&self) -> AppResult<Vec<ConnectionConfig>> {
         let rows = sqlx::query(
-            "SELECT id,name,engine,host,port,database,username,env,group_name,schema_name,ssh_json
+            "SELECT id,name,engine,host,port,database,username,env,group_name,schema_name,tls_json,ssh_json
              FROM connections ORDER BY COALESCE(group_name,''), name",
         )
         .fetch_all(&self.pool)
@@ -98,6 +99,9 @@ impl Store {
                 env: r.get("env"),
                 group: r.get("group_name"),
                 schema: r.get("schema_name"),
+                tls: r
+                    .get::<Option<String>, _>("tls_json")
+                    .and_then(|json| serde_json::from_str::<TlsConfig>(&json).ok()),
                 ssh: r
                     .get::<Option<String>, _>("ssh_json")
                     .and_then(|json| serde_json::from_str::<SshTunnelConfig>(&json).ok()),
@@ -113,11 +117,11 @@ impl Store {
             Engine::Sqlite => "sqlite",
         };
         sqlx::query(
-            "INSERT INTO connections (id,name,engine,host,port,database,username,env,group_name,schema_name,ssh_json)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+            "INSERT INTO connections (id,name,engine,host,port,database,username,env,group_name,schema_name,tls_json,ssh_json)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
              ON CONFLICT(id) DO UPDATE SET
                 name=?2, engine=?3, host=?4, port=?5, database=?6, username=?7, env=?8,
-                group_name=?9, schema_name=?10, ssh_json=?11",
+                group_name=?9, schema_name=?10, tls_json=?11, ssh_json=?12",
         )
         .bind(&cfg.id)
         .bind(&cfg.name)
@@ -129,6 +133,7 @@ impl Store {
         .bind(&cfg.env)
         .bind(&cfg.group)
         .bind(&cfg.schema)
+        .bind(cfg.tls.as_ref().and_then(|tls| serde_json::to_string(tls).ok()))
         .bind(cfg.ssh.as_ref().and_then(|ssh| serde_json::to_string(ssh).ok()))
         .execute(&self.pool)
         .await?;
@@ -190,6 +195,10 @@ mod tests {
             env: Some("prod".into()),
             group: Some("Work".into()),
             schema: Some("analytics".into()),
+            tls: Some(TlsConfig {
+                mode: crate::types::TlsMode::VerifyCa,
+                ca_path: Some("C:/certs/root-ca.pem".into()),
+            }),
             ssh: Some(SshTunnelConfig {
                 enabled: true,
                 host: "bastion.example.com".into(),
@@ -207,6 +216,9 @@ mod tests {
         assert_eq!(list[0].env.as_deref(), Some("prod"));
         assert_eq!(list[0].group.as_deref(), Some("Work"));
         assert_eq!(list[0].schema.as_deref(), Some("analytics"));
+        let tls = list[0].tls.as_ref().expect("TLS config persisted");
+        assert_eq!(tls.mode, crate::types::TlsMode::VerifyCa);
+        assert_eq!(tls.ca_path.as_deref(), Some("C:/certs/root-ca.pem"));
         let ssh = list[0].ssh.as_ref().expect("SSH config persisted");
         assert!(ssh.enabled);
         assert_eq!(ssh.host, "bastion.example.com");
@@ -292,6 +304,7 @@ mod tests {
             env: None,
             group: None,
             schema: None,
+            tls: None,
             ssh: None,
         };
         store.upsert_connection(&cfg).await.unwrap();
