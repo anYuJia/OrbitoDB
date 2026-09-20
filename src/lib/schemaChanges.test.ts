@@ -195,4 +195,15 @@ describe("schemaChanges", () => {
     );
     expect(plan).toEqual({ statements: [], requiresReview: false });
   });
+  it("rejects making primary-key columns nullable", () => {
+    expect(() =>
+      buildColumnAlterPlan(
+        "postgres",
+        "users",
+        { name: "id", dataType: "bigint", nullable: false, isPrimaryKey: true },
+        { name: "id", dataType: "bigint", nullable: true, defaultValue: null, comment: null },
+      ),
+    ).toThrow(/primary-key/i);
+  });
+
 });
