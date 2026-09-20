@@ -14,7 +14,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { viewV } from "../../lib/motion";
 import { confirmDialog } from "../../state/dialog";
 import type { TopView } from "../../state/store";
@@ -173,6 +173,20 @@ function SettingsPanel({
   const toggleReadOnly = useStore((s) => s.toggleReadOnly);
   const readOnlyConns = useStore((s) => s.readOnlyConns);
   const readOnly = !!conn && readOnlyConns.includes(conn.id);
+  const groupedConnections = useMemo(() => {
+    const groups = new Map<string, typeof connections>();
+    for (const connection of connections) {
+      const key = connection.group?.trim() || "Ungrouped";
+      const items = groups.get(key) ?? [];
+      items.push(connection);
+      groups.set(key, items);
+    }
+    return [...groups.entries()].sort(([a], [b]) => {
+      if (a === "Ungrouped") return 1;
+      if (b === "Ungrouped") return -1;
+      return a.localeCompare(b);
+    });
+  }, [connections]);
 
   const engineName = (engine: string) =>
     engine === "postgres" ? "PostgreSQL" : engine === "mysql" ? "MySQL / MariaDB" : "SQLite";
@@ -202,36 +216,45 @@ function SettingsPanel({
             <span>Profiles and credentials stay on this device.</span>
           </button>
         ) : (
-          connections.map((item) => {
-            const active = item.id === activeId;
-            const ro = readOnlyConns.includes(item.id);
-            return (
-              <div key={item.id} className={`odb-connection-manager-row ${active ? "active" : ""}`}>
-                <button className="odb-connection-manager-main" onClick={() => void openAndIntrospect(item.id)}>
-                  <span className="odb-connection-manager-dot" />
-                  <span className="odb-connection-manager-copy">
-                    <span className="odb-connection-manager-name">
-                      <b>{item.name}</b>
-                      {active && <em>Active</em>}
-                      {item.env && <em className={`env ${item.env}`}>{item.env.toUpperCase()}</em>}
-                      {ro && <em className="readonly">Read-only</em>}
-                    </span>
-                    <span>
-                      {engineName(item.engine)}
-                      <i>·</i>
-                      {item.host ?? "Local"}
-                      {item.port ? `:${item.port}` : ""}
-                      <i>·</i>
-                      {item.database}
-                    </span>
-                  </span>
-                </button>
-                <button className="odb-connection-manager-edit" title="Edit connection" onClick={() => onEditConnection(item)}>
-                  <IconPencil size={13} stroke={1.8} />
-                </button>
+          groupedConnections.map(([groupName, items]) => (
+            <section className="odb-connection-manager-group" key={groupName}>
+              <div className="odb-connection-manager-group-head">
+                <span>{groupName}</span>
+                <em>{items.length}</em>
               </div>
-            );
-          })
+              {items.map((item) => {
+                const active = item.id === activeId;
+                const ro = readOnlyConns.includes(item.id);
+                return (
+                  <div key={item.id} className={`odb-connection-manager-row ${active ? "active" : ""}`}>
+                    <button className="odb-connection-manager-main" onClick={() => void openAndIntrospect(item.id)}>
+                      <span className="odb-connection-manager-dot" />
+                      <span className="odb-connection-manager-copy">
+                        <span className="odb-connection-manager-name">
+                          <b>{item.name}</b>
+                          {active && <em>Active</em>}
+                          {item.env && <em className={`env ${item.env}`}>{item.env.toUpperCase()}</em>}
+                          {ro && <em className="readonly">Read-only</em>}
+                        </span>
+                        <span>
+                          {engineName(item.engine)}
+                          <i>·</i>
+                          {item.host ?? "Local"}
+                          {item.port ? `:${item.port}` : ""}
+                          <i>·</i>
+                          {item.database}
+                          {item.engine === "postgres" ? ` / ${item.schema?.trim() || "public"}` : ""}
+                        </span>
+                      </span>
+                    </button>
+                    <button className="odb-connection-manager-edit" title="Edit connection" onClick={() => onEditConnection(item)}>
+                      <IconPencil size={13} stroke={1.8} />
+                    </button>
+                  </div>
+                );
+              })}
+            </section>
+          ))
         )}
       </div>
 
