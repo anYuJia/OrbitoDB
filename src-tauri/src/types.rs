@@ -33,6 +33,25 @@ pub enum SshAuth {
     Key,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TlsMode {
+    Disable,
+    Prefer,
+    Require,
+    VerifyCa,
+    VerifyFull,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TlsConfig {
+    pub mode: TlsMode,
+    #[serde(default)]
+    pub ca_path: Option<String>,
+}
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshTunnelConfig {
@@ -74,6 +93,9 @@ pub struct ConnectionConfig {
     /// Active schema. PostgreSQL defaults to public; ignored by other engines.
     #[serde(default)]
     pub schema: Option<String>,
+    /// Optional TLS policy for PostgreSQL/MySQL.
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
     /// Optional desktop SSH local-forward configuration.
     #[serde(default)]
     pub ssh: Option<SshTunnelConfig>,
