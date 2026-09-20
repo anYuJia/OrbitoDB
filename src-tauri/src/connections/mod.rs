@@ -43,6 +43,8 @@ fn build_ssh_args(cfg: &ConnectionConfig, local_port: u16) -> AppResult<Vec<Stri
         "-o".to_string(),
         "BatchMode=yes".to_string(),
         "-o".to_string(),
+        "PasswordAuthentication=no".to_string(),
+        "-o".to_string(),
         "ExitOnForwardFailure=yes".to_string(),
         "-o".to_string(),
         "StrictHostKeyChecking=accept-new".to_string(),
@@ -71,6 +73,8 @@ fn build_ssh_args(cfg: &ConnectionConfig, local_port: u16) -> AppResult<Vec<Stri
                         "SSH private-key authentication requires a key file path".into(),
                     )
                 })?;
+            args.push("-o".to_string());
+            args.push("IdentitiesOnly=yes".to_string());
             args.push("-i".to_string());
             args.push(expand_home(key));
         }
@@ -328,6 +332,7 @@ mod tests {
 
         let args = build_ssh_args(&c, 45678).unwrap();
         assert!(args.iter().any(|arg| arg == "BatchMode=yes"));
+        assert!(args.iter().any(|arg| arg == "PasswordAuthentication=no"));
         assert!(args.iter().any(|arg| arg == "ExitOnForwardFailure=yes"));
         assert!(args.iter().any(|arg| arg == "StrictHostKeyChecking=accept-new"));
         assert!(args.iter().any(|arg| arg == "127.0.0.1:45678:db.internal:5432"));
@@ -351,6 +356,7 @@ mod tests {
         });
 
         let args = build_ssh_args(&c, 40001).unwrap();
+        assert!(args.iter().any(|arg| arg == "IdentitiesOnly=yes"));
         let key_pos = args.iter().position(|arg| arg == "-i").unwrap();
         assert_eq!(args.get(key_pos + 1).map(String::as_str), Some("/tmp/id_ed25519"));
         assert!(args.iter().any(|arg| arg == "127.0.0.1:40001:mysql.internal:3306"));
