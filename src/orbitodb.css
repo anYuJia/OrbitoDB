@@ -3759,3 +3759,29 @@ textarea:focus-visible {
     display: none;
   }
 }
+
+
+.bud-diff-migrate {
+  height: 29px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid #405596;
+  border-radius: 4px;
+  background: rgba(76, 111, 255, 0.12);
+  color: #b7c3ff;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.bud-diff-migrate:hover:not(:disabled) {
+  border-color: #5874dd;
+  background: rgba(76, 111, 255, 0.18);
+  color: #d3daff;
+}
+
+.bud-diff-migrate:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
