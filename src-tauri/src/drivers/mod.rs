@@ -13,6 +13,9 @@ pub trait Driver: Send + Sync {
     /// Run a statement. SELECT-like statements return columns + rows;
     /// others return `rows_affected`.
     async fn execute(&self, sql: &str) -> AppResult<QueryResult>;
+    /// Cancel the currently executing user query when the engine supports it.
+    /// Returns false when there is no active query or cancellation is unsupported.
+    async fn cancel(&self) -> AppResult<bool>;
     /// List schemas/namespaces available to the active connection.
     async fn list_schemas(&self) -> AppResult<Vec<String>>;
     /// List tables and views.
