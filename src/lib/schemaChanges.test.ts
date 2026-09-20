@@ -78,11 +78,12 @@ describe("schemaChanges", () => {
         dataType: "timestamp",
         nullable: false,
         defaultValue: "CURRENT_TIMESTAMP",
-        comment: null,
+        comment: "Last update time",
       },
     );
     expect(timestamp.statements[0]).toContain("DEFAULT CURRENT_TIMESTAMP");
     expect(timestamp.statements[0]).toContain("ON UPDATE CURRENT_TIMESTAMP");
+    expect(timestamp.statements[0]).toContain("COMMENT 'Last update time'");
   });
 
   it("keeps generated MySQL columns generated", () => {
