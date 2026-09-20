@@ -104,6 +104,15 @@ pub struct ConnectionConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ConnectionDiagnostics {
+    pub server_version: String,
+    pub database: String,
+    pub schema: Option<String>,
+    pub latency_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Column {
     pub name: String,
     pub data_type: String,
