@@ -24,7 +24,6 @@ export function TableStructure({ table }: { table: string }) {
   const renameColumn = useStore((s) => s.renameColumn);
   const dropColumn = useStore((s) => s.dropColumn);
   const showTableDdl = useStore((s) => s.showTableDdl);
-  const openSqlTab = useStore((s) => s.openSqlTab);
   const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
   const [mode, setMode] = useState<StructureMode>("columns");
   const [foreignKeys, setForeignKeys] = useState<ForeignKey[]>([]);
