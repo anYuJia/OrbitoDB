@@ -137,6 +137,7 @@ mod tests {
             env: None,
             group: None,
             schema: None,
+            tls: None,
             ssh: None,
         };
         let d = SqliteDriver::connect(&cfg).await.unwrap();
