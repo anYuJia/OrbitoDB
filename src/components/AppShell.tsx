@@ -77,7 +77,7 @@ export function AppShell() {
           {topView === "data" ? (
             <DataView key="data" />
           ) : (
-            <WorkspacePanel key={topView} view={topView} onEditConnection={openEdit} />
+            <WorkspacePanel key={topView} view={topView} onEditConnection={openEdit} onAddConnection={openAdd} />
           )}
         </AnimatePresence>
       </div>
