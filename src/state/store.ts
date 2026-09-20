@@ -98,6 +98,8 @@ export interface EditorTab {
   id: string;
   name: string;
   sql: string;
+  /** Saved database context for this SQL tab. Null means not pinned yet. */
+  connectionId: string | null;
 }
 const EDITORS_KEY = "orbitodb.editors";
 const ACTIVE_EDITOR_KEY = "orbitodb.activeEditor";
@@ -110,12 +112,13 @@ function loadEditors(): EditorTab[] {
         id: String(e.id ?? `ed-${i + 1}`),
         name: String(e.name ?? `Query ${i + 1}`),
         sql: String(e.sql ?? ""),
+        connectionId: typeof e.connectionId === "string" && e.connectionId ? e.connectionId : null,
       }));
     }
   } catch {
     /* fall through to the migrated single editor */
   }
-  return [{ id: "ed-1", name: "Query 1", sql: loadInitialSql() }];
+  return [{ id: "ed-1", name: "Query 1", sql: loadInitialSql(), connectionId: null }];
 }
 function persistEditors(editors: EditorTab[], activeId: string): void {
   try {
@@ -201,6 +204,7 @@ export interface AppStore {
   newEditor: () => void;
   openSqlTab: (name: string, sql: string) => void;
   renameEditor: (id: string, name: string) => void;
+  bindEditorConnection: (id: string, connectionId: string | null) => void;
   closeEditor: (id: string) => void;
   selectEditor: (id: string) => void;
   setEditorResult: (id: string, result: QueryResult | null, error: AppError | null) => void;
@@ -470,7 +474,12 @@ export const useStore = create<AppStore>((set, get) => ({
   newEditor: () =>
     set((s) => {
       const id = `ed-${Date.now().toString(36)}`;
-      const editor: EditorTab = { id, name: `Query ${s.editors.length + 1}`, sql: "" };
+      const editor: EditorTab = {
+        id,
+        name: `Query ${s.editors.length + 1}`,
+        sql: "",
+        connectionId: s.activeConnectionId,
+      };
       const editors = [...s.editors, editor];
       persistEditors(editors, id);
       return { editors, activeEditorId: id, sql: "", view: "sql", topView: "data" };
@@ -479,7 +488,12 @@ export const useStore = create<AppStore>((set, get) => ({
   openSqlTab: (name, sql) =>
     set((s) => {
       const id = "ed-" + Date.now().toString(36);
-      const editor: EditorTab = { id, name: name.trim() || "Query " + (s.editors.length + 1), sql };
+      const editor: EditorTab = {
+        id,
+        name: name.trim() || "Query " + (s.editors.length + 1),
+        sql,
+        connectionId: s.activeConnectionId,
+      };
       const editors = [...s.editors, editor];
       persistEditors(editors, id);
       persistLocal(EDITOR_KEY, sql);
@@ -491,6 +505,15 @@ export const useStore = create<AppStore>((set, get) => ({
       const nextName = name.trim();
       if (!nextName) return {};
       const editors = s.editors.map((editor) => (editor.id === id ? { ...editor, name: nextName } : editor));
+      persistEditors(editors, s.activeEditorId);
+      return { editors };
+    }),
+
+  bindEditorConnection: (id, connectionId) =>
+    set((s) => {
+      const editors = s.editors.map((editor) =>
+        editor.id === id ? { ...editor, connectionId } : editor,
+      );
       persistEditors(editors, s.activeEditorId);
       return { editors };
     }),
@@ -551,7 +574,12 @@ export const useStore = create<AppStore>((set, get) => ({
       delete editorResults[id];
       delete editorErrors[id];
       if (editors.length === 0) {
-        const fresh: EditorTab = { id: `ed-${Date.now().toString(36)}`, name: "Query 1", sql: "" };
+        const fresh: EditorTab = {
+          id: `ed-${Date.now().toString(36)}`,
+          name: "Query 1",
+          sql: "",
+          connectionId: s.activeConnectionId,
+        };
         editors = [fresh];
         persistEditors(editors, fresh.id);
         return { editors, activeEditorId: fresh.id, sql: "", editorResults, editorErrors };
