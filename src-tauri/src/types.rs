@@ -149,6 +149,8 @@ pub struct ColumnInfo {
     pub generated: Option<String>,
     #[serde(default)]
     pub comment: Option<String>,
+    #[serde(default)]
+    pub extra: Option<String>,
 }
 
 /// A column definition for the visual create-table designer.
