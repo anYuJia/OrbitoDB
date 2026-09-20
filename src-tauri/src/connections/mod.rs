@@ -138,7 +138,9 @@ pub async fn stop_tunnel(mut tunnel: Option<Child>) {
 fn expand_home(path: &str) -> String {
     if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
         if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
-            let suffix = path.trim_start_matches('~').trim_start_matches(['/', '\\']);
+            let suffix = path
+                .trim_start_matches('~')
+                .trim_start_matches(|ch| ch == '/' || ch == '\\');
             return std::path::PathBuf::from(home)
                 .join(suffix)
                 .to_string_lossy()
