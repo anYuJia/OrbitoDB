@@ -1,4 +1,4 @@
-import { IconArrowRight, IconX } from "@tabler/icons-react";
+import { IconArrowRight, IconCode, IconX } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { getBackend } from "../../ipc/backend";
 import { useStore } from "../../state/store";
@@ -72,12 +72,16 @@ export function SchemaDiff() {
   const [aId, setAId] = useState("");
   const [bId, setBId] = useState("");
   const [diff, setDiff] = useState<Diff | null>(null);
+  const [schemaA, setSchemaA] = useState<Schema | null>(null);
+  const [schemaB, setSchemaB] = useState<Schema | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     const onEvt = () => {
       setDiff(null);
+      setSchemaA(null);
+      setSchemaB(null);
       setErr(null);
       setAId(activeId ?? connections[0]?.id ?? "");
       setBId(connections.find((c) => c.id !== (activeId ?? connections[0]?.id))?.id ?? "");
@@ -104,14 +108,103 @@ export function SchemaDiff() {
     setBusy(true);
     setErr(null);
     setDiff(null);
+    setSchemaA(null);
+    setSchemaB(null);
     try {
       const [a, b] = await Promise.all([introspect(aId), introspect(bId)]);
+      setSchemaA(a);
+      setSchemaB(b);
       setDiff(computeDiff(a, b));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
+  };
+
+  const quoteIdentifier = (engine: string, value: string) =>
+    engine === "mysql"
+      ? "`" + value.replace(/`/g, "``") + "`"
+      : '"' + value.replace(/"/g, '""') + '"';
+
+  const migrationPreview = async () => {
+    if (!diff || !schemaA || !schemaB || !aId || !bId) return;
+    const target = connections.find((connection) => connection.id === aId);
+    const desired = connections.find((connection) => connection.id === bId);
+    if (!target || !desired) return;
+
+    const q = (value: string) => quoteIdentifier(target.engine, value);
+    const lines: string[] = [
+      "-- OrbitoDB migration preview",
+      `-- Target: ${target.name}`,
+      `-- Desired schema: ${desired.name}`,
+      "-- Review every statement before executing.",
+      "-- Destructive removals are commented out by default.",
+      "",
+    ];
+
+    for (const table of diff.onlyB) {
+      const cols = schemaB[table] ?? {};
+      const defs = Object.entries(cols).map(([name, type]) => `  ${q(name)} ${type || "TEXT"}`);
+      if (defs.length) {
+        lines.push(`CREATE TABLE ${q(table)} (`, defs.join(",\n"), ");", "");
+      } else {
+        lines.push(`-- TODO: CREATE TABLE ${q(table)}; -- column metadata unavailable`, "");
+      }
+    }
+
+    for (const changed of diff.changed) {
+      const desiredCols = schemaB[changed.table] ?? {};
+      for (const column of changed.onlyB) {
+        lines.push(
+          `ALTER TABLE ${q(changed.table)} ADD COLUMN ${q(column)} ${desiredCols[column] || "TEXT"};`,
+        );
+      }
+      for (const change of changed.typeChanged) {
+        if (target.engine === "postgres") {
+          lines.push(
+            `ALTER TABLE ${q(changed.table)} ALTER COLUMN ${q(change.col)} TYPE ${change.b};`,
+          );
+        } else if (target.engine === "mysql") {
+          lines.push(
+            `ALTER TABLE ${q(changed.table)} MODIFY COLUMN ${q(change.col)} ${change.b};`,
+          );
+        } else {
+          lines.push(
+            `-- SQLite manual rebuild required: ${changed.table}.${change.col} ${change.a} -> ${change.b}`,
+          );
+        }
+      }
+      if (changed.onlyB.length || changed.typeChanged.length) lines.push("");
+    }
+
+    if (diff.onlyA.length || diff.changed.some((item) => item.onlyA.length)) {
+      lines.push("-- Destructive differences (commented out):");
+      for (const table of diff.onlyA) {
+        lines.push(`-- DROP TABLE ${q(table)};`);
+      }
+      for (const changed of diff.changed) {
+        for (const column of changed.onlyA) {
+          if (target.engine === "sqlite") {
+            lines.push(`-- SQLite rebuild required to remove ${changed.table}.${column}`);
+          } else {
+            lines.push(`-- ALTER TABLE ${q(changed.table)} DROP COLUMN ${q(column)};`);
+          }
+        }
+      }
+      lines.push("");
+    }
+
+    if (lines.filter((line) => line && !line.startsWith("--")).length === 0) {
+      lines.push("-- No automatically applicable migration statements were generated.");
+    }
+
+    await useStore.getState().openAndIntrospect(aId);
+    useStore.getState().openSqlTab(
+      `Migration · ${target.name} ← ${desired.name}`,
+      lines.join("\n"),
+    );
+    setOpen(false);
   };
 
   const inSync = diff && !diff.onlyA.length && !diff.onlyB.length && !diff.changed.length;
@@ -145,11 +238,22 @@ export function SchemaDiff() {
           <button className="bud-diff-go" onClick={() => void compare()} disabled={busy || !aId || !bId || aId === bId}>
             {busy ? "Comparing…" : "Compare"}
           </button>
+          <button
+            className="bud-diff-migrate"
+            onClick={() => void migrationPreview()}
+            disabled={busy || !diff || !!inSync}
+            title="Generate SQL to make the left connection match the right connection"
+          >
+            <IconCode size={14} stroke={1.8} />
+            Migration preview
+          </button>
         </div>
 
         <div className="bud-diff-body">
           {err && <div className="bud-error">⚠ {err}</div>}
-          {!diff && !err && !busy && <div className="bud-empty">Pick two connections and press Compare.</div>}
+          {!diff && !err && !busy && (
+            <div className="bud-empty">Pick a target connection on the left and the desired schema on the right, then press Compare.</div>
+          )}
           {inSync && <div className="bud-diff-insync">✓ Schemas are identical — {diff.identical} tables match.</div>}
           {diff && !inSync && (
             <>
