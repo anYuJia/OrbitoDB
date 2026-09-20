@@ -54,6 +54,9 @@ export function buildColumnAlterPlan(
   const nextType = next.dataType.trim();
   if (!nextName) throw new Error("Column name cannot be empty.");
   if (!isSafeSqlFragment(nextType)) throw new Error("Column type contains unsafe SQL tokens.");
+  if (current.isPrimaryKey && next.nullable) {
+    throw new Error("Primary-key columns cannot be nullable.");
+  }
 
   const currentDefault = normalized(current.defaultValue);
   const nextDefault = normalized(next.defaultValue);
