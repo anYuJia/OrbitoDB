@@ -173,6 +173,17 @@ pub struct IndexInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ConstraintInfo {
+    #[serde(default)]
+    pub name: Option<String>,
+    pub kind: String,
+    pub definition: String,
+    #[serde(default)]
+    pub columns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ColumnDef {
     pub name: String,
     pub data_type: String,
