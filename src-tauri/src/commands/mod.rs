@@ -379,6 +379,7 @@ pub async fn create_local_database(
             env: None,
             group: None,
             schema: None,
+            tls: None,
             ssh: None,
     };
     // Creates the file (mode=rwc) and verifies it opens.
@@ -427,6 +428,7 @@ pub async fn scan_local_databases() -> AppResult<Vec<ConnectionConfig>> {
                 env: None,
                 group: None,
                 schema: None,
+                tls: None,
                 ssh: None,
             });
         }
