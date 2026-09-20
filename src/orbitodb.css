@@ -3541,3 +3541,17 @@ textarea:focus-visible {
 .odb-connection-manager-group .odb-connection-manager-row:last-child {
   border-bottom: 0;
 }
+
+
+.odb-qtab-connection-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: #6479d9;
+  box-shadow: 0 0 0 2px rgba(76, 111, 255, 0.08);
+}
+
+.bud-qtab.on .odb-qtab-connection-dot {
+  background: #8da0ff;
+}
