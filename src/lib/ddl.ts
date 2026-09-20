@@ -1,4 +1,4 @@
-import type { ColumnInfo, Engine, ForeignKey, IndexInfo } from "../ipc/types";
+import type { ColumnInfo, ConstraintInfo, Engine, ForeignKey, IndexInfo } from "../ipc/types";
 
 export function quoteDdlIdentifier(engine: Engine, value: string): string {
   return engine === "mysql"
@@ -40,7 +40,7 @@ function sqlString(value: string): string {
   return "'" + value.replace(/'/g, "''") + "'";
 }
 
-function renderDefault(engine: Engine, column: ColumnInfo): string | null {
+export function renderColumnDefault(engine: Engine, column: ColumnInfo): string | null {
   const value = column.defaultValue;
   if (value == null || value === "") return value === "" && engine === "mysql" ? "''" : null;
   if (engine !== "mysql") return value;
@@ -68,6 +68,7 @@ export function buildTableDdl(
   columns: ColumnInfo[],
   foreignKeys: ForeignKey[] = [],
   indexes: IndexInfo[] = [],
+  constraints: ConstraintInfo[] = [],
 ): string {
   const q = (value: string) => quoteDdlIdentifier(engine, value);
   if (!columns.length) return `-- No column information available for ${table}`;
@@ -79,7 +80,7 @@ export function buildTableDdl(
       if (engine === "postgres") line += ` GENERATED ALWAYS AS (${column.generated}) STORED`;
       else if (engine === "mysql") line += ` GENERATED ALWAYS AS (${column.generated})`;
     } else {
-      const defaultSql = renderDefault(engine, column);
+      const defaultSql = renderColumnDefault(engine, column);
       if (defaultSql != null) line += ` DEFAULT ${defaultSql}`;
     }
     if (primaryKeys.length === 1 && column.isPrimaryKey) line += " PRIMARY KEY";
@@ -90,6 +91,13 @@ export function buildTableDdl(
 
   if (primaryKeys.length > 1) {
     defs.push(`  PRIMARY KEY (${primaryKeys.map((column) => q(column.name)).join(", ")})`);
+  }
+
+  for (const constraint of constraints.filter((item) => item.kind !== "primary")) {
+    const definition = constraint.definition.trim();
+    if (!definition) continue;
+    const prefix = constraint.name ? `CONSTRAINT ${q(constraint.name)} ` : "";
+    defs.push(`  ${prefix}${definition}`);
   }
 
   const tableFks = foreignKeys.filter((fk) => fk.table === table);
@@ -105,7 +113,7 @@ export function buildTableDdl(
 
   const statements = [
     `-- Generated from OrbitoDB schema metadata for ${engine}.`,
-    "-- CHECK constraints, triggers and engine-specific table options may still require review.",
+    "-- Triggers and engine-specific table/storage options may still require review.",
     `CREATE TABLE ${q(table)} (`,
     defs.join(",\n"),
     ");",
@@ -138,7 +146,15 @@ export function buildTableDdl(
     }
   }
 
-  const secondary = indexes.filter((index) => !isManagedIndex(engine, index.name));
+  const constraintOwnedIndexes = new Set(
+    constraints
+      .filter((constraint) => constraint.kind === "primary" || constraint.kind === "unique")
+      .map((constraint) => constraint.name)
+      .filter((name): name is string => !!name),
+  );
+  const secondary = indexes.filter(
+    (index) => !isManagedIndex(engine, index.name) && !constraintOwnedIndexes.has(index.name),
+  );
   if (secondary.length) statements.push("", "-- Secondary indexes");
   for (const index of secondary) {
     const definition = index.detail.trim();
