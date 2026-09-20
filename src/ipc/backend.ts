@@ -22,6 +22,7 @@ export interface Backend {
   openConnection(id: string): Promise<void>;
   closeConnection(id: string): Promise<void>;
   runQuery(connectionId: string, sql: string): Promise<QueryResult>;
+  listSchemas(connectionId: string): Promise<string[]>;
   listTables(connectionId: string): Promise<TableInfo[]>;
   listColumns(connectionId: string, table: string): Promise<ColumnInfo[]>;
   listForeignKeys(connectionId: string): Promise<ForeignKey[]>;
