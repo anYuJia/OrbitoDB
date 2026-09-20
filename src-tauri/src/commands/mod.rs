@@ -384,6 +384,7 @@ pub async fn scan_local_databases() -> AppResult<Vec<ConnectionConfig>> {
                 port: Some(port),
                 database: db.into(),
                 username: Some(user.into()),
+                env: None,
             });
         }
     }
