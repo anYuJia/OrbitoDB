@@ -246,15 +246,26 @@ class LocalBackend implements Backend {
   }
   async listColumns(connectionId: string, table: string): Promise<ColumnInfo[]> {
     const db = await this.ensureDb(connectionId);
-    const res = db.exec(`PRAGMA table_info(${q(table)})`);
+    const res = db.exec(`PRAGMA table_xinfo(${q(table)})`);
     const rows = res.length ? res[0].values : [];
-    // cid, name, type, notnull, dflt_value, pk
-    return rows.map((r) => ({
-      name: String(r[1]),
-      dataType: r[2] ? String(r[2]) : "",
-      nullable: Number(r[3]) === 0,
-      isPrimaryKey: Number(r[5]) > 0,
-    }));
+    // cid, name, type, notnull, dflt_value, pk, hidden
+    return rows.map((r) => {
+      const hidden = Number(r[6] ?? 0);
+      return {
+        name: String(r[1]),
+        dataType: r[2] ? String(r[2]) : "",
+        nullable: Number(r[3]) === 0,
+        isPrimaryKey: Number(r[5]) > 0,
+        defaultValue: r[4] == null ? null : String(r[4]),
+        generated:
+          hidden === 2
+            ? "VIRTUAL (expression unavailable)"
+            : hidden === 3
+              ? "STORED (expression unavailable)"
+              : null,
+        comment: null,
+      };
+    });
   }
   async listForeignKeys(connectionId: string): Promise<ForeignKey[]> {
     const db = await this.ensureDb(connectionId);
