@@ -3,7 +3,11 @@ import {
   IconDatabaseSearch,
   IconGitCompare,
   IconKey,
+  IconLock,
+  IconLockOpen,
+  IconPencil,
   IconPlugConnected,
+  IconRefresh,
   IconSchema,
   IconTerminal2,
   IconTrash,
@@ -16,10 +20,16 @@ import { toast } from "../../state/toast";
 import type { TopView } from "../../state/store";
 import { useStore } from "../../state/store";
 
-export function WorkspacePanel({ view }: { view: TopView }) {
+export function WorkspacePanel({
+  view,
+  onEditConnection,
+}: {
+  view: TopView;
+  onEditConnection: (conn: import("../../ipc/types").ConnectionConfig) => void;
+}) {
   if (view === "design") return <SchemaToolsPanel />;
   if (view === "automation") return <UtilitiesPanel />;
-  return <SettingsPanel />;
+  return <SettingsPanel onEditConnection={onEditConnection} />;
 }
 
 function PanelShell({
@@ -100,9 +110,16 @@ function UtilitiesPanel() {
   );
 }
 
-function SettingsPanel() {
+function SettingsPanel({
+  onEditConnection,
+}: {
+  onEditConnection: (conn: import("../../ipc/types").ConnectionConfig) => void;
+}) {
   const conn = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const deleteConnection = useStore((s) => s.deleteConnection);
+  const openAndIntrospect = useStore((s) => s.openAndIntrospect);
+  const toggleReadOnly = useStore((s) => s.toggleReadOnly);
+  const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
 
   if (!conn) {
     return (
@@ -127,6 +144,17 @@ function SettingsPanel() {
 
   return (
     <PanelShell eyebrow="Connection" title={conn.name} subtitle="Connection metadata and local safety controls.">
+      <div className="odb-connection-settings-actions">
+        <button onClick={() => onEditConnection(conn)}>
+          <IconPencil size={14} stroke={1.8} />
+          Edit connection
+        </button>
+        <button onClick={() => void openAndIntrospect(conn.id)}>
+          <IconRefresh size={14} stroke={1.8} />
+          Reconnect
+        </button>
+      </div>
+
       <div className="odb-settings-list">
         {fields.map(([label, value]) => (
           <div key={label} className="odb-setting-line">
@@ -135,6 +163,19 @@ function SettingsPanel() {
           </div>
         ))}
       </div>
+
+      <div className="odb-safety-section">
+        <div>
+          <span className="odb-page-eyebrow">Safety</span>
+          <b>Read-only mode</b>
+          <p>Block INSERT, UPDATE, DELETE and other write statements for this connection.</p>
+        </div>
+        <button className={readOnly ? "on" : ""} onClick={() => toggleReadOnly(conn.id)}>
+          {readOnly ? <IconLock size={14} stroke={2} /> : <IconLockOpen size={14} stroke={1.8} />}
+          {readOnly ? "Enabled" : "Disabled"}
+        </button>
+      </div>
+
       <div className="odb-danger-zone">
         <div>
           <b>Remove saved connection</b>
