@@ -199,6 +199,7 @@ mod tests {
             env: None,
             group: None,
             schema: None,
+            tls: None,
             ssh: None,
         }
     }
