@@ -49,6 +49,7 @@ pub fn run() {
             commands::open_connection,
             commands::close_connection,
             commands::run_query,
+            commands::run_query_silent,
             commands::list_schemas,
             commands::list_tables,
             commands::list_columns,
