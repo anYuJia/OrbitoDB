@@ -109,9 +109,9 @@ function SchemaToolsPanel() {
         <ToolRow
           icon={<IconArrowsDiff size={18} stroke={1.6} />}
           title="Migration preview"
-          description="Generate and review engine-aware schema migrations."
-          action="Planned"
-          disabled
+          description="Compare two connections and generate a review-first migration script."
+          action="Generate"
+          onClick={() => window.dispatchEvent(new Event("orbitodb:schema-diff"))}
         />
       </div>
     </PanelShell>
