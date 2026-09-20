@@ -36,7 +36,7 @@ import type { ConnectionConfig, Engine } from "../../ipc/types";
 import { useStore } from "../../state/store";
 import { ContextMenu, type CtxAnchor, type MenuItem } from "./ContextMenu";
 
-const PANELS = ["Databases", "Scripts", "Favorites"] as const;
+const PANELS = ["Objects", "Scripts", "Starred"] as const;
 
 function EngineIcon({ engine }: { engine: Engine }) {
   if (engine === "mysql") return <IconBrandMysql size={15} stroke={1.7} />;
@@ -179,7 +179,7 @@ export function Sources({
       )}
 
       <div className="bud-sources-list">
-        {panel === "Databases" ? (
+        {panel === "Objects" ? (
           <>
             <div
               className="bud-tnode root"
@@ -193,7 +193,7 @@ export function Sources({
                 {rootOpen ? <IconChevronDown size={13} stroke={2} /> : <IconChevronRight size={13} stroke={2} />}
               </span>
               <IconFolderOpen size={14} stroke={1.7} className="bud-tnode-ic" />
-              <span className="bud-tnode-label">Connections</span>
+              <span className="bud-tnode-label">Saved connections</span>
             </div>
             {rootCtx && <ContextMenu anchor={rootCtx} onClose={() => setRootCtx(null)} />}
             {rootOpen && (
@@ -217,7 +217,7 @@ export function Sources({
 }
 
 /** The Scripts / Favorites panels: saved SQL snippets, click to load, ✕ to delete. */
-function SavedList({ kind }: { kind: "Scripts" | "Favorites" }) {
+function SavedList({ kind }: { kind: "Scripts" | "Starred" }) {
   const scripts = useStore((s) => s.scripts);
   const favorites = useStore((s) => s.favorites);
   const loadSql = useStore((s) => s.loadSql);
@@ -232,7 +232,7 @@ function SavedList({ kind }: { kind: "Scripts" | "Favorites" }) {
       <div className="bud-ds-empty">
         {kind === "Scripts"
           ? "No saved scripts. Use the Save icon in the editor toolbar."
-          : "No favorites. Use the ★ icon in the editor toolbar."}
+          : "No starred queries yet. Use the ★ icon in the SQL toolbar."}
       </div>
     );
   }
