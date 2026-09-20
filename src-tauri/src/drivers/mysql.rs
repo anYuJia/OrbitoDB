@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode};
 use sqlx::{Column as _, Row, TypeInfo};
+use tokio::sync::Mutex;
 
 use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
@@ -9,6 +10,7 @@ use crate::types::{Column, ColumnInfo, ConnectionConfig, ForeignKey, IndexInfo, 
 
 pub struct MySqlDriver {
     pool: sqlx::MySqlPool,
+    active_thread_id: Mutex<Option<u64>>,
 }
 
 fn options(cfg: &ConnectionConfig, password: Option<&str>) -> MySqlConnectOptions {
@@ -77,7 +79,7 @@ impl MySqlDriver {
             .max_connections(5)
             .connect_with(options(cfg, password))
             .await?;
-        Ok(Self { pool })
+        Ok(Self { pool, active_thread_id: Mutex::new(None) })
     }
 
     pub async fn test(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<()> {
@@ -124,52 +126,73 @@ impl MySqlDriver {
 impl Driver for MySqlDriver {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         let started = std::time::Instant::now();
-        let head = sql.trim_start().to_uppercase();
-        let returns_rows = head.starts_with("SELECT")
-            || head.starts_with("WITH")
-            || head.starts_with("SHOW")
-            || head.starts_with("DESCRIBE")
-            || head.starts_with("DESC ")
-            || head.starts_with("EXPLAIN")
-            || head.starts_with("VALUES");
+        let mut conn = self.pool.acquire().await?;
+        let thread_id: u64 = sqlx::query_scalar("SELECT CONNECTION_ID()")
+            .fetch_one(&mut *conn)
+            .await?;
+        *self.active_thread_id.lock().await = Some(thread_id);
 
-        if !returns_rows {
-            let res = sqlx::query(sql).execute(&self.pool).await?;
-            return Ok(QueryResult {
-                columns: vec![],
-                rows: vec![],
-                rows_affected: res.rows_affected(),
+        let result: AppResult<QueryResult> = async {
+            let head = sql.trim_start().to_uppercase();
+            let returns_rows = head.starts_with("SELECT")
+                || head.starts_with("WITH")
+                || head.starts_with("SHOW")
+                || head.starts_with("DESCRIBE")
+                || head.starts_with("DESC ")
+                || head.starts_with("EXPLAIN")
+                || head.starts_with("VALUES");
+
+            if !returns_rows {
+                let res = sqlx::query(sql).execute(&mut *conn).await?;
+                return Ok(QueryResult {
+                    columns: vec![],
+                    rows: vec![],
+                    rows_affected: res.rows_affected(),
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                    truncated: false,
+                });
+            }
+
+            let fetched = sqlx::query(sql).fetch_all(&mut *conn).await?;
+            let columns = match fetched.first() {
+                Some(first) => first
+                    .columns()
+                    .iter()
+                    .map(|c| Column {
+                        name: c.name().to_string(),
+                        data_type: c.type_info().name().to_string(),
+                    })
+                    .collect(),
+                None => vec![],
+            };
+            let truncated = fetched.len() > MAX_ROWS;
+            let mut rows = Vec::with_capacity(fetched.len().min(MAX_ROWS));
+            for row in fetched.iter().take(MAX_ROWS) {
+                rows.push(mysql_row_to_values(row)?);
+            }
+            Ok(QueryResult {
+                columns,
+                rows,
+                rows_affected: 0,
                 elapsed_ms: started.elapsed().as_millis() as u64,
-                truncated: false,
-            });
+                truncated,
+            })
         }
+        .await;
 
-        let fetched = sqlx::query(sql).fetch_all(&self.pool).await?;
-        let columns = match fetched.first() {
-            Some(first) => first
-                .columns()
-                .iter()
-                .map(|c| Column {
-                    name: c.name().to_string(),
-                    data_type: c.type_info().name().to_string(),
-                })
-                .collect(),
-            None => vec![],
-        };
-        let truncated = fetched.len() > MAX_ROWS;
-        let mut rows = Vec::with_capacity(fetched.len().min(MAX_ROWS));
-        for row in fetched.iter().take(MAX_ROWS) {
-            rows.push(mysql_row_to_values(row)?);
-        }
-        Ok(QueryResult {
-            columns,
-            rows,
-            rows_affected: 0,
-            elapsed_ms: started.elapsed().as_millis() as u64,
-            truncated,
-        })
+        *self.active_thread_id.lock().await = None;
+        result
     }
 
+    async fn cancel(&self) -> AppResult<bool> {
+        let Some(thread_id) = *self.active_thread_id.lock().await else {
+            return Ok(false);
+        };
+        sqlx::query(&format!("KILL QUERY {thread_id}"))
+            .execute(&self.pool)
+            .await?;
+        Ok(true)
+    }
     async fn list_schemas(&self) -> AppResult<Vec<String>> {
         let row = sqlx::query("SELECT database() AS schema_name")
             .fetch_one(&self.pool)
