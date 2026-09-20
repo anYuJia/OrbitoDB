@@ -464,6 +464,56 @@ const handlers = {
     }));
   },
 
+  async indexes({ id, table }) {
+    const { engine, conn, fileKey } = need(id);
+
+    if (engine === "sqlite") {
+      const r = sqliteDbs.get(fileKey).exec(`PRAGMA index_list(${sqliteIdent(table)})`);
+      const rows = r.length ? r[0].values : [];
+      return rows.map((row) => ({
+        name: String(row[1] ?? ""),
+        unique: Number(row[2] ?? 0) === 1,
+        detail: row[3] == null ? "SQLite index" : `origin: ${String(row[3])}`,
+      }));
+    }
+
+    if (engine === "postgres") {
+      const raw = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT indexname, indexdef
+         FROM pg_indexes
+         WHERE schemaname = current_schema() AND tablename = $1
+         ORDER BY indexname`,
+        [table],
+      );
+      return raw.rows.map((row) => {
+        const definition = String(row[1] ?? "");
+        return {
+          name: String(row[0] ?? ""),
+          unique: /CREATE\s+UNIQUE\s+INDEX/i.test(definition),
+          detail: definition,
+        };
+      });
+    }
+
+    const raw = await rawArrayRows(engine, conn, `SHOW INDEX FROM ${quote.mysql(table)}`);
+    const grouped = new Map();
+    for (const row of raw.rows) {
+      const name = String(row[2] ?? "");
+      if (!name) continue;
+      const item = grouped.get(name) ?? { unique: Number(row[1] ?? 1) === 0, columns: [] };
+      const column = String(row[4] ?? "");
+      if (column) item.columns.push(column);
+      grouped.set(name, item);
+    }
+    return [...grouped.entries()].map(([name, item]) => ({
+      name,
+      unique: item.unique,
+      detail: item.columns.join(", ") || "MySQL index",
+    }));
+  },
+
   async updateCell({ id, table, pkColumn, pkValue, column, value }) {
     const { engine, conn, fileKey } = need(id);
     if (engine === "sqlite") {
