@@ -251,9 +251,8 @@ export function SqlPanel() {
   };
 
   const stop = async () => {
+    if (!connId || !running) return;
     runId.current++; // Ignore any response that races with cancellation.
-    setRunning(false);
-    if (!connId) return;
     try {
       const cancelled = await getBackend().cancelQuery(connId);
       toast(
@@ -265,6 +264,10 @@ export function SqlPanel() {
     } catch (error) {
       const normalized = normalize(error);
       toast(normalized.message ?? "Could not cancel query", "error");
+    } finally {
+      // Keep Execute locked until the cancellation attempt finishes so a fast
+      // second query cannot replace the tracked backend id and get cancelled.
+      setRunning(false);
     }
   };
 
