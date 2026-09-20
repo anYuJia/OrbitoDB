@@ -142,6 +142,15 @@ pub async fn run_query(
 }
 
 #[tauri::command]
+pub async fn list_schemas(
+    state: State<'_, AppState>,
+    connection_id: String,
+) -> AppResult<Vec<String>> {
+    let driver = state.registry.get(&connection_id).await?;
+    driver.list_schemas().await
+}
+
+#[tauri::command]
 pub async fn list_tables(
     state: State<'_, AppState>,
     connection_id: String,
