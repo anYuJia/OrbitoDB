@@ -149,9 +149,10 @@ function UtilitiesPanel() {
         <ToolRow
           icon={<IconDatabaseSearch size={18} stroke={1.6} />}
           title="Cross-table data search"
-          description="Search a value across multiple tables and columns."
-          action="Planned"
-          disabled
+          description="Search visible values across tables and jump directly to a matching row."
+          action={activeId ? "Search" : "Unavailable"}
+          disabled={!activeId}
+          onClick={() => window.dispatchEvent(new Event("orbitodb:cross-table-search"))}
         />
       </div>
     </PanelShell>
