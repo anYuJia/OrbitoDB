@@ -3,7 +3,7 @@ pub mod postgres;
 pub mod sqlite;
 
 use crate::error::AppResult;
-use crate::types::{ColumnInfo, ConnectionDiagnostics, ConstraintInfo, ForeignKey, IndexInfo, QueryResult, TableInfo};
+use crate::types::{ColumnInfo, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, ForeignKey, IndexInfo, QueryResult, TableInfo};
 use async_trait::async_trait;
 
 /// The seam every database engine plugs into. SQLite is implemented here;
@@ -22,6 +22,8 @@ pub trait Driver: Send + Sync {
     async fn list_schemas(&self) -> AppResult<Vec<String>>;
     /// List tables and views.
     async fn list_tables(&self) -> AppResult<Vec<TableInfo>>;
+    /// List non-table schema objects visible in the active database/schema.
+    async fn list_database_objects(&self) -> AppResult<Vec<DatabaseObjectInfo>>;
     /// List columns of a table.
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>>;
     /// List foreign-key relationships visible in the active database/schema.
