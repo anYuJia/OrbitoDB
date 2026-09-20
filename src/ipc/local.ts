@@ -13,6 +13,7 @@ import type {
   ColumnInfo,
   ConnectionConfig,
   ConstraintInfo,
+  DatabaseObjectInfo,
   ForeignKey,
   IndexInfo,
   HistoryEntry,
@@ -288,6 +289,25 @@ class LocalBackend implements Backend {
     const rows = res.length ? res[0].values : [];
     return rows.map((r) => ({ name: String(r[0]), kind: String(r[1]), schema: null }));
   }
+  async listDatabaseObjects(connectionId: string): Promise<DatabaseObjectInfo[]> {
+    const db = await this.ensureDb(connectionId);
+    const res = db.exec(
+      "SELECT name, type, tbl_name, sql FROM sqlite_master WHERE type IN ('view','index','trigger') AND name NOT LIKE 'sqlite_%' ORDER BY type, name",
+    );
+    const rows = res.length ? res[0].values : [];
+    return rows.map((row) => ({
+      name: String(row[0] ?? ""),
+      kind: String(row[1] ?? "") as DatabaseObjectInfo["kind"],
+      schema: "main",
+      table: row[2] == null ? null : String(row[2]),
+      signature: null,
+      definition:
+        row[3] == null || String(row[3]).trim() === ""
+          ? null
+          : String(row[3]).replace(/;?\s*$/, ";"),
+    }));
+  }
+
   async listColumns(connectionId: string, table: string): Promise<ColumnInfo[]> {
     const db = await this.ensureDb(connectionId);
     const res = db.exec(`PRAGMA table_xinfo(${q(table)})`);
