@@ -132,9 +132,7 @@ export function SqlPanel() {
 
   const [running, setRunning] = useState(false);
   const [tab, setTab] = useState<Tab>("result");
-  const [sticky, setSticky] = useState(false);
   const [maxRows, setMaxRows] = useState("1000");
-  const [maxChars, setMaxChars] = useState("-1");
   const [caretLine, setCaretLine] = useState(1);
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const [editorH, setEditorH] = useState<number | null>(null);
@@ -522,11 +520,10 @@ export function SqlPanel() {
         </button>
       </div>
 
-      <div className="bud-connbar">
-        <label className="bud-cb-field grow">
-          <span className="bud-cb-label">Database Connection</span>
+      <div className="odb-query-context">
+        <label className="odb-query-connection">
+          <span>Connection</span>
           <select
-            className="bud-cb-select"
             value={connId ?? ""}
             onChange={(e) => {
               if (e.target.value && e.target.value !== connId) void openAndIntrospect(e.target.value);
@@ -540,23 +537,24 @@ export function SqlPanel() {
             ))}
           </select>
         </label>
-        <label className="bud-cb-check">
-          <input type="checkbox" checked={sticky} onChange={(e) => setSticky(e.target.checked)} />
-          <span>Sticky Database</span>
-        </label>
-        <label className="bud-cb-field grow">
-          <span className="bud-cb-label">Schema</span>
-          <select className="bud-cb-select" defaultValue={schemaName}>
-            <option>{schemaName}</option>
-          </select>
-        </label>
-        <label className="bud-cb-field sm">
-          <span className="bud-cb-label">Max Rows</span>
-          <input className="bud-cb-input" value={maxRows} onChange={(e) => setMaxRows(e.target.value)} />
-        </label>
-        <label className="bud-cb-field sm">
-          <span className="bud-cb-label">Max Chars</span>
-          <input className="bud-cb-input" value={maxChars} onChange={(e) => setMaxChars(e.target.value)} />
+        <span className="odb-query-separator" />
+        <div className="odb-query-context-item">
+          <span>Schema</span>
+          <b>{schemaName}</b>
+        </div>
+        <div className="odb-query-context-item">
+          <span>Engine</span>
+          <b>{conn?.engine === "postgres" ? "PostgreSQL" : conn?.engine === "mysql" ? "MySQL" : conn?.engine === "sqlite" ? "SQLite" : "—"}</b>
+        </div>
+        <span className="odb-query-context-spacer" />
+        <label className="odb-query-limit">
+          <span>Row limit</span>
+          <input
+            inputMode="numeric"
+            value={maxRows}
+            onChange={(e) => setMaxRows(e.target.value.replace(/\D/g, ""))}
+            aria-label="Query result row limit"
+          />
         </label>
       </div>
 
