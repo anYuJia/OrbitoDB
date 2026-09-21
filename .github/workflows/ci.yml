@@ -36,7 +36,7 @@ jobs:
         run: npm ci
 
       - name: Frontend unit tests
-        run: npx vitest run src/lib/crossTableSearch.test.ts src/lib/ddl.test.ts src/lib/schemaChanges.test.ts src/lib/databaseObjects.test.ts src/lib/explain.test.ts src/lib/backup.test.ts
+        run: npx vitest run src/lib/crossTableSearch.test.ts src/lib/ddl.test.ts src/lib/schemaChanges.test.ts src/lib/databaseObjects.test.ts src/lib/explain.test.ts src/lib/backup.test.ts src/lib/csv.test.ts src/lib/importSql.test.ts src/lib/tablePaging.test.ts src/lib/duplicateRow.test.ts src/lib/maintenance.test.ts
 
       - name: Bridge syntax check
         run: node --check server/bridge.mjs
