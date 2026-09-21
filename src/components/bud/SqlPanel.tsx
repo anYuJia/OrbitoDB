@@ -26,7 +26,7 @@ import { ExportMenu } from "./ExportMenu";
 import { confirmDialog, promptDialog } from "../../state/dialog";
 import { confirmIfDestructive, confirmProdWrite, isWrite } from "../../state/safety";
 import { toast } from "../../state/toast";
-import { useI18n } from "../../lib/i18n";
+import { translate, useI18n } from "../../lib/i18n";
 import { shortcutLabel } from "../../lib/platform";
 import type { AppError, Column } from "../../ipc/types";
 import { isFkError, useStore, withFkDisabled } from "../../state/store";
@@ -866,14 +866,14 @@ export function SqlPanel() {
                   <div className="bud-logs-bar">
                     <div className="bud-logs-search">
                       <IconSearch size={13} stroke={1.7} />
-                      <input value={logFilter} placeholder="Filter logs…" onChange={(e) => setLogFilter(e.target.value)} />
+                      <input value={logFilter} placeholder={t("sql.filterLogs")} onChange={(e) => setLogFilter(e.target.value)} />
                     </div>
-                    <span className="bud-logs-count">{rows.length.toLocaleString()} entries</span>
+                    <span className="bud-logs-count">{t("sql.entries", { count: rows.length.toLocaleString() })}</span>
                   </div>
                   <div className="bud-logs-head">
-                    <span className="bud-logs-date">Date</span>
+                    <span className="bud-logs-date">{t("sql.date")}</span>
                     <span className="bud-logs-chev" />
-                    <span className="bud-logs-msg">Message</span>
+                    <span className="bud-logs-msg">{t("sql.message")}</span>
                   </div>
                   <div className="bud-logs-body">
                     {err && (
@@ -899,31 +899,31 @@ export function SqlPanel() {
               );
             })()
           ) : tab === "dbms" ? (
-            <div className="bud-results-log">No messages for this query.</div>
+            <div className="bud-results-log">{t("sql.noMessages")}</div>
           ) : err ? (
             <div className="bud-error">⚠ {err.message ?? err.kind}</div>
           ) : res && res.columns.length > 0 ? (
             <>
               <div className="bud-res-toolbar">
                 <div className="bud-res-seg">
-                  <button className={resultView === "table" ? "on" : ""} title="Table view" onClick={() => setResultView("table")}>
-                    <IconTable size={14} stroke={1.7} /> Table
+                  <button className={resultView === "table" ? "on" : ""} title={t("sql.tableView")} onClick={() => setResultView("table")}>
+                    <IconTable size={14} stroke={1.7} /> {t("sql.table")}
                   </button>
-                  <button className={resultView === "chart" ? "on" : ""} title="Chart view" onClick={() => setResultView("chart")}>
-                    <IconChartBar size={14} stroke={1.7} /> Chart
+                  <button className={resultView === "chart" ? "on" : ""} title={t("sql.chartView")} onClick={() => setResultView("chart")}>
+                    <IconChartBar size={14} stroke={1.7} /> {t("sql.chart")}
                   </button>
                 </div>
                 <div className="bud-res-filter">
                   <IconSearch size={13} stroke={1.7} />
-                  <input value={rowFilter} onChange={(e) => setRowFilter(e.target.value)} placeholder="Filter rows…" />
+                  <input value={rowFilter} onChange={(e) => setRowFilter(e.target.value)} placeholder={t("sql.filterRows")} />
                 </div>
                 <button title={t("sql.rerun")} aria-label={t("sql.rerun")} onClick={() => void exec()} disabled={running || !connId}>
                   <IconRefresh size={14} stroke={1.7} />
                 </button>
                 <ExportMenu result={{ ...res, rows: filteredRows }} />
                 <span className="bud-res-meta">
-                  {filteredRows.length.toLocaleString()} {filteredRows.length === 1 ? "row" : "rows"}
-                  {limited ? ` (capped at ${cap})` : ""} · {res.elapsedMs} ms
+                  {t("sql.resultRows", { count: filteredRows.length.toLocaleString(), label: t(filteredRows.length === 1 ? "sql.row" : "sql.rows") })}
+                  {limited ? ` (${t("sql.cappedAt", { count: cap })})` : ""} · {res.elapsedMs} ms
                 </span>
               </div>
               {resultView === "chart" ? (
@@ -952,7 +952,7 @@ export function SqlPanel() {
                             <td
                               key={ci}
                               className={cell == null ? "bud-null" : ""}
-                              title="Click to inspect"
+                              title={t("sql.clickInspect")}
                               onClick={() => setCellView({ value: cell == null ? "NULL" : String(cell), column: res.columns[ci]?.name })}
                             >
                               {cell == null ? "NULL" : String(cell)}
@@ -966,7 +966,7 @@ export function SqlPanel() {
               )}
             </>
           ) : res ? (
-            <div className="bud-empty">Statement ran. {res.rowsAffected} rows affected.</div>
+            <div className="bud-empty">{t("sql.statementRan", { count: res.rowsAffected ?? 0, label: t((res.rowsAffected ?? 0) === 1 ? "sql.row" : "sql.rows") })}</div>
           ) : (
             <div className="bud-empty">{t("sql.emptyHint", { shortcut: runShortcut })}</div>
           )}
@@ -1006,7 +1006,7 @@ function ResultChart({ columns, rows }: { columns: Column[]; rows: unknown[][] }
 
   const idLike = (name: string) => /(^id$|_id$|^.*key$)/i.test(name);
   const numericIdxs = columns.map((_, i) => i).filter((i) => isNum(i));
-  if (numericIdxs.length === 0) return <div className="bud-empty">No numeric column to chart.</div>;
+  if (numericIdxs.length === 0) return <div className="bud-empty">{translate("sql.noNumericChart")}</div>;
   // Prefer a real measure over a primary/foreign key column.
   const valueIdx = numericIdxs.find((i) => !idLike(columns[i].name)) ?? numericIdxs[0];
   const textIdx = columns.findIndex((_, i) => i !== valueIdx && !isNum(i));
