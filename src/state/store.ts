@@ -1510,7 +1510,6 @@ export const useStore = create<AppStore>((set, get) => ({
 
     try {
       await backend.runQuerySilent(id, plan.sql);
-      if (table) await get().reload(table);
       toast(`${plan.label} completed.`, "success");
       return true;
     } catch (e) {
