@@ -9,6 +9,7 @@ import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 import type { Backend } from "./backend";
 import type {
   AppError,
+  BackupInfo,
   ColumnDef,
   ColumnInfo,
   ConnectionConfig,
@@ -275,6 +276,18 @@ class LocalBackend implements Backend {
       schema: "main",
       latencyMs: Math.max(1, Math.round(performance.now() - started)),
     };
+  }
+
+  async listBackups(_connectionId: string): Promise<BackupInfo[]> {
+    throw { kind: "notSupported", message: "Managed backups are provided by the OrbitoDB engine bridge in web mode." } as AppError;
+  }
+
+  async createBackup(_connectionId: string): Promise<BackupInfo> {
+    throw { kind: "notSupported", message: "Managed backups are provided by the OrbitoDB engine bridge in web mode." } as AppError;
+  }
+
+  async restoreBackup(_connectionId: string, _backupId: string): Promise<void> {
+    throw { kind: "notSupported", message: "Managed backups are provided by the OrbitoDB engine bridge in web mode." } as AppError;
   }
 
   async listSchemas(_connectionId: string): Promise<string[]> {
