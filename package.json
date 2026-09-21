@@ -10,7 +10,7 @@
     "dev:all": "concurrently -n web,bridge -c blue,green \"vite\" \"node server/bridge.mjs\"",
     "start": "concurrently -n web,bridge -c blue,green \"vite --port 5001 --strictPort\" \"node server/bridge.mjs\"",
     "seed:demo": "node scripts/seed-demo.mjs",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && node scripts/check-bundle-budgets.mjs",
     "test": "npm run test:unit && npm run test:contract && npm run test:bridge",
     "test:unit": "vitest run",
     "test:contract": "node scripts/check-tauri-contract.mjs",
