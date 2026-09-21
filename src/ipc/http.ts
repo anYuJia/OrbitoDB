@@ -5,7 +5,7 @@
 // reload or a bridge restart.
 import type { Backend } from "./backend";
 import { displayRows } from "../lib/cell";
-import type { AppError, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, IndexInfo, QueryResult } from "./types";
+import type { AppError, BackupInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, IndexInfo, QueryResult } from "./types";
 
 // Same-origin by default: the dev server (vite proxy) and the Docker web
 // container (nginx) both forward "/api" to the bridge, so no host/port is
@@ -219,6 +219,10 @@ export const httpBackend: Backend = {
   runQuerySilent: (id, sql) => withReopen<QueryResult>(id, "query", { id, sql }).then(textifyCells),
   cancelQuery: async (id) => rpc<boolean>("cancel", { id, password: await loadSecret(id) }),
   connectionDiagnostics: (id) => withReopen<ConnectionDiagnostics>(id, "diagnostics", { id }),
+  listBackups: (id) => withReopen<BackupInfo[]>(id, "backups", { id }),
+  createBackup: (id) => withReopen<BackupInfo>(id, "createBackup", { id }),
+  restoreBackup: (id, backupId) =>
+    withReopen<void>(id, "restoreBackup", { id, backupId }).then(() => {}),
   listSchemas: (id) => withReopen<string[]>(id, "schemas", { id }),
   listTables: (id) => withReopen(id, "tables", { id }),
   listDatabaseObjects: (id) => withReopen<DatabaseObjectInfo[]>(id, "objects", { id }),
