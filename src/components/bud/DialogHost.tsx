@@ -1,10 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { backdropV, MotionButton, panelV } from "../../lib/motion";
+import { useI18n } from "../../lib/i18n";
 import { useDialog } from "../../state/dialog";
 
 /** Renders the active themed dialog (confirm / prompt). Mount once at the app root. */
 export function DialogHost() {
+  const { t } = useI18n();
   const current = useDialog((s) => s.current);
   const close = useDialog((s) => s.close);
   const [value, setValue] = useState("");
@@ -90,14 +92,14 @@ export function DialogHost() {
         )}
         <div className="bud-dialog-actions">
           <MotionButton className="bud-dialog-cancel" onClick={cancel}>
-            {current.cancelLabel ?? "Cancel"}
+            {current.cancelLabel ?? t("common.cancel")}
           </MotionButton>
           <MotionButton
             className={`bud-dialog-ok ${current.danger ? "danger" : ""}`}
             autoFocus={current.kind === "confirm"}
             onClick={submit}
           >
-            {current.confirmLabel ?? "OK"}
+            {current.confirmLabel ?? t("common.ok")}
           </MotionButton>
         </div>
           </motion.div>
