@@ -1,4 +1,4 @@
-import { IconArrowUpRight, IconChevronLeft, IconChevronRight, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
+import { IconArrowUpRight, IconChevronLeft, IconChevronRight, IconFileImport, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getBackend } from "../../ipc/backend";
 import { displayRows } from "../../lib/cell";
@@ -9,6 +9,7 @@ import { useStore } from "../../state/store";
 import { CellViewer, isExpandable } from "./CellViewer";
 import { ColumnEditor, type ColumnEditorAnchor } from "./ColumnEditor";
 import { ExportMenu } from "./ExportMenu";
+import { ImportDialog } from "./ImportDialog";
 
 function typeIcon(t: string): string {
   const u = t.toUpperCase();
@@ -90,8 +91,10 @@ export function DataGrid() {
   const navigateFk = useStore((s) => s.navigateFk);
   const pendingColFilter = useStore((s) => s.pendingColFilter);
   const setPendingColFilter = useStore((s) => s.setPendingColFilter);
-  const openTableData = useStore((s) => s.openTableData);
   const searchTable = useStore((s) => s.searchTable);
+  const dataPage = useStore((s) => s.dataPage);
+  const loadTablePage = useStore((s) => s.loadTablePage);
+  const setTablePageSize = useStore((s) => s.setTablePageSize);
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null);
   const [draft, setDraft] = useState("");
   const [newRow, setNewRow] = useState<string[] | null>(null);
@@ -100,9 +103,8 @@ export function DataGrid() {
   const [cellView, setCellView] = useState<{ value: string; column?: string } | null>(null);
   const [selCell, setSelCell] = useState<{ r: number; c: number } | null>(null);
   const [gridFilter, setGridFilter] = useState("");
-  const serverSearched = useRef(false);
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(50);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [allFks, setAllFks] = useState<{ table: string; column: string; refTable: string; refColumn: string }[]>([]);
   // Only show the skeleton if loading actually lingers — avoids a flash on the
   // near-instant in-browser SQLite loads.
@@ -158,31 +160,20 @@ export function DataGrid() {
 
   useEffect(() => setSort(null), [editTable?.table]);
 
-  // Reset filters/paging when the table changes.
   useEffect(() => {
     setGridFilter("");
-    setPage(0);
-    serverSearched.current = false;
+    setImportFile(null);
   }, [editTable?.table]);
 
-  // Whole-table search: debounce the filter and run it on the server so matches
-  // beyond the loaded window are found too (the client-side filter above still
-  // gives instant feedback while this resolves). Clearing it reloads the table.
+  // Whole-table search is server-side and page-aware. The current page remains
+  // visible while the debounced query resolves.
   useEffect(() => {
     if (!editTable) return;
     const q = gridFilter.trim();
-    const id = setTimeout(() => {
-      if (q) {
-        serverSearched.current = true;
-        void searchTable(q);
-      } else if (serverSearched.current) {
-        serverSearched.current = false;
-        void openTableData(editTable.table);
-      }
-    }, 300);
+    if (q === dataPage.search) return;
+    const id = setTimeout(() => void searchTable(q), 300);
     return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gridFilter, editTable?.table]);
+  }, [gridFilter, editTable?.table, dataPage.search, searchTable]);
 
   // Foreign keys are per-connection, so fetch them once (not on every table
   // switch) and derive the current table's map below.
@@ -215,7 +206,6 @@ export function DataGrid() {
   useEffect(() => {
     if (!pendingColFilter) return;
     setGridFilter(pendingColFilter.value);
-    setPage(0);
     setPendingColFilter(null);
   }, [pendingColFilter]);
 
@@ -251,14 +241,12 @@ export function DataGrid() {
   const table = editTable.table;
   const allSelected = result.rows.length > 0 && selection.length === result.rows.length;
 
-  const q = gridFilter.trim().toLowerCase();
-  const filteredOrder = q
-    ? order.filter((ri) => result.rows[ri].some((c) => c != null && String(c).toLowerCase().includes(q)))
-    : order;
-  const hasFilters = !!q;
-  const pageCount = Math.max(1, Math.ceil(filteredOrder.length / pageSize));
-  const curPage = Math.min(page, pageCount - 1);
-  const pagedOrder = filteredOrder.slice(curPage * pageSize, curPage * pageSize + pageSize);
+  const filteredOrder = order;
+  const hasFilters = !!dataPage.search;
+  const pageCount = Math.max(1, Math.ceil(dataPage.totalRows / dataPage.pageSize));
+  const curPage = Math.min(dataPage.page, pageCount - 1);
+  const pageSize = dataPage.pageSize;
+  const pagedOrder = order;
 
   const colInfo = (name: string): ColumnInfo =>
     columns?.find((c) => c.name === name) ?? { name, dataType: "TEXT", nullable: true, isPrimaryKey: false };
@@ -305,7 +293,9 @@ export function DataGrid() {
           <b>{table}</b>
           <span>{result.columns.length} columns</span>
           <span>·</span>
-          <span>{result.rows.length.toLocaleString()} loaded</span>
+          <span>{result.rows.length.toLocaleString()} on page</span>
+          <span>·</span>
+          <span>{dataPage.totalRows.toLocaleString()} total</span>
         </div>
         <div className="bud-grid-search">
           <IconSearch size={13} stroke={2} />
@@ -313,10 +303,7 @@ export function DataGrid() {
             value={gridFilter}
             placeholder="Search rows"
             aria-label="Search rows"
-            onChange={(e) => {
-              setGridFilter(e.target.value);
-              setPage(0);
-            }}
+            onChange={(e) => setGridFilter(e.target.value)}
           />
           {gridFilter && (
             <button className="bud-grid-search-x" title="Clear filter" onClick={() => setGridFilter("")}>
@@ -326,10 +313,30 @@ export function DataGrid() {
         </div>
         {hasFilters && (
           <span className="bud-grid-toolbar-info">
-            {filteredOrder.length.toLocaleString()} match{filteredOrder.length === 1 ? "" : "es"}
+            {dataPage.totalRows.toLocaleString()} match{dataPage.totalRows === 1 ? "" : "es"}
           </span>
         )}
         <span className="bud-grid-foot-spacer" />
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".csv,.tsv,.tab,text/csv,text/tab-separated-values"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0] ?? null;
+            setImportFile(file);
+            event.currentTarget.value = "";
+          }}
+        />
+        <button
+          className="bud-tool odb-grid-import"
+          title="Import CSV or TSV"
+          disabled={readOnly}
+          onClick={() => importInputRef.current?.click()}
+        >
+          <IconFileImport size={13} stroke={2} />
+          Import
+        </button>
         <ExportMenu result={result} rows={filteredOrder.map((ri) => result.rows[ri])} table={table} />
       </div>
       <div className="bud-grid-wrap">
@@ -503,21 +510,23 @@ export function DataGrid() {
       {filteredOrder.length > 0 && (
         <div className="bud-grid-foot">
           <span className="bud-grid-foot-info">
-            {hasFilters
-              ? `${filteredOrder.length.toLocaleString()} of ${result.rows.length.toLocaleString()} rows`
-              : `${result.rows.length.toLocaleString()} ${result.rows.length === 1 ? "row" : "rows"}`}
-            {result.truncated ? " (first 1000)" : ""}
+            {dataPage.totalRows === 0
+              ? "0 rows"
+              : `Showing ${(curPage * pageSize + 1).toLocaleString()}–${Math.min(
+                  curPage * pageSize + result.rows.length,
+                  dataPage.totalRows,
+                ).toLocaleString()} of ${dataPage.totalRows.toLocaleString()}${hasFilters ? " matches" : ""}`}
           </span>
           <span className="bud-grid-foot-spacer" />
           {pageCount > 1 && (
             <span className="bud-pager">
-              <button title="Previous page" disabled={curPage === 0} onClick={() => setPage(curPage - 1)}>
+              <button title="Previous page" disabled={curPage === 0 || loadingResult} onClick={() => void loadTablePage(curPage - 1)}>
                 <IconChevronLeft size={14} stroke={2} />
               </button>
               <span className="bud-pager-info">
                 {curPage + 1} / {pageCount}
               </span>
-              <button title="Next page" disabled={curPage >= pageCount - 1} onClick={() => setPage(curPage + 1)}>
+              <button title="Next page" disabled={curPage >= pageCount - 1 || loadingResult} onClick={() => void loadTablePage(curPage + 1)}>
                 <IconChevronRight size={14} stroke={2} />
               </button>
             </span>
@@ -526,10 +535,7 @@ export function DataGrid() {
             Rows
             <select
               value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setPage(0);
-              }}
+              onChange={(e) => void setTablePageSize(Number(e.target.value))}
             >
               {[50, 100, 200, 500].map((n) => (
                 <option key={n} value={n}>
@@ -542,6 +548,15 @@ export function DataGrid() {
       )}
       {colEditor && <ColumnEditor anchor={colEditor} table={table} onClose={() => setColEditor(null)} />}
       {cellView && <CellViewer value={cellView.value} column={cellView.column} onClose={() => setCellView(null)} />}
+      {importFile && (
+        <ImportDialog
+          file={importFile}
+          table={table}
+          columns={columns ?? []}
+          readOnly={readOnly}
+          onClose={() => setImportFile(null)}
+        />
+      )}
     </div>
   );
 }
