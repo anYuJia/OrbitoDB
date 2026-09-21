@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Backend } from "./backend";
 import type {
+  BackupInfo,
   ColumnInfo,
   ConnectionConfig,
   ConnectionDiagnostics,
@@ -34,6 +35,12 @@ export const tauriBackend: Backend = {
   cancelQuery: (connectionId) => invoke<boolean>("cancel_query", { connectionId }),
   connectionDiagnostics: (connectionId) =>
     invoke<ConnectionDiagnostics>("connection_diagnostics", { connectionId }),
+  listBackups: (connectionId) =>
+    invoke<BackupInfo[]>("list_backups", { connectionId }),
+  createBackup: (connectionId) =>
+    invoke<BackupInfo>("create_backup", { connectionId }),
+  restoreBackup: (connectionId, backupId) =>
+    invoke<void>("restore_backup", { connectionId, backupId }),
   listSchemas: (connectionId) => invoke<string[]>("list_schemas", { connectionId }),
   listTables: (connectionId) =>
     invoke<TableInfo[]>("list_tables", { connectionId }),
