@@ -420,7 +420,7 @@ function SettingsPanel({
   onEditConnection: (conn: import("../../ipc/types").ConnectionConfig) => void;
   onAddConnection: () => void;
 }) {
-  const { locale, setLocale, t } = useI18n();
+  const { locale, localeMode, setLocaleMode, t } = useI18n();
   const connections = useStore((s) => s.connections);
   const activeId = useStore((s) => s.activeConnectionId);
   const conn = connections.find((connection) => connection.id === activeId) ?? null;
@@ -488,10 +488,13 @@ function SettingsPanel({
           <p>{t("workspace.languageDescription")}</p>
         </div>
         <div className="odb-segmented" role="group" aria-label={t("workspace.language")}>
-          <button className={locale === "en-US" ? "on" : ""} onClick={() => setLocale("en-US")}>
+          <button className={localeMode === "system" ? "on" : ""} onClick={() => setLocaleMode("system")}>
+            {t("workspace.systemLanguage")}
+          </button>
+          <button className={localeMode === "en-US" ? "on" : ""} onClick={() => setLocaleMode("en-US")}>
             {t("workspace.english")}
           </button>
-          <button className={locale === "zh-CN" ? "on" : ""} onClick={() => setLocale("zh-CN")}>
+          <button className={localeMode === "zh-CN" ? "on" : ""} onClick={() => setLocaleMode("zh-CN")}>
             {t("workspace.chinese")}
           </button>
         </div>

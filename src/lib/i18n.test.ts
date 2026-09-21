@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getLocale, setLocale, toggleLocale, translate } from "./i18n";
+import { getLocale, getLocaleMode, setLocale, setLocaleMode, toggleLocale, translate } from "./i18n";
 
 describe("i18n", () => {
   afterEach(() => {
@@ -19,6 +19,12 @@ describe("i18n", () => {
     setLocale("zh-CN");
     expect(translate("cmd.connectTo", { name: "Local PG" })).toBe("连接 — Local PG");
     expect(translate("status.rows", { count: 12 })).toBe("12 行");
+  });
+
+  it("tracks an explicit locale mode", () => {
+    setLocaleMode("zh-CN");
+    expect(getLocaleMode()).toBe("zh-CN");
+    expect(getLocale()).toBe("zh-CN");
   });
 
   it("toggles locale deterministically", () => {

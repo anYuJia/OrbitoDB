@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 export type Locale = "en-US" | "zh-CN";
+export type LocaleMode = Locale | "system";
 export type TranslationVars = Record<string, string | number>;
 
 const STORAGE_KEY = "orbitodb.locale";
@@ -215,6 +216,7 @@ const en = {
   "workspace.preferences": "Preferences",
   "workspace.language": "Language",
   "workspace.languageDescription": "Choose the interface language. Changes apply immediately and are saved on this device.",
+  "workspace.systemLanguage": "System",
   "workspace.english": "English",
   "workspace.chinese": "简体中文",
   "workspace.newSqlConsole": "New SQL console",
@@ -746,6 +748,7 @@ const zh: Record<TranslationKey, string> = {
   "workspace.preferences": "偏好设置",
   "workspace.language": "界面语言",
   "workspace.languageDescription": "选择界面语言。修改会立即生效，并保存在此设备。",
+  "workspace.systemLanguage": "跟随系统",
   "workspace.english": "English",
   "workspace.chinese": "简体中文",
   "workspace.newSqlConsole": "新建 SQL 控制台",
@@ -1065,16 +1068,11 @@ const zh: Record<TranslationKey, string> = {
   "crash.reset": "重置 SQL 工作区",
 };
 
-let currentLocale: Locale = detectLocale();
+let currentMode: LocaleMode = detectLocaleMode();
+let currentLocale: Locale = resolveLocaleMode(currentMode);
 const listeners = new Set<() => void>();
 
-function detectLocale(): Locale {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === "en-US" || saved === "zh-CN") return saved;
-  } catch {
-    // Storage can be unavailable in hardened browser contexts.
-  }
+function systemLocale(): Locale {
   if (typeof navigator !== "undefined") {
     const languages = navigator.languages?.length ? navigator.languages : [navigator.language];
     if (languages.some((language) => language?.toLowerCase().startsWith("zh"))) return "zh-CN";
@@ -1082,28 +1080,67 @@ function detectLocale(): Locale {
   return "en-US";
 }
 
+function detectLocaleMode(): LocaleMode {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "system" || saved === "en-US" || saved === "zh-CN") return saved;
+  } catch {
+    // Storage can be unavailable in hardened browser contexts.
+  }
+  return "system";
+}
+
+function resolveLocaleMode(mode: LocaleMode): Locale {
+  return mode === "system" ? systemLocale() : mode;
+}
+
 function applyDocumentLocale(locale: Locale) {
   if (typeof document === "undefined") return;
   document.documentElement.lang = locale;
   document.documentElement.dataset.locale = locale;
+  document.documentElement.dataset.localeMode = currentMode;
+}
+
+function notifyLocaleChanged() {
+  applyDocumentLocale(currentLocale);
+  for (const listener of listeners) listener();
 }
 
 applyDocumentLocale(currentLocale);
+
+if (typeof window !== "undefined") {
+  window.addEventListener("languagechange", () => {
+    if (currentMode !== "system") return;
+    const next = systemLocale();
+    if (next === currentLocale) return;
+    currentLocale = next;
+    notifyLocaleChanged();
+  });
+}
 
 export function getLocale(): Locale {
   return currentLocale;
 }
 
-export function setLocale(locale: Locale) {
-  if (locale === currentLocale) return;
-  currentLocale = locale;
+export function getLocaleMode(): LocaleMode {
+  return currentMode;
+}
+
+export function setLocaleMode(mode: LocaleMode) {
+  const nextLocale = resolveLocaleMode(mode);
+  if (mode === currentMode && nextLocale === currentLocale) return;
+  currentMode = mode;
+  currentLocale = nextLocale;
   try {
-    localStorage.setItem(STORAGE_KEY, locale);
+    localStorage.setItem(STORAGE_KEY, mode);
   } catch {
     // Locale remains active for this session.
   }
-  applyDocumentLocale(locale);
-  for (const listener of listeners) listener();
+  notifyLocaleChanged();
+}
+
+export function setLocale(locale: Locale) {
+  setLocaleMode(locale);
 }
 
 export function toggleLocale() {
@@ -1127,10 +1164,13 @@ function subscribe(listener: () => void) {
 
 export function useI18n() {
   const locale = useSyncExternalStore(subscribe, getLocale, getLocale);
+  const localeMode = currentMode;
   return {
     locale,
+    localeMode,
     isZh: locale === "zh-CN",
     setLocale,
+    setLocaleMode,
     toggleLocale,
     t: (key: TranslationKey, vars?: TranslationVars) => translate(key, vars, locale),
   };
