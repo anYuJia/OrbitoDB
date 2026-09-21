@@ -669,17 +669,17 @@ export function TableStructure({ table }: { table: string }) {
       ) : mode === "constraints" ? (
         <div className="odb-structure-meta-table constraints">
           <div className="odb-meta-row header">
-            <span>{t("structure.type")}</span><span>{t("structure.name")}</span><span>Definition</span><span />
+            <span>{t("structure.type")}</span><span>{t("structure.name")}</span><span>{t("structure.definition")}</span><span />
           </div>
           {metaLoading ? (
-            <div className="odb-structure-empty">Loading constraints…</div>
+            <div className="odb-structure-empty">{t("structure.loadingConstraints")}</div>
           ) : constraints.length === 0 ? (
-            <div className="odb-structure-empty">No primary, unique, or check constraints reported for this table.</div>
+            <div className="odb-structure-empty">{t("structure.noConstraints")}</div>
           ) : (
             constraints.map((constraint, index) => (
               <div className="odb-meta-row" key={`${constraint.name ?? constraint.kind}-${index}`}>
                 <span className="constraint-kind">{constraint.kind.toUpperCase()}</span>
-                <code>{constraint.name ?? (engine === "sqlite" ? "inline / unnamed" : "unnamed")}</code>
+                <code>{constraint.name ?? (engine === "sqlite" ? t("structure.inlineUnnamed") : t("structure.unnamed"))}</code>
                 <code className="detail" title={constraint.definition}>{constraint.definition}</code>
                 <span className="actions">
                   <button
@@ -703,12 +703,12 @@ export function TableStructure({ table }: { table: string }) {
       ) : mode === "foreignKeys" ? (
         <div className="odb-structure-meta-table foreign-keys">
           <div className="odb-meta-row header">
-            <span>Column</span><span>References</span><span>Constraint</span><span />
+            <span>{t("structure.column")}</span><span>{t("structure.references")}</span><span>{t("structure.constraint")}</span><span />
           </div>
           {metaLoading ? (
-            <div className="odb-structure-empty">Loading foreign keys…</div>
+            <div className="odb-structure-empty">{t("structure.loadingForeignKeys")}</div>
           ) : foreignKeys.length === 0 ? (
-            <div className="odb-structure-empty">No foreign keys defined on this table.</div>
+            <div className="odb-structure-empty">{t("structure.noForeignKeys")}</div>
           ) : (
             foreignKeys.map((fk, index) => (
               <div className="odb-meta-row" key={`${fk.name ?? "fk"}-${fk.column}-${fk.refTable}-${fk.refColumn}-${index}`}>
@@ -735,18 +735,18 @@ export function TableStructure({ table }: { table: string }) {
             ))
           )}
           {engine === "sqlite" && (
-            <div className="odb-structure-note">SQLite foreign-key changes require rebuilding the table. Open DDL and review the full definition first.</div>
+            <div className="odb-structure-note">{t("structure.sqliteForeignKeyRebuild")}</div>
           )}
         </div>
       ) : (
         <div className="odb-structure-meta-table indexes">
           <div className="odb-meta-row header">
-            <span>{t("structure.name")}</span><span>{t("structure.type")}</span><span>Definition / columns</span><span />
+            <span>{t("structure.name")}</span><span>{t("structure.type")}</span><span>{t("structure.definitionColumns")}</span><span />
           </div>
           {metaLoading ? (
-            <div className="odb-structure-empty">Loading indexes…</div>
+            <div className="odb-structure-empty">{t("structure.loadingIndexes")}</div>
           ) : indexes.length === 0 ? (
-            <div className="odb-structure-empty">No indexes reported for this table.</div>
+            <div className="odb-structure-empty">{t("structure.noIndexes")}</div>
           ) : (
             indexes.map((index) => {
               const managed = isManagedIndex(index.name);
@@ -772,7 +772,7 @@ export function TableStructure({ table }: { table: string }) {
         </div>
       )}
 
-      {readOnly && <div className="odb-structure-note">Read-only mode is enabled. Structure changes are disabled.</div>}
+      {readOnly && <div className="odb-structure-note">{t("structure.readOnlyNote")}</div>}
     </div>
   );
 }
