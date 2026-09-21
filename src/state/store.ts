@@ -267,7 +267,7 @@ export interface AppStore {
     headers: string[],
     rows: (string | null)[][],
     opts?: { create?: boolean },
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   openInspector: (rowIndex: number) => void;
   closeInspector: () => void;
   setTopView: (v: TopView) => void;
@@ -1044,8 +1044,11 @@ export const useStore = create<AppStore>((set, get) => ({
 
   dropTable: async (table) => {
     const id = get().activeConnectionId;
-    if (!id) return;
-    if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
     try {
       await backend.dropTable(id, table);
       const [tables, objects] = await Promise.all([
@@ -1255,15 +1258,18 @@ export const useStore = create<AppStore>((set, get) => ({
 
   importCsv: async (table, headers, rows, opts) => {
     const id = get().activeConnectionId;
-    if (!id) return;
-    if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
     const conn = get().connections.find((item) => item.id === id);
-    if (!conn) return;
+    if (!conn) return false;
     if (!headers.length || new Set(headers).size !== headers.length || headers.some((header) => !header.trim())) {
       toast("Mapped import columns must be non-empty and unique.", "error");
-      return;
+      return false;
     }
-    if (!(await confirmProdWrite(conn, "INSERT"))) return;
+    if (!(await confirmProdWrite(conn, "INSERT"))) return false;
 
     let created = false;
     let transactionStarted = false;
@@ -1295,6 +1301,7 @@ export const useStore = create<AppStore>((set, get) => ({
         `Imported ${rows.length.toLocaleString()} ${rows.length === 1 ? "row" : "rows"} into ${table}`,
         "success",
       );
+      return true;
     } catch (e) {
       if (transactionStarted) {
         try {
@@ -1313,6 +1320,7 @@ export const useStore = create<AppStore>((set, get) => ({
       const err = normalizeError(e);
       set({ error: err });
       toast(err.message ?? "Import failed", "error");
+      return false;
     }
   },
 
