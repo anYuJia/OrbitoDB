@@ -13,8 +13,8 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
-import { type ComponentType, type MouseEvent, useEffect, useRef, useState } from "react";
-import { download, fromCsv, toCsv } from "../../lib/csv";
+import { type ComponentType, type MouseEvent, useEffect, useState } from "react";
+import { download, toCsv } from "../../lib/csv";
 import { viewV } from "../../lib/motion";
 import { promptDialog } from "../../state/dialog";
 import { toast } from "../../state/toast";
@@ -26,7 +26,6 @@ import { TableStructure } from "./TableStructure";
 
 type Icon = ComponentType<{ size?: number; stroke?: number }>;
 const TOOLS: { Icon: Icon; label: string }[] = [
-  { Icon: IconDownload, label: "Import CSV" },
   { Icon: IconBolt, label: "Rows" },
 ];
 
@@ -46,7 +45,6 @@ export function DataView() {
   const closeTableTab = useStore((s) => s.closeTableTab);
   const setSql = useStore((s) => s.setSql);
   const setTopView = useStore((s) => s.setTopView);
-  const importCsv = useStore((s) => s.importCsv);
   const selection = useStore((s) => s.selection);
   const deleteSelected = useStore((s) => s.deleteSelected);
   const duplicateSelected = useStore((s) => s.duplicateSelected);
@@ -59,7 +57,6 @@ export function DataView() {
   const renameEditor = useStore((s) => s.renameEditor);
   const [menu, setMenu] = useState<MenuState>(null);
   const [tableMode, setTableMode] = useState<"data" | "structure">("data");
-  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setTableMode("data");
@@ -88,9 +85,6 @@ export function DataView() {
 
   const onTool = (label: string, e: MouseEvent) => {
     switch (label) {
-      case "Import CSV":
-        fileRef.current?.click();
-        break;
       case "Rows":
         openMenu("rowactions", e);
         break;
@@ -106,15 +100,6 @@ export function DataView() {
       default:
         break;
     }
-  };
-
-  const onImportFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const { headers, rows } = fromCsv(String(reader.result));
-      if (editTable && headers.length) void importCsv(editTable.table, headers, rows);
-    };
-    reader.readAsText(file);
   };
 
   const cols = result?.columns.map((c) => c.name) ?? [];
@@ -253,18 +238,6 @@ export function DataView() {
           <RowInspector key={inspectorRow ?? "none"} />
         </div>
       )}
-
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".csv,text/csv"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) onImportFile(f);
-          e.target.value = "";
-        }}
-      />
 
       {menu && (
         <>
