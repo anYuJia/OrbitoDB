@@ -1,7 +1,9 @@
 import { IconLock, IconPlugConnected, IconPlugConnectedX } from "@tabler/icons-react";
+import { useI18n } from "../../lib/i18n";
 import { useStore } from "../../state/store";
 
 export function StatusBar() {
+  const { locale, t } = useI18n();
   const conn = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const result = useStore((s) => s.result);
   const loadingResult = useStore((s) => s.loadingResult);
@@ -12,10 +14,10 @@ export function StatusBar() {
   const commitTxn = useStore((s) => s.commitTxn);
 
   const rows = result?.rows.length ?? 0;
-  const elapsed = result ? `${result.elapsedMs} ms` : "Ready";
+  const elapsed = result ? `${result.elapsedMs} ms` : t("status.ready");
 
   return (
-    <footer className="bud-statusbar odb-statusbar">
+    <footer className="bud-statusbar odb-statusbar" aria-live="polite">
       <div className="odb-status-left">
         {conn ? (
           <span className="odb-status-connection">
@@ -26,14 +28,14 @@ export function StatusBar() {
         ) : (
           <span className="odb-status-connection muted">
             <IconPlugConnectedX size={12} stroke={2} />
-            No active connection
+            {t("status.noActive")}
           </span>
         )}
         {conn?.env && <span className={`odb-env-tag ${conn.env}`}>{conn.env === "prod" ? "PROD" : conn.env.toUpperCase()}</span>}
         {readOnly && (
           <span className="odb-readonly">
             <IconLock size={11} stroke={2} />
-            Read-only
+            {t("status.readOnly")}
           </span>
         )}
       </div>
@@ -41,14 +43,14 @@ export function StatusBar() {
       <div className="odb-status-right">
         {txnDirty && (
           <span className="odb-txn">
-            <span>Uncommitted changes</span>
-            <button onClick={() => void rollbackTxn()}>Rollback</button>
-            <button className="primary" onClick={() => void commitTxn()}>Commit</button>
+            <span>{t("status.uncommitted")}</span>
+            <button onClick={() => void rollbackTxn()}>{t("common.rollback")}</button>
+            <button className="primary" onClick={() => void commitTxn()}>{t("common.commit")}</button>
           </span>
         )}
-        {loadingResult && <span>Running…</span>}
-        {selection.length > 0 && <span>{selection.length} selected</span>}
-        {rows > 0 && <span>{rows.toLocaleString()} rows</span>}
+        {loadingResult && <span>{t("status.running")}</span>}
+        {selection.length > 0 && <span>{t("status.selected", { count: selection.length.toLocaleString(locale) })}</span>}
+        {rows > 0 && <span>{t("status.rows", { count: rows.toLocaleString(locale) })}</span>}
         <span>{elapsed}</span>
       </div>
     </footer>
