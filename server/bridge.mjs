@@ -15,6 +15,15 @@ import mysql from "mysql2/promise";
 import initSqlJs from "sql.js";
 
 const PORT = Number(process.env.BRIDGE_PORT) || 5174;
+const HOST = process.env.BRIDGE_HOST || "127.0.0.1";
+const MAX_BODY_BYTES = Math.max(1024, Number(process.env.BRIDGE_MAX_BODY_BYTES) || 16 * 1024 * 1024);
+const ALLOWED_ORIGINS = new Set(
+  (process.env.BRIDGE_ORIGINS ||
+    "http://localhost:1420,http://127.0.0.1:1420,http://localhost:5001,http://127.0.0.1:5001")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 
 // Where server-side SQLite database files live. Defaults to ./data next to the
 // repo (or /data in the container). Each database name maps to one file, so the
@@ -1300,8 +1309,12 @@ const handlers = {
 };
 
 /* ---- HTTP plumbing ---- */
-function cors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+function applyCors(req, res) {
+  const origin = req.headers.origin;
+  if (origin && (ALLOWED_ORIGINS.has(origin) || ALLOWED_ORIGINS.has("*"))) {
+    res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGINS.has("*") ? "*" : origin);
+    res.setHeader("Vary", "Origin");
+  }
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
@@ -1324,7 +1337,6 @@ function sendJson(res, status, obj) {
     }
     return;
   }
-  cors(res);
   res.setHeader("Content-Type", "application/json");
   res.writeHead(code);
   res.end(body);
@@ -1342,8 +1354,8 @@ function isConnLost(e) {
 }
 
 const server = createServer((req, res) => {
+  applyCors(req, res);
   if (req.method === "OPTIONS") {
-    cors(res);
     res.writeHead(204);
     res.end();
     return;
@@ -1360,8 +1372,20 @@ const server = createServer((req, res) => {
   }
 
   const chunks = [];
-  req.on("data", (c) => chunks.push(c));
+  let bodyBytes = 0;
+  let bodyTooLarge = false;
+  req.on("data", (chunk) => {
+    if (bodyTooLarge) return;
+    bodyBytes += chunk.length;
+    if (bodyBytes > MAX_BODY_BYTES) {
+      bodyTooLarge = true;
+      sendJson(res, 413, appError("payloadTooLarge", `Request body exceeds ${MAX_BODY_BYTES} bytes`));
+      return;
+    }
+    chunks.push(chunk);
+  });
   req.on("end", async () => {
+    if (bodyTooLarge) return;
     let body = {};
     try {
       body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
@@ -1395,6 +1419,6 @@ const server = createServer((req, res) => {
 process.on("uncaughtException", (e) => console.error("[bridge] uncaughtException:", e));
 process.on("unhandledRejection", (e) => console.error("[bridge] unhandledRejection:", e));
 
-server.listen(PORT, () => {
-  console.log(`OrbitoDB engine bridge listening on http://localhost:${PORT}  (PostgreSQL + MySQL)`);
+server.listen(PORT, HOST, () => {
+  console.log(`OrbitoDB engine bridge listening on http://${HOST}:${PORT}  (PostgreSQL + MySQL)`);
 });
