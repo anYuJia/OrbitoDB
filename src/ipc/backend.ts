@@ -1,6 +1,7 @@
 import { tauriBackend } from "./tauri";
 import { webBackend } from "./web";
 import type {
+  BackupInfo,
   ColumnDef,
   ColumnInfo,
   ConnectionConfig,
@@ -29,6 +30,9 @@ export interface Backend {
   runQuerySilent(connectionId: string, sql: string): Promise<QueryResult>;
   cancelQuery(connectionId: string): Promise<boolean>;
   connectionDiagnostics(connectionId: string): Promise<ConnectionDiagnostics>;
+  listBackups(connectionId: string): Promise<BackupInfo[]>;
+  createBackup(connectionId: string): Promise<BackupInfo>;
+  restoreBackup(connectionId: string, backupId: string): Promise<void>;
   listSchemas(connectionId: string): Promise<string[]>;
   listTables(connectionId: string): Promise<TableInfo[]>;
   listDatabaseObjects(connectionId: string): Promise<DatabaseObjectInfo[]>;
