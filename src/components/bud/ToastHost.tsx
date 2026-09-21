@@ -1,9 +1,11 @@
 import { IconAlertTriangle, IconCheck, IconInfoCircle, IconX } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toastV } from "../../lib/motion";
+import { useI18n } from "../../lib/i18n";
 import { useToast } from "../../state/toast";
 
 export function ToastHost() {
+  const { t } = useI18n();
   const toasts = useToast((s) => s.toasts);
   const dismiss = useToast((s) => s.dismiss);
 
@@ -30,7 +32,7 @@ export function ToastHost() {
               )}
             </span>
             <span className="bud-toast-msg">{t.message}</span>
-            <button className="bud-toast-x" onClick={() => dismiss(t.id)} title="Dismiss">
+            <button className="bud-toast-x" onClick={() => dismiss(t.id)} title={t("toast.dismiss")} aria-label={t("toast.dismiss")}>
               <IconX size={13} stroke={1.9} />
             </button>
           </motion.div>
