@@ -5,7 +5,7 @@
 // mysql2). Run it with `npm run bridge` (or `npm run dev:all`) and the web app
 // will route Postgres/MySQL connections here automatically. SQLite stays fully
 // in-browser and does not need this server.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -37,6 +37,30 @@ function sqliteFileKey(name) {
 }
 function sqlitePath(fileKey) {
   return path.join(DATA_DIR, `${fileKey}.sqlite`);
+}
+
+function sqliteBackupDir(fileKey) {
+  const dir = path.join(DATA_DIR, "backups", fileKey);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+function sqliteBackupId(prefix = "") {
+  const stamp = new Date().toISOString().replace(/[-:.]/g, "").replace("Z", "Z");
+  return `${prefix}${stamp}.sqlite`;
+}
+function sqliteBackupInfo(file) {
+  const stat = statSync(file);
+  return {
+    id: path.basename(file),
+    createdAt: stat.mtime.toISOString(),
+    sizeBytes: stat.size,
+    path: file,
+  };
+}
+function checkedBackupPath(fileKey, backupId) {
+  const id = String(backupId || "");
+  if (!/^[A-Za-z0-9._-]+\.sqlite$/.test(id)) throw new Error("Invalid backup id");
+  return path.join(sqliteBackupDir(fileKey), id);
 }
 // One in-memory sql.js database per file, shared by every connection pointing at
 // it (so concurrent browsers see each other's writes via this single process).
@@ -471,6 +495,61 @@ const handlers = {
     if (e.engine === "sqlite") return sqliteQuery(e.fileKey, sql, started);
     const raw = await rawArrayRows(e.engine, e.conn, sql);
     return toResult(raw, started);
+  },
+
+  async backups({ id }) {
+    const e = need(id);
+    if (e.engine !== "sqlite") throw new Error("Managed snapshots are available for SQLite connections only");
+    const dir = sqliteBackupDir(e.fileKey);
+    return readdirSync(dir)
+      .filter((name) => /^[A-Za-z0-9._-]+\.sqlite$/.test(name))
+      .map((name) => sqliteBackupInfo(path.join(dir, name)))
+      .sort((a, b) => b.id.localeCompare(a.id));
+  },
+
+  async createBackup({ id }) {
+    const e = need(id);
+    if (e.engine !== "sqlite") throw new Error("Managed snapshots are available for SQLite connections only");
+    if (sqliteTxn.has(e.fileKey)) {
+      throw new Error("Commit or roll back the active SQLite transaction before creating a backup");
+    }
+    const db = sqliteDbs.get(e.fileKey);
+    const file = path.join(sqliteBackupDir(e.fileKey), sqliteBackupId());
+    writeFileSync(file, Buffer.from(db.export()));
+    return sqliteBackupInfo(file);
+  },
+
+  async restoreBackup({ id, backupId }) {
+    const e = need(id);
+    if (e.engine !== "sqlite") throw new Error("Managed restore is available for SQLite connections only");
+    if (sqliteTxn.has(e.fileKey)) {
+      throw new Error("Commit or roll back the active SQLite transaction before restoring a backup");
+    }
+
+    const source = checkedBackupPath(e.fileKey, backupId);
+    if (!existsSync(source)) throw new Error(`Backup not found: ${backupId}`);
+
+    const current = sqliteDbs.get(e.fileKey);
+    const safety = path.join(sqliteBackupDir(e.fileKey), sqliteBackupId("before-restore-"));
+    writeFileSync(safety, Buffer.from(current.export()));
+
+    const SQL = await sqlJs();
+    const replacement = new SQL.Database(readFileSync(source));
+    const integrity = replacement.exec("PRAGMA integrity_check");
+    const status = integrity[0]?.values?.[0]?.[0];
+    if (String(status ?? "").toLowerCase() !== "ok") {
+      replacement.close();
+      throw new Error(`Backup integrity check failed: ${String(status ?? "unknown")}`);
+    }
+
+    try {
+      current.close();
+    } catch {
+      /* ignore */
+    }
+    sqliteDbs.set(e.fileKey, replacement);
+    persistSqlite(e.fileKey);
+    return { ok: true };
   },
 
   async schemas({ id }) {
