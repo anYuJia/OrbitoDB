@@ -13,7 +13,10 @@ pub enum AppError {
     #[error("authentication failed: {0}")]
     AuthFailed(String),
     #[error("query error: {message}")]
-    QueryError { message: String, position: Option<u32> },
+    QueryError {
+        message: String,
+        position: Option<u32>,
+    },
     #[error("operation timed out")]
     Timeout,
     #[error("operation canceled")]

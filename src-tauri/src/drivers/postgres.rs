@@ -1,15 +1,21 @@
 use async_trait::async_trait;
-use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-use sqlx::{Column as _, Row, TypeInfo};
+use sqlx::postgres::{PgConnectOptions, PgConnection, PgPoolOptions};
+use sqlx::{Column as _, Connection as _, Row, TypeInfo};
 use std::collections::HashSet;
+use tokio::sync::Mutex;
 
 use crate::drivers::Driver;
 use crate::error::AppResult;
 use crate::executor::pg_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{
+    Column, ColumnInfo, ConnectionConfig, ForeignKey, QueryResult, TableInfo, MAX_ROWS,
+};
 
 pub struct PgDriver {
-    pool: sqlx::PgPool,
+    // A database workbench connection is a session, not a request pool. Keeping
+    // one physical connection makes BEGIN/COMMIT, temp tables, and SET commands
+    // reliably apply to all subsequent statements for this saved connection.
+    conn: Mutex<PgConnection>,
 }
 
 fn options(cfg: &ConnectionConfig, password: Option<&str>) -> PgConnectOptions {
@@ -36,16 +42,17 @@ fn base_options(cfg: &ConnectionConfig, password: Option<&str>) -> PgConnectOpti
 }
 
 fn sanitize_ident(name: &str) -> String {
-    name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect()
+    name.chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .collect()
 }
 
 impl PgDriver {
     pub async fn connect(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<Self> {
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect_with(options(cfg, password))
-            .await?;
-        Ok(Self { pool })
+        let conn = PgConnection::connect_with(&options(cfg, password)).await?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub async fn test(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<()> {
@@ -59,7 +66,10 @@ impl PgDriver {
     }
 
     /// Connect to the maintenance database and list every non-template database.
-    pub async fn list_databases(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<Vec<String>> {
+    pub async fn list_databases(
+        cfg: &ConnectionConfig,
+        password: Option<&str>,
+    ) -> AppResult<Vec<String>> {
         let pool = PgPoolOptions::new()
             .max_connections(1)
             .connect_with(maintenance_options(cfg, password))
@@ -70,7 +80,10 @@ impl PgDriver {
         .fetch_all(&pool)
         .await?;
         pool.close().await;
-        Ok(rows.iter().filter_map(|r| r.try_get::<String, _>("datname").ok()).collect())
+        Ok(rows
+            .iter()
+            .filter_map(|r| r.try_get::<String, _>("datname").ok())
+            .collect())
     }
 
     pub async fn create_database(
@@ -80,13 +93,17 @@ impl PgDriver {
     ) -> AppResult<()> {
         let ident = sanitize_ident(name);
         if ident.is_empty() {
-            return Err(crate::error::AppError::Internal("invalid database name".into()));
+            return Err(crate::error::AppError::Internal(
+                "invalid database name".into(),
+            ));
         }
         let pool = PgPoolOptions::new()
             .max_connections(1)
             .connect_with(maintenance_options(cfg, password))
             .await?;
-        sqlx::query(&format!("CREATE DATABASE \"{ident}\"")).execute(&pool).await?;
+        sqlx::query(&format!("CREATE DATABASE \"{ident}\""))
+            .execute(&pool)
+            .await?;
         pool.close().await;
         Ok(())
     }
@@ -96,6 +113,7 @@ impl PgDriver {
 impl Driver for PgDriver {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         let started = std::time::Instant::now();
+        let mut conn = self.conn.lock().await;
         let head = sql.trim_start().to_uppercase();
         let returns_rows = head.starts_with("SELECT")
             || head.starts_with("WITH")
@@ -105,7 +123,7 @@ impl Driver for PgDriver {
             || head.starts_with("EXPLAIN");
 
         if !returns_rows {
-            let res = sqlx::query(sql).execute(&self.pool).await?;
+            let res = sqlx::query(sql).execute(&mut *conn).await?;
             return Ok(QueryResult {
                 columns: vec![],
                 rows: vec![],
@@ -115,7 +133,7 @@ impl Driver for PgDriver {
             });
         }
 
-        let fetched = sqlx::query(sql).fetch_all(&self.pool).await?;
+        let fetched = sqlx::query(sql).fetch_all(&mut *conn).await?;
         let columns = match fetched.first() {
             Some(first) => first
                 .columns()
@@ -142,18 +160,23 @@ impl Driver for PgDriver {
     }
 
     async fn list_tables(&self) -> AppResult<Vec<TableInfo>> {
+        let mut conn = self.conn.lock().await;
         let rows = sqlx::query(
             "SELECT table_name, table_type, table_schema FROM information_schema.tables \
              WHERE table_schema NOT IN ('pg_catalog','information_schema') \
              ORDER BY table_schema, table_name",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await?;
         Ok(rows
             .iter()
             .map(|r| {
                 let table_type: String = r.try_get("table_type").unwrap_or_default();
-                let kind = if table_type == "VIEW" { "view" } else { "table" };
+                let kind = if table_type == "VIEW" {
+                    "view"
+                } else {
+                    "table"
+                };
                 TableInfo {
                     name: r.try_get("table_name").unwrap_or_default(),
                     kind: kind.to_string(),
@@ -164,6 +187,7 @@ impl Driver for PgDriver {
     }
 
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>> {
+        let mut conn = self.conn.lock().await;
         let pk_rows = sqlx::query(
             "SELECT kcu.column_name FROM information_schema.table_constraints tc \
              JOIN information_schema.key_column_usage kcu \
@@ -172,7 +196,7 @@ impl Driver for PgDriver {
                AND tc.table_schema NOT IN ('pg_catalog','information_schema')",
         )
         .bind(table)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await?;
         let pks: HashSet<String> = pk_rows
             .iter()
@@ -185,7 +209,7 @@ impl Driver for PgDriver {
              ORDER BY ordinal_position",
         )
         .bind(table)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await?;
         Ok(rows
             .iter()
@@ -202,6 +226,41 @@ impl Driver for PgDriver {
                         .unwrap_or_else(|_| "unknown".into()),
                     name,
                 }
+            })
+            .collect())
+    }
+
+    async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
+        let mut conn = self.conn.lock().await;
+        let rows = sqlx::query(
+            "SELECT tc.table_name, kcu.column_name, \
+                    ref_kcu.table_name AS ref_table, ref_kcu.column_name AS ref_column \
+             FROM information_schema.table_constraints tc \
+             JOIN information_schema.key_column_usage kcu \
+               ON tc.constraint_name = kcu.constraint_name \
+              AND tc.constraint_schema = kcu.constraint_schema \
+             JOIN information_schema.referential_constraints rc \
+               ON tc.constraint_catalog = rc.constraint_catalog \
+              AND tc.constraint_schema = rc.constraint_schema \
+              AND tc.constraint_name = rc.constraint_name \
+             JOIN information_schema.key_column_usage ref_kcu \
+               ON rc.unique_constraint_catalog = ref_kcu.constraint_catalog \
+              AND rc.unique_constraint_schema = ref_kcu.constraint_schema \
+              AND rc.unique_constraint_name = ref_kcu.constraint_name \
+              AND ref_kcu.ordinal_position = kcu.position_in_unique_constraint \
+             WHERE tc.constraint_type = 'FOREIGN KEY' \
+               AND tc.table_schema NOT IN ('pg_catalog','information_schema') \
+             ORDER BY tc.table_schema, tc.table_name, kcu.ordinal_position",
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| ForeignKey {
+                table: r.try_get("table_name").unwrap_or_default(),
+                column: r.try_get("column_name").unwrap_or_default(),
+                ref_table: r.try_get("ref_table").unwrap_or_default(),
+                ref_column: r.try_get("ref_column").unwrap_or_default(),
             })
             .collect())
     }
@@ -228,6 +287,7 @@ mod tests {
             ),
             database: std::env::var("ORBITODB_PG_DB").unwrap_or_else(|_| "postgres".into()),
             username: Some(std::env::var("ORBITODB_PG_USER").unwrap_or_else(|_| "postgres".into())),
+            env: None,
         };
         Some((cfg, std::env::var("ORBITODB_PG_PASS").ok()))
     }
@@ -258,7 +318,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            r.columns.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            r.columns
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["id", "name", "score"]
         );
         assert_eq!(r.rows.len(), 2);
@@ -287,6 +350,33 @@ mod tests {
             .unwrap();
         assert_eq!(r2.rows[0][0], serde_json::json!("renamed"));
 
+        d.execute("BEGIN").await.unwrap();
+        d.execute("UPDATE orbitodb_t SET name = 'rolled-back' WHERE id = 1")
+            .await
+            .unwrap();
+        d.execute("ROLLBACK").await.unwrap();
+        let after_rollback = d
+            .execute("SELECT name FROM orbitodb_t WHERE id = 1")
+            .await
+            .unwrap();
+        assert_eq!(after_rollback.rows[0][0], serde_json::json!("renamed"));
+
+        d.execute("DROP TABLE IF EXISTS orbitodb_child")
+            .await
+            .unwrap();
+        d.execute(
+            "CREATE TABLE orbitodb_child (id SERIAL PRIMARY KEY, parent_id INTEGER REFERENCES orbitodb_t(id))",
+        )
+        .await
+        .unwrap();
+        let fks = d.list_foreign_keys().await.unwrap();
+        assert!(fks.iter().any(|fk| {
+            fk.table == "orbitodb_child"
+                && fk.column == "parent_id"
+                && fk.ref_table == "orbitodb_t"
+                && fk.ref_column == "id"
+        }));
+        d.execute("DROP TABLE orbitodb_child").await.unwrap();
         d.execute("DROP TABLE orbitodb_t").await.unwrap();
     }
 }

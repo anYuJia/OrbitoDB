@@ -2,9 +2,8 @@
 //
 // A browser tab can't open TCP sockets to PostgreSQL/MySQL, so this small local
 // HTTP server does it on the browser's behalf using real Node drivers (pg,
-// mysql2). Run it with `npm run bridge` (or `npm run dev:all`) and the web app
-// will route Postgres/MySQL connections here automatically. SQLite stays fully
-// in-browser and does not need this server.
+// mysql2) plus a persistent sql.js store. Run it with `npm run bridge` (or
+// `npm start`) and the web app will route every engine through it.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -15,6 +14,15 @@ import mysql from "mysql2/promise";
 import initSqlJs from "sql.js";
 
 const PORT = Number(process.env.BRIDGE_PORT) || 5174;
+// Local development must not expose a database-capable HTTP proxy to the LAN.
+// Containers explicitly override this to 0.0.0.0 on their private network.
+const HOST = process.env.BRIDGE_HOST || "127.0.0.1";
+const ALLOWED_ORIGINS = new Set(
+  String(process.env.BRIDGE_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+);
 
 // Where server-side SQLite database files live. Defaults to ./data next to the
 // repo (or /data in the container). Each database name maps to one file, so the
@@ -445,12 +453,20 @@ const handlers = {
     }
     const sql =
       engine === "postgres"
-        ? `SELECT tc.table_name, kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column
+        ? `SELECT tc.table_name, kcu.column_name,
+                  ref_kcu.table_name AS ref_table, ref_kcu.column_name AS ref_column
            FROM information_schema.table_constraints tc
            JOIN information_schema.key_column_usage kcu
-             ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
-           JOIN information_schema.constraint_column_usage ccu
-             ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+             ON kcu.constraint_name = tc.constraint_name AND kcu.constraint_schema = tc.constraint_schema
+           JOIN information_schema.referential_constraints rc
+             ON rc.constraint_catalog = tc.constraint_catalog
+            AND rc.constraint_schema = tc.constraint_schema
+            AND rc.constraint_name = tc.constraint_name
+           JOIN information_schema.key_column_usage ref_kcu
+             ON ref_kcu.constraint_catalog = rc.unique_constraint_catalog
+            AND ref_kcu.constraint_schema = rc.unique_constraint_schema
+            AND ref_kcu.constraint_name = rc.unique_constraint_name
+            AND ref_kcu.ordinal_position = kcu.position_in_unique_constraint
            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = current_schema()`
         : `SELECT table_name, column_name, referenced_table_name, referenced_column_name
            FROM information_schema.key_column_usage
@@ -610,12 +626,16 @@ const handlers = {
 };
 
 /* ---- HTTP plumbing ---- */
-function cors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+function cors(req, res) {
+  const origin = req.headers.origin;
+  if (!origin || !ALLOWED_ORIGINS.has(origin)) return false;
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  return true;
 }
-function sendJson(res, status, obj) {
+function sendJson(req, res, status, obj) {
   // Serialize BEFORE touching the response, so a serialization failure becomes a
   // clean error instead of a half-sent 200 (which the proxy turns into a 500).
   let body;
@@ -634,7 +654,7 @@ function sendJson(res, status, obj) {
     }
     return;
   }
-  cors(res);
+  cors(req, res);
   res.setHeader("Content-Type", "application/json");
   res.writeHead(code);
   res.end(body);
@@ -653,20 +673,34 @@ function isConnLost(e) {
 
 const server = createServer((req, res) => {
   if (req.method === "OPTIONS") {
-    cors(res);
-    res.writeHead(204);
+    const allowed = cors(req, res);
+    res.writeHead(allowed ? 204 : 403);
     res.end();
     return;
   }
   const path = (req.url || "").replace(/^\/api\//, "").replace(/\?.*$/, "").replace(/^\//, "");
   const handler = handlers[path];
-  if (!handler) return sendJson(res, 404, appError("notFound", `Unknown endpoint: ${path}`));
+  if (!handler) return sendJson(req, res, 404, appError("notFound", `Unknown endpoint: ${path}`));
+
+  if (req.method === "GET" && path === "health") {
+    Promise.resolve(handler({}))
+      .then((out) => sendJson(req, res, 200, out))
+      .catch((e) => sendJson(req, res, 400, appError(e.kind || "internal", errMessage(e))));
+    return;
+  }
 
   if (req.method === "GET") {
-    Promise.resolve(handler({}))
-      .then((out) => sendJson(res, 200, out))
-      .catch((e) => sendJson(res, 400, appError(e.kind || "internal", errMessage(e))));
-    return;
+    return sendJson(req, res, 405, appError("badRequest", "Only the health endpoint supports GET"));
+  }
+
+  if (req.method !== "POST") {
+    return sendJson(req, res, 405, appError("badRequest", "Only GET and POST are supported"));
+  }
+  // Requiring JSON forces cross-origin browsers to preflight. Since unknown
+  // origins fail OPTIONS above, a random website cannot issue blind writes to
+  // a developer's localhost bridge.
+  if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers["content-type"] || ""))) {
+    return sendJson(req, res, 415, appError("badRequest", "Content-Type must be application/json"));
   }
 
   const chunks = [];
@@ -676,11 +710,11 @@ const server = createServer((req, res) => {
     try {
       body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
     } catch {
-      return sendJson(res, 400, appError("badRequest", "Invalid JSON body"));
+      return sendJson(req, res, 400, appError("badRequest", "Invalid JSON body"));
     }
     try {
       const out = await handler(body);
-      sendJson(res, 200, out);
+      sendJson(req, res, 200, out);
     } catch (e) {
       // A dropped DB connection: forget it and report notConnected so the client
       // transparently reopens + retries (self-heals idle timeouts).
@@ -694,9 +728,9 @@ const server = createServer((req, res) => {
           }
           pools.delete(body.id);
         }
-        return sendJson(res, 400, appError("notConnected", errMessage(e)));
+        return sendJson(req, res, 400, appError("notConnected", errMessage(e)));
       }
-      sendJson(res, 400, appError(e.kind || (e.code ? "connectionError" : "queryError"), errMessage(e)));
+      sendJson(req, res, 400, appError(e.kind || (e.code ? "connectionError" : "queryError"), errMessage(e)));
     }
   });
 });
@@ -705,6 +739,6 @@ const server = createServer((req, res) => {
 process.on("uncaughtException", (e) => console.error("[bridge] uncaughtException:", e));
 process.on("unhandledRejection", (e) => console.error("[bridge] unhandledRejection:", e));
 
-server.listen(PORT, () => {
-  console.log(`OrbitoDB engine bridge listening on http://localhost:${PORT}  (PostgreSQL + MySQL)`);
+server.listen(PORT, HOST, () => {
+  console.log(`OrbitoDB engine bridge listening on http://${HOST}:${PORT}  (PostgreSQL + MySQL)`);
 });

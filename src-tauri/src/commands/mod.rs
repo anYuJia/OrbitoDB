@@ -3,7 +3,9 @@ use crate::error::{AppError, AppResult};
 use crate::schema;
 use crate::secrets;
 use crate::store::{HistoryEntry, Store};
-use crate::types::{ColumnDef, ColumnInfo, ConnectionConfig, Engine, QueryResult, TableInfo};
+use crate::types::{
+    ColumnDef, ColumnInfo, ConnectionConfig, Engine, ForeignKey, QueryResult, TableInfo,
+};
 use tauri::State;
 
 /// Shared application state, managed by Tauri and injected into commands.
@@ -54,16 +56,17 @@ pub async fn test_connection(cfg: ConnectionConfig, password: Option<String>) ->
         Engine::Postgres => {
             crate::drivers::postgres::PgDriver::test(&cfg, password.as_deref()).await
         }
-        Engine::MySql => {
-            crate::drivers::mysql::MySqlDriver::test(&cfg, password.as_deref()).await
-        }
+        Engine::MySql => crate::drivers::mysql::MySqlDriver::test(&cfg, password.as_deref()).await,
     }
 }
 
 /// List the databases available on a server (without a database selected yet).
 /// Doubles as a reachability/credentials check for the Add-source flow.
 #[tauri::command]
-pub async fn list_databases(cfg: ConnectionConfig, password: Option<String>) -> AppResult<Vec<String>> {
+pub async fn list_databases(
+    cfg: ConnectionConfig,
+    password: Option<String>,
+) -> AppResult<Vec<String>> {
     match cfg.engine {
         Engine::Sqlite => Ok(vec![]),
         Engine::Postgres => {
@@ -85,10 +88,12 @@ pub async fn create_database(
     match cfg.engine {
         Engine::Sqlite => Err(AppError::Internal("SQLite has no server databases".into())),
         Engine::Postgres => {
-            crate::drivers::postgres::PgDriver::create_database(&cfg, password.as_deref(), &name).await
+            crate::drivers::postgres::PgDriver::create_database(&cfg, password.as_deref(), &name)
+                .await
         }
         Engine::MySql => {
-            crate::drivers::mysql::MySqlDriver::create_database(&cfg, password.as_deref(), &name).await
+            crate::drivers::mysql::MySqlDriver::create_database(&cfg, password.as_deref(), &name)
+                .await
         }
     }
 }
@@ -140,6 +145,15 @@ pub async fn list_columns(
 ) -> AppResult<Vec<ColumnInfo>> {
     let driver = state.registry.get(&connection_id).await?;
     schema::introspect_columns(driver.as_ref(), &table).await
+}
+
+#[tauri::command]
+pub async fn list_foreign_keys(
+    state: State<'_, AppState>,
+    connection_id: String,
+) -> AppResult<Vec<ForeignKey>> {
+    let driver = state.registry.get(&connection_id).await?;
+    driver.list_foreign_keys().await
 }
 
 #[tauri::command]
@@ -277,7 +291,9 @@ pub async fn rename_column(
     let engine = engine_of(&state.store, &connection_id).await?;
     let driver = state.registry.get(&connection_id).await?;
     driver
-        .execute(&crate::editing::build_rename_column(engine, &table, &from, &to))
+        .execute(&crate::editing::build_rename_column(
+            engine, &table, &from, &to,
+        ))
         .await?;
     Ok(())
 }
@@ -316,7 +332,11 @@ pub async fn create_local_database(
         .chars()
         .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
         .collect();
-    let stem = if safe.is_empty() { "database".to_string() } else { safe };
+    let stem = if safe.is_empty() {
+        "database".to_string()
+    } else {
+        safe
+    };
     let path = dir
         .join(format!("{stem}.sqlite"))
         .to_str()
@@ -324,12 +344,17 @@ pub async fn create_local_database(
         .to_string();
     let cfg = ConnectionConfig {
         id: format!("local-{stem}"),
-        name: if name.trim().is_empty() { "Local DB".into() } else { name },
+        name: if name.trim().is_empty() {
+            "Local DB".into()
+        } else {
+            name
+        },
         engine: Engine::Sqlite,
         host: None,
         port: None,
         database: path,
         username: None,
+        env: None,
     };
     // Creates the file (mode=rwc) and verifies it opens.
     crate::drivers::sqlite::SqliteDriver::test(&cfg).await?;
@@ -374,6 +399,7 @@ pub async fn scan_local_databases() -> AppResult<Vec<ConnectionConfig>> {
                 port: Some(port),
                 database: db.into(),
                 username: Some(user.into()),
+                env: None,
             });
         }
     }

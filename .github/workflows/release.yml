@@ -1,12 +1,10 @@
 name: Release
 
 # Builds a standalone Windows .exe and publishes it to GitHub Releases.
-# - every push to main  -> updates the rolling "latest" release
-# - a version tag (v*)  -> creates a versioned release
+# Releases are deliberate: only a version tag creates an artifact.
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    tags: ["v*"]
 
 permissions:
   contents: write
@@ -20,6 +18,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -28,14 +27,26 @@ jobs:
           workspaces: src-tauri
 
       - name: Install JS dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Stamp version 0.1.${{ github.run_number }}
+      - name: Verify frontend
+        run: npm test
+
+      - name: Verify Rust
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Stamp tagged version
         shell: pwsh
         run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          if ($version -notmatch '^\d+\.\d+\.\d+([.-][0-9A-Za-z.-]+)?$') {
+            throw "Tag must contain a semantic version (for example v0.1.0)"
+          }
           $p = "src-tauri/tauri.conf.json"
-          (Get-Content $p -Raw) -replace '"version":\s*"[^"]*"', '"version": "0.1.${{ github.run_number }}"' | Set-Content $p -Encoding utf8
-          Write-Output "App version -> 0.1.${{ github.run_number }}"
+          (Get-Content $p -Raw) -replace '"version":\s*"[^"]*"', "`"version`": `"$version`"" | Set-Content $p -Encoding utf8
+          $cargo = "src-tauri/Cargo.toml"
+          (Get-Content $cargo -Raw) -replace '(?m)^version\s*=\s*"[^"]*"', "version = `"$version`"" | Set-Content $cargo -Encoding utf8
+          Write-Output "App version -> $version"
 
       - name: Build standalone .exe (no installer / no wizard)
         run: npm run tauri build -- --no-bundle
@@ -50,8 +61,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist-exe/OrbitoDB.exe
-          tag_name: v0.1.${{ github.run_number }}
-          name: v0.1.${{ github.run_number }}
+          name: ${{ github.ref_name }}
           prerelease: false
           make_latest: true
           fail_on_unmatched_files: true

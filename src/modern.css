@@ -1,0 +1,1471 @@
+/*
+ * OrbitoDB modern workspace layer
+ *
+ * The legacy stylesheet still owns the many specialist database controls. This
+ * final layer gives those controls one coherent visual system and keeps the
+ * product shell readable at the desktop app's 800px minimum width.
+ */
+
+:root {
+  color-scheme: dark;
+  --bg: #0b0d12;
+  --bg-2: #10131a;
+  --bg-3: #151923;
+  --bg-4: #1b202c;
+  --panel: #121620;
+  --panel-2: #1a1f2b;
+  --panel-3: #222838;
+  --tree-bg: #0f1218;
+  --titlebar: rgba(13, 16, 22, 0.94);
+  --gutter: #11151d;
+  --input-bg: #141923;
+  --border: rgba(255, 255, 255, 0.075);
+  --border-strong: rgba(255, 255, 255, 0.13);
+  --text: #f3f5f8;
+  --muted: #9ba3b2;
+  --faint: #667080;
+  --accent: #7c6df2;
+  --accent-2: #9c8cff;
+  --accent-soft: rgba(124, 109, 242, 0.14);
+  --accent-glow: rgba(124, 109, 242, 0.28);
+  --green: #38c985;
+  --green-bright: #6ee7ad;
+  --danger: #fb7185;
+  --warning: #f4b860;
+  --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --elev-2: 0 16px 44px rgba(0, 0, 0, 0.36);
+  --elev-3: 0 28px 80px rgba(0, 0, 0, 0.52);
+}
+
+html,
+body,
+#root {
+  background: var(--bg);
+}
+
+body {
+  font-family: var(--sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+.bud-app {
+  grid-template-rows: 56px minmax(0, 1fr) 30px;
+  background: var(--bg);
+}
+
+.bud-body {
+  grid-template-columns: var(--sidebar-w, 292px) minmax(0, 1fr);
+  background: var(--bg);
+}
+
+/* Header ------------------------------------------------------------------ */
+
+.bud-titlebar {
+  height: 56px;
+  min-width: 0;
+  gap: 10px;
+  padding: 0 14px;
+  background: var(--titlebar);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+
+.bud-tb-brand {
+  margin: 0 4px 0 0;
+  gap: 9px;
+  flex: none;
+}
+
+.bud-tb-logo-wrap {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(156, 140, 255, 0.2);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(124, 109, 242, 0.18), rgba(206, 71, 235, 0.07));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 5px 16px rgba(76, 60, 190, 0.13);
+}
+
+.bud-tb-logo {
+  width: 20px;
+  height: 20px;
+}
+
+.bud-tb-word {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
+.bud-tb-tools,
+.bud-tb-utility {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.bud-title-spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.bud-tb-tools button,
+.bud-tb-utility button {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease, border-color 140ms ease, transform 100ms ease;
+}
+
+.bud-tb-tools button:hover:not(:disabled),
+.bud-tb-utility button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--border);
+}
+
+.bud-tb-tools button:active:not(:disabled),
+.bud-tb-utility button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.bud-tb-tools button:disabled,
+.bud-tb-utility button:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
+.bud-tb-tools .bud-tb-icon,
+.bud-tb-utility button {
+  width: 34px;
+  padding: 0;
+  border-radius: 9px !important;
+}
+
+.bud-tb-tools .bud-tb-action {
+  width: auto;
+  gap: 7px;
+  padding: 0 11px;
+  border-color: var(--border);
+  border-radius: 9px !important;
+  background: rgba(255, 255, 255, 0.025);
+  color: #c8ced8;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bud-tb-tools .bud-tb-action:hover:not(:disabled) {
+  border-color: rgba(124, 109, 242, 0.34);
+  background: var(--accent-soft);
+  color: #e9e6ff;
+}
+
+.bud-tb-divider {
+  height: 22px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+.bud-cmdk-pill {
+  width: min(210px, 18vw);
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px 0 11px;
+  flex: 0 1 210px;
+  border: 1px solid var(--border);
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.bud-cmdk-pill:hover {
+  border-color: rgba(124, 109, 242, 0.42);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.bud-cmdk-pill > span {
+  flex: 1;
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bud-cmdk-pill kbd,
+.bud-welcome-actions kbd {
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-4);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.bud-tb-conn {
+  max-width: 168px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.bud-tb-conn > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bud-tb-conn-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--faint);
+  box-shadow: 0 0 0 3px rgba(102, 112, 128, 0.1);
+}
+
+.bud-tb-conn.on {
+  color: #dce2ea;
+}
+
+.bud-tb-conn.on .bud-tb-conn-dot {
+  background: var(--green-bright);
+  box-shadow: 0 0 0 3px rgba(110, 231, 173, 0.1), 0 0 12px rgba(110, 231, 173, 0.24);
+}
+
+.bud-titlebar .bud-tb-run {
+  width: auto;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid rgba(110, 231, 173, 0.18);
+  border-radius: 10px !important;
+  background: rgba(56, 201, 133, 0.13);
+  color: var(--green-bright);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.bud-titlebar .bud-tb-run:hover:not(:disabled) {
+  border-color: rgba(110, 231, 173, 0.34);
+  background: rgba(56, 201, 133, 0.2);
+}
+
+.bud-titlebar .bud-tb-run:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+/* Sidebar ----------------------------------------------------------------- */
+
+.bud-sources {
+  background: linear-gradient(180deg, #11141b 0%, #0e1117 100%);
+  border-right: 1px solid var(--border);
+  box-shadow: 8px 0 28px rgba(0, 0, 0, 0.06);
+}
+
+.bud-sources-head {
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 14px 12px;
+  border-bottom: 0;
+}
+
+.bud-sources-head > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.bud-sources-eyebrow {
+  color: var(--faint);
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.bud-sources-head strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bud-sources-head .bud-sources-add {
+  width: auto;
+  height: 31px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  flex: none;
+  border: 1px solid rgba(124, 109, 242, 0.28);
+  border-radius: 8px !important;
+  background: var(--accent-soft);
+  color: #dcd7ff;
+  font-size: 11.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.bud-sources-head .bud-sources-add:hover {
+  border-color: rgba(156, 140, 255, 0.5);
+  background: rgba(124, 109, 242, 0.21);
+}
+
+.bud-panel-tabs {
+  gap: 3px;
+  margin: 0 10px 10px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.bud-panel-tab {
+  min-width: 0;
+  padding: 7px 8px;
+  flex: 1;
+  border: 0;
+  border-radius: 7px !important;
+  color: var(--faint);
+  font-size: 11.5px;
+  font-weight: 560;
+}
+
+.bud-panel-tab:hover {
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+}
+
+.bud-panel-tab.on {
+  background: var(--bg-4);
+  color: var(--text);
+  box-shadow: var(--elev-1), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  font-weight: 640;
+}
+
+.bud-tree-toolbar {
+  gap: 3px;
+  margin: 0 10px 9px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.bud-tree-toolbar button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 7px !important;
+  color: var(--faint);
+}
+
+.bud-tree-toolbar button:hover {
+  border-color: var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.bud-tree-toolbar button.on {
+  border-color: rgba(124, 109, 242, 0.24);
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.bud-src-search {
+  min-height: 34px;
+  margin: 0 10px 9px;
+  padding: 0 10px;
+  border-color: var(--border);
+  border-radius: 9px;
+  background: var(--input-bg);
+}
+
+.bud-src-search:focus-within {
+  border-color: rgba(124, 109, 242, 0.62);
+  box-shadow: 0 0 0 3px rgba(124, 109, 242, 0.1);
+}
+
+.bud-sources-list {
+  padding: 0 7px 18px;
+}
+
+.bud-tnode {
+  min-height: 32px;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  color: #cbd1da;
+  font-size: 12.5px;
+}
+
+.bud-tnode:hover {
+  background: var(--panel-2);
+}
+
+.bud-tnode.root {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 690;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.bud-tnode.root .bud-tnode-ic {
+  color: var(--faint);
+}
+
+.bud-tree-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-4);
+  color: var(--faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.bud-tree-children {
+  padding-left: 0;
+}
+
+.bud-src.ds,
+.bud-objgroup-head,
+.bud-table {
+  min-height: 30px;
+  margin: 1px 0;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  border-radius: 7px;
+  color: #cbd1da;
+  font-size: 12.5px;
+}
+
+.bud-src.ds {
+  padding-left: 10px;
+}
+
+.bud-src.ds:hover,
+.bud-objgroup-head:hover,
+.bud-table:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.bud-ds.connected > .bud-src.ds {
+  background: rgba(56, 201, 133, 0.055);
+  color: var(--text);
+}
+
+.bud-ds.connected > .bud-src.ds .ds-engine {
+  color: var(--green-bright);
+}
+
+.bud-objgroup-head {
+  padding-left: 10px;
+}
+
+.bud-objgroup-body {
+  position: relative;
+  padding-left: 13px;
+}
+
+.bud-objgroup-body::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 3px;
+  left: 12px;
+  width: 1px;
+  background: var(--border);
+}
+
+.bud-objgroup-ic {
+  color: #c6a56d;
+}
+
+.bud-table.active {
+  background: var(--accent-soft);
+  color: #f1efff;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.bud-sidebar-empty {
+  margin: 12px 6px;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.018);
+  color: var(--faint);
+  text-align: center;
+}
+
+.bud-sidebar-empty-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 2px;
+  border: 1px solid rgba(124, 109, 242, 0.2);
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.bud-sidebar-empty strong {
+  color: #d7dce5;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.bud-sidebar-empty > span:not(.bud-sidebar-empty-icon) {
+  max-width: 200px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.bud-sidebar-empty button {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  padding: 0 10px;
+  border: 1px solid rgba(124, 109, 242, 0.3);
+  border-radius: 8px !important;
+  background: var(--accent-soft);
+  color: #e3dfff;
+  font-size: 11.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* Main workspace ----------------------------------------------------------- */
+
+.bud-main {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at 76% 18%, rgba(124, 109, 242, 0.055), transparent 34%),
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: auto, 32px 32px, 32px 32px;
+}
+
+.bud-qtabs {
+  min-height: 42px;
+  padding: 6px 8px 0;
+  gap: 3px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(13, 16, 22, 0.9);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.bud-qtabs::-webkit-scrollbar {
+  display: none;
+}
+
+.bud-qtab {
+  min-width: 112px;
+  height: 35px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 5px 0 0;
+  flex: none;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 9px 9px 0 0 !important;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.bud-qtab-main {
+  min-width: 0;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 5px 0 10px;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.bud-qtab-main > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bud-qtab-x {
+  flex: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.bud-qtab:hover {
+  border-color: var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.bud-qtab.on {
+  border-color: var(--border);
+  background: var(--bg-3);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.bud-qtab-new {
+  width: 31px;
+  height: 31px;
+  margin: 2px 4px;
+  border-radius: 8px !important;
+  color: var(--faint);
+}
+
+.bud-qtab-new:hover {
+  background: var(--panel-2);
+  color: var(--accent-2);
+}
+
+.bud-welcome {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 54px 28px 68px;
+  text-align: center;
+}
+
+.bud-welcome-glow {
+  position: absolute;
+  width: 560px;
+  height: 420px;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(124, 109, 242, 0.12), rgba(206, 71, 235, 0.035) 42%, transparent 70%);
+  filter: blur(10px);
+  pointer-events: none;
+  transform: translate(-50%, -52%);
+}
+
+.bud-welcome-mark {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 22px;
+  border: 1px solid rgba(156, 140, 255, 0.24);
+  border-radius: 21px;
+  background: linear-gradient(145deg, rgba(124, 109, 242, 0.2), rgba(206, 71, 235, 0.08));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 18px 55px rgba(73, 54, 183, 0.18);
+}
+
+.bud-welcome-mark img {
+  width: 42px;
+  height: 42px;
+}
+
+.bud-welcome-kicker {
+  position: relative;
+  margin-bottom: 12px;
+  color: var(--accent-2);
+  font-size: 10.5px;
+  font-weight: 760;
+  letter-spacing: 0.15em;
+}
+
+.bud-welcome h1 {
+  position: relative;
+  margin: 0;
+  color: #f8f9fb;
+  font-size: clamp(30px, 4vw, 48px);
+  font-weight: 680;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.bud-welcome > p {
+  position: relative;
+  max-width: 610px;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.bud-welcome-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.bud-welcome-actions button {
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 15px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px !important;
+  background: rgba(255, 255, 255, 0.035);
+  color: #d5dae3;
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+  box-shadow: var(--elev-1);
+  transition: transform 120ms ease, background 140ms ease, border-color 140ms ease;
+}
+
+.bud-welcome-actions button:hover {
+  border-color: rgba(124, 109, 242, 0.34);
+  background: var(--panel-2);
+  transform: translateY(-1px);
+}
+
+.bud-welcome-actions button.primary {
+  border-color: rgba(156, 140, 255, 0.36);
+  background: linear-gradient(135deg, #7969ec, #8d6bea);
+  color: #fff;
+  box-shadow: 0 10px 28px rgba(86, 68, 199, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.bud-welcome-actions button.primary:hover {
+  border-color: rgba(190, 181, 255, 0.55);
+  background: linear-gradient(135deg, #8374f3, #9877ef);
+}
+
+.bud-welcome-features {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 20px;
+  margin-top: 34px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.bud-welcome-features span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bud-welcome-features svg {
+  color: #8679dc;
+}
+
+.bud-context-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--faint);
+}
+
+.bud-context-empty-icon {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 3px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-3);
+  color: var(--accent-2);
+}
+
+.bud-context-empty strong {
+  color: #d9dde5;
+  font-size: 14px;
+}
+
+.bud-context-empty > span:last-child {
+  font-size: 12px;
+}
+
+.bud-route-loading,
+.bud-modal-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bud-loading-spinner {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent-2);
+  border-radius: 50%;
+  animation: bud-spin 700ms linear infinite;
+}
+
+@keyframes bud-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* SQL workspace ----------------------------------------------------------- */
+
+.bud-sqlpanel {
+  gap: 0;
+  padding: 0;
+}
+
+.bud-ide-toolbar {
+  min-height: 40px;
+  gap: 3px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.bud-ide-toolbar button {
+  width: 29px;
+  height: 29px;
+  border: 1px solid transparent;
+  border-radius: 8px !important;
+}
+
+.bud-ide-toolbar button:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--panel-2);
+}
+
+.bud-ide-toolbar button.bud-sql-run.bud-tb-exec {
+  width: 32px;
+  height: 29px;
+  border: 1px solid rgba(110, 231, 173, 0.16);
+  border-radius: 8px !important;
+}
+
+.bud-connbar {
+  min-height: 66px;
+  gap: 12px;
+  padding: 9px 14px 10px;
+  border-bottom: 0;
+  background: rgba(16, 19, 26, 0.9);
+}
+
+.bud-cb-label {
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.025em;
+}
+
+.bud-cb-select,
+.bud-cb-input {
+  height: 31px;
+  border-color: var(--border);
+  border-radius: 8px !important;
+  background-color: var(--input-bg);
+  color: #dce1e9;
+  font-size: 12px;
+}
+
+.bud-cb-select:focus,
+.bud-cb-input:focus {
+  border-color: rgba(124, 109, 242, 0.65);
+  box-shadow: 0 0 0 3px rgba(124, 109, 242, 0.1);
+}
+
+.bud-sql-editor-wrap,
+.bud-grid-area,
+.bud-sql-results {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.bud-sql-editor-wrap {
+  margin: 0 12px;
+}
+
+.bud-sql-results,
+.bud-grid-area {
+  margin: 0 12px 12px;
+}
+
+.bud-sql-code,
+.bud-sql-edit,
+.bud-sql-hl,
+.bud-results-body,
+.bud-results-log {
+  background: #0e1219;
+}
+
+.bud-sql-gutter {
+  width: 48px;
+  padding-top: 13px;
+  border-right-color: var(--border);
+  background: #11151d;
+  color: #4f5969;
+}
+
+.bud-sql-hl,
+.bud-sql-edit .bud-sql-editor {
+  padding: 13px 16px;
+  font-size: 13px;
+  line-height: 1.62;
+}
+
+.bud-sql-bar {
+  min-height: 39px;
+  padding: 5px 9px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.bud-sql-exec {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px !important;
+}
+
+.bud-vsplit {
+  height: 10px;
+  border: 0;
+  background: transparent;
+}
+
+.bud-vsplit::after {
+  content: "";
+  display: block;
+  width: 38px;
+  height: 3px;
+  margin: 3px auto;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.bud-vsplit:hover {
+  background: transparent;
+}
+
+.bud-vsplit:hover::after {
+  background: var(--accent);
+}
+
+.bud-results-tabs {
+  min-height: 37px;
+  gap: 2px;
+  padding: 4px 6px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.bud-results-tabs button {
+  padding: 0 11px;
+  border: 0;
+  border-radius: 7px 7px 0 0 !important;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.bud-results-tabs button:hover {
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.bud-results-tabs button.on {
+  background: var(--bg-3);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.bud-res-toolbar,
+.bud-grid-toolbar {
+  min-height: 40px;
+  padding: 5px 9px;
+  border-bottom-color: var(--border);
+  background: var(--bg-2);
+}
+
+.bud-res-seg,
+.bud-res-filter {
+  border-color: var(--border);
+  border-radius: 8px;
+}
+
+.bud-res-seg button,
+.bud-res-toolbar button {
+  border-radius: 7px !important;
+}
+
+.bud-res-seg button.on {
+  background: var(--accent-soft);
+  color: #ded9ff;
+}
+
+.bud-grid thead th {
+  height: 36px;
+  border-color: var(--border);
+  background: #151a23;
+  color: #cfd5df;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.bud-grid tbody td {
+  height: 34px;
+  padding: 7px 12px;
+  border-color: rgba(255, 255, 255, 0.055);
+  color: #c7cdd7;
+  font-size: 12px;
+}
+
+.bud-grid tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.bud-grid tbody tr:hover td {
+  background: rgba(124, 109, 242, 0.075);
+}
+
+/* Status bar -------------------------------------------------------------- */
+
+.bud-statusbar {
+  height: 30px;
+  gap: 12px;
+  padding: 0 12px;
+  border-top: 1px solid var(--border);
+  background: #0e1117;
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.bud-status-l,
+.bud-status-r {
+  gap: 10px;
+}
+
+.bud-status-conn {
+  gap: 6px;
+  color: #c9ced7;
+  font-size: 10.5px;
+  font-weight: 570;
+}
+
+.bud-status-engine {
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-4);
+  color: var(--muted);
+  font-size: 8.5px;
+  font-weight: 700;
+}
+
+.bud-status-item {
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.bud-status-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+
+.bud-status-ready i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(56, 201, 133, 0.32);
+}
+
+/* Forms, modals, menus ---------------------------------------------------- */
+
+.bud-modal-backdrop,
+.bud-dialog-backdrop,
+.cmdk-backdrop,
+.bud-cv-backdrop {
+  background: rgba(3, 5, 8, 0.68);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.bud-modal {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 40px));
+  border-color: var(--border-strong);
+  border-radius: 18px !important;
+  background: #151923;
+  box-shadow: var(--elev-3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+.bud-modal-head {
+  min-height: 91px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(124, 109, 242, 0.055), transparent);
+}
+
+.bud-modal-head > div {
+  min-width: 0;
+}
+
+.bud-modal-eyebrow {
+  color: var(--accent-2);
+  font-size: 9.5px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.bud-modal-head h2 {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 670;
+  letter-spacing: -0.025em;
+}
+
+.bud-modal-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+.bud-modal-head .bud-modal-close {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: 9px !important;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.bud-modal-head .bud-modal-close:hover {
+  border-color: var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.bud-modal-body {
+  gap: 14px;
+  padding: 18px 20px 20px;
+  overflow: auto;
+}
+
+.bud-field > span:first-child,
+.bud-dialog-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.bud-field input,
+.bud-field select,
+.bud-dialog-input,
+.bud-setting-input {
+  min-height: 38px;
+  border-color: var(--border);
+  border-radius: 9px !important;
+  background: #10141c;
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.bud-field input:focus,
+.bud-field select:focus,
+.bud-dialog-input:focus {
+  border-color: rgba(124, 109, 242, 0.68);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(124, 109, 242, 0.11);
+}
+
+.bud-conn-hint,
+.bud-conn-status {
+  border-radius: 9px;
+  line-height: 1.5;
+}
+
+.bud-modal-actions {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: #121620;
+}
+
+.bud-modal-cancel,
+.bud-modal-save,
+.bud-dialog-cancel,
+.bud-dialog-ok {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 9px !important;
+  font-weight: 650;
+}
+
+.bud-modal-save,
+.bud-dialog-ok:not(.danger) {
+  background: linear-gradient(135deg, #7969ec, #8d6bea);
+  box-shadow: 0 7px 18px rgba(86, 68, 199, 0.2);
+}
+
+.bud-dialog,
+.cmdk,
+.bud-cellviewer,
+.bud-diff {
+  border-color: var(--border-strong);
+  border-radius: 16px !important;
+  background: #151923;
+  box-shadow: var(--elev-3);
+}
+
+.bud-toast {
+  min-width: 240px;
+  padding: 11px 13px;
+  border-color: var(--border-strong);
+  border-radius: 11px;
+  background: rgba(27, 32, 44, 0.96);
+  box-shadow: var(--elev-2);
+  backdrop-filter: blur(12px);
+}
+
+.bud-ctx-menu,
+.bud-menu,
+.bud-export-menu,
+.bud-ac {
+  padding: 5px;
+  border-color: var(--border-strong);
+  border-radius: 11px;
+  background: #191e29;
+  box-shadow: var(--elev-2);
+}
+
+/* Accessibility and polish ------------------------------------------------ */
+
+.bud-app button:focus-visible,
+.bud-app input:focus-visible,
+.bud-app select:focus-visible,
+.bud-app textarea:focus-visible,
+.bud-app [tabindex]:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #303747 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: #303747;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #424b60;
+  background-clip: padding-box;
+}
+
+.bud-hsplit {
+  top: 56px;
+  bottom: 30px;
+  left: var(--sidebar-w, 292px);
+  width: 8px;
+  margin-left: -4px;
+}
+
+.bud-hsplit:hover {
+  background: linear-gradient(90deg, transparent 3px, var(--accent) 3px, var(--accent) 5px, transparent 5px);
+}
+
+.bud-hsplit:focus-visible,
+.bud-app.is-resizing .bud-hsplit {
+  outline: none;
+  background: linear-gradient(90deg, transparent 3px, var(--accent-2) 3px, var(--accent-2) 5px, transparent 5px);
+}
+
+.bud-app.is-resizing,
+.bud-app.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+@media (max-width: 1100px) {
+  .bud-tb-secondary,
+  .bud-tb-tools .bud-tb-divider:nth-of-type(2) {
+    display: none !important;
+  }
+
+  .bud-cmdk-pill {
+    width: 38px;
+    flex-basis: 38px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .bud-cmdk-pill > span,
+  .bud-cmdk-pill > kbd {
+    display: none;
+  }
+
+  .bud-tb-conn {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .bud-tb-conn > span:last-child {
+    display: none;
+  }
+
+  .bud-res-meta {
+    display: none;
+  }
+}
+
+@media (max-width: 840px) {
+  .bud-titlebar {
+    gap: 6px;
+    padding-inline: 10px;
+  }
+
+  .bud-tb-word,
+  .bud-tb-tools .bud-tb-action > span,
+  .bud-tb-utility button:first-child,
+  .bud-tb-utility button:last-child {
+    display: none;
+  }
+
+  .bud-tb-brand {
+    margin-right: 0;
+  }
+
+  .bud-tb-tools .bud-tb-action {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .bud-connbar {
+    gap: 8px;
+  }
+
+  .bud-cb-check,
+  .bud-cb-field.sm:last-child {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

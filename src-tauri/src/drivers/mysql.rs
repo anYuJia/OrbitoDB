@@ -1,14 +1,20 @@
 use async_trait::async_trait;
-use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions};
-use sqlx::{Column as _, Row, TypeInfo};
+use sqlx::mysql::{MySqlConnectOptions, MySqlConnection, MySqlPoolOptions};
+use sqlx::{Column as _, Connection as _, Row, TypeInfo};
+use tokio::sync::Mutex;
 
 use crate::drivers::Driver;
 use crate::error::AppResult;
 use crate::executor::mysql_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{
+    Column, ColumnInfo, ConnectionConfig, ForeignKey, QueryResult, TableInfo, MAX_ROWS,
+};
 
 pub struct MySqlDriver {
-    pool: sqlx::MySqlPool,
+    // Preserve server-session state (transactions, temporary tables, SETs)
+    // across commands instead of letting each query land on an arbitrary pool
+    // connection.
+    conn: Mutex<MySqlConnection>,
 }
 
 fn options(cfg: &ConnectionConfig, password: Option<&str>) -> MySqlConnectOptions {
@@ -33,7 +39,9 @@ fn server_options(cfg: &ConnectionConfig, password: Option<&str>) -> MySqlConnec
 /// Keep only identifier-safe characters so a database name can be interpolated
 /// into DDL without injection risk.
 fn sanitize_ident(name: &str) -> String {
-    name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect()
+    name.chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .collect()
 }
 
 /// information_schema text columns can come back as utf8 strings OR as binary
@@ -51,11 +59,10 @@ fn try_get_text(row: &sqlx::mysql::MySqlRow, col: &str) -> String {
 
 impl MySqlDriver {
     pub async fn connect(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<Self> {
-        let pool = MySqlPoolOptions::new()
-            .max_connections(5)
-            .connect_with(options(cfg, password))
-            .await?;
-        Ok(Self { pool })
+        let conn = MySqlConnection::connect_with(&options(cfg, password)).await?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub async fn test(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<()> {
@@ -69,7 +76,10 @@ impl MySqlDriver {
     }
 
     /// Connect at the server level and return every database name.
-    pub async fn list_databases(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<Vec<String>> {
+    pub async fn list_databases(
+        cfg: &ConnectionConfig,
+        password: Option<&str>,
+    ) -> AppResult<Vec<String>> {
         let pool = MySqlPoolOptions::new()
             .max_connections(1)
             .connect_with(server_options(cfg, password))
@@ -86,13 +96,17 @@ impl MySqlDriver {
     ) -> AppResult<()> {
         let ident = sanitize_ident(name);
         if ident.is_empty() {
-            return Err(crate::error::AppError::Internal("invalid database name".into()));
+            return Err(crate::error::AppError::Internal(
+                "invalid database name".into(),
+            ));
         }
         let pool = MySqlPoolOptions::new()
             .max_connections(1)
             .connect_with(server_options(cfg, password))
             .await?;
-        sqlx::query(&format!("CREATE DATABASE `{ident}`")).execute(&pool).await?;
+        sqlx::query(&format!("CREATE DATABASE `{ident}`"))
+            .execute(&pool)
+            .await?;
         pool.close().await;
         Ok(())
     }
@@ -102,6 +116,7 @@ impl MySqlDriver {
 impl Driver for MySqlDriver {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         let started = std::time::Instant::now();
+        let mut conn = self.conn.lock().await;
         let head = sql.trim_start().to_uppercase();
         let returns_rows = head.starts_with("SELECT")
             || head.starts_with("WITH")
@@ -112,7 +127,7 @@ impl Driver for MySqlDriver {
             || head.starts_with("VALUES");
 
         if !returns_rows {
-            let res = sqlx::query(sql).execute(&self.pool).await?;
+            let res = sqlx::query(sql).execute(&mut *conn).await?;
             return Ok(QueryResult {
                 columns: vec![],
                 rows: vec![],
@@ -122,7 +137,7 @@ impl Driver for MySqlDriver {
             });
         }
 
-        let fetched = sqlx::query(sql).fetch_all(&self.pool).await?;
+        let fetched = sqlx::query(sql).fetch_all(&mut *conn).await?;
         let columns = match fetched.first() {
             Some(first) => first
                 .columns()
@@ -149,17 +164,22 @@ impl Driver for MySqlDriver {
     }
 
     async fn list_tables(&self) -> AppResult<Vec<TableInfo>> {
+        let mut conn = self.conn.lock().await;
         let rows = sqlx::query(
             "SELECT table_name, table_type FROM information_schema.tables \
              WHERE table_schema = DATABASE() ORDER BY table_name",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await?;
         Ok(rows
             .iter()
             .map(|r| {
                 let table_type: String = try_get_text(r, "table_type");
-                let kind = if table_type == "VIEW" { "view" } else { "table" };
+                let kind = if table_type == "VIEW" {
+                    "view"
+                } else {
+                    "table"
+                };
                 TableInfo {
                     name: try_get_text(r, "table_name"),
                     kind: kind.to_string(),
@@ -170,13 +190,14 @@ impl Driver for MySqlDriver {
     }
 
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>> {
+        let mut conn = self.conn.lock().await;
         let rows = sqlx::query(
             "SELECT column_name, data_type, is_nullable, column_key \
              FROM information_schema.columns \
              WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position",
         )
         .bind(table)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await?;
         Ok(rows
             .iter()
@@ -188,6 +209,27 @@ impl Driver for MySqlDriver {
                     data_type: try_get_text(r, "data_type"),
                     name,
                 }
+            })
+            .collect())
+    }
+
+    async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
+        let mut conn = self.conn.lock().await;
+        let rows = sqlx::query(
+            "SELECT table_name, column_name, referenced_table_name, referenced_column_name \
+             FROM information_schema.key_column_usage \
+             WHERE table_schema = DATABASE() AND referenced_table_name IS NOT NULL \
+             ORDER BY table_name, ordinal_position",
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| ForeignKey {
+                table: try_get_text(r, "table_name"),
+                column: try_get_text(r, "column_name"),
+                ref_table: try_get_text(r, "referenced_table_name"),
+                ref_column: try_get_text(r, "referenced_column_name"),
             })
             .collect())
     }
@@ -213,6 +255,7 @@ mod tests {
             ),
             database: std::env::var("ORBITODB_MYSQL_DB").unwrap_or_else(|_| "orbitodb_test".into()),
             username: Some(std::env::var("ORBITODB_MYSQL_USER").unwrap_or_else(|_| "root".into())),
+            env: None,
         };
         Some((cfg, std::env::var("ORBITODB_MYSQL_PASS").ok()))
     }
@@ -243,7 +286,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            r.columns.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            r.columns
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["id", "name", "score"]
         );
         assert_eq!(r.rows.len(), 2);
@@ -255,6 +301,33 @@ mod tests {
         let cols = d.list_columns("orbitodb_t").await.unwrap();
         assert!(cols.iter().find(|c| c.name == "id").unwrap().is_primary_key);
 
+        d.execute("START TRANSACTION").await.unwrap();
+        d.execute("UPDATE orbitodb_t SET name = 'rolled-back' WHERE id = 1")
+            .await
+            .unwrap();
+        d.execute("ROLLBACK").await.unwrap();
+        let after_rollback = d
+            .execute("SELECT name FROM orbitodb_t WHERE id = 1")
+            .await
+            .unwrap();
+        assert_eq!(after_rollback.rows[0][0], serde_json::json!("a"));
+
+        d.execute("DROP TABLE IF EXISTS orbitodb_child")
+            .await
+            .unwrap();
+        d.execute(
+            "CREATE TABLE orbitodb_child (id INT AUTO_INCREMENT PRIMARY KEY, parent_id INT, FOREIGN KEY (parent_id) REFERENCES orbitodb_t(id))",
+        )
+        .await
+        .unwrap();
+        let fks = d.list_foreign_keys().await.unwrap();
+        assert!(fks.iter().any(|fk| {
+            fk.table == "orbitodb_child"
+                && fk.column == "parent_id"
+                && fk.ref_table == "orbitodb_t"
+                && fk.ref_column == "id"
+        }));
+        d.execute("DROP TABLE orbitodb_child").await.unwrap();
         d.execute("DROP TABLE orbitodb_t").await.unwrap();
     }
 }

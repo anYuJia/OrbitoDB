@@ -3,6 +3,7 @@ import {
   IconClock,
   IconCode,
   IconCopy,
+  IconDatabase,
   IconDownload,
   IconPlayerPlay,
   IconPlus,
@@ -32,7 +33,7 @@ const TOOLS: { Icon: Icon; label: string }[] = [
 
 type MenuState = { kind: "rowactions" | "generate"; x: number; y: number } | null;
 
-export function DataView() {
+export function DataView({ onAddServer }: { onAddServer: () => void }) {
   const editTable = useStore((s) => s.editTable);
   const activeId = useStore((s) => s.activeConnectionId);
   const inspectorRow = useStore((s) => s.inspectorRow);
@@ -115,64 +116,98 @@ export function DataView() {
 
   const cols = result?.columns.map((c) => c.name) ?? [];
 
+  const moveTabFocus = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+    const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    if (current < 0 || tabs.length === 0) return;
+    e.preventDefault();
+    const next = e.key === "Home"
+      ? 0
+      : e.key === "End"
+        ? tabs.length - 1
+        : (current + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[next].focus();
+    tabs[next].click();
+  };
+
   return (
     <motion.main className="bud-main" variants={viewV} initial="hidden" animate="show" exit="exit">
-      <div className="bud-qtabs">
+      <div className="bud-qtabs" role="tablist" aria-label="Open workspace tabs" onKeyDown={moveTabFocus}>
         {editors.map((ed) => (
-          <button
+          <div
             key={ed.id}
             className={`bud-qtab ${view === "sql" && activeEditorId === ed.id ? "on" : ""}`}
-            onClick={() => selectEditor(ed.id)}
           >
-            <IconCode size={14} stroke={1.7} className="bud-qtab-ic sql" />
-            <span>{ed.name}</span>
-            <span
+            <button
+              className="bud-qtab-main"
+              role="tab"
+              aria-selected={view === "sql" && activeEditorId === ed.id}
+              tabIndex={view === "sql" && activeEditorId === ed.id ? 0 : -1}
+              title={ed.name}
+              onClick={() => selectEditor(ed.id)}
+            >
+              <IconCode size={14} stroke={1.7} className="bud-qtab-ic sql" />
+              <span>{ed.name}</span>
+            </button>
+            <button
+              type="button"
               className="bud-qtab-x"
-              title="Close editor"
+              aria-label={`Close ${ed.name}`}
               onClick={(e) => {
                 e.stopPropagation();
                 closeEditor(ed.id);
               }}
             >
               <IconX size={12} stroke={2} />
-            </span>
-          </button>
+            </button>
+          </div>
         ))}
-        <button className="bud-qtab-new" title="New SQL editor" onClick={newEditor}>
+        <button className="bud-qtab-new" aria-label="New SQL editor" title="New SQL editor" onClick={newEditor}>
           <IconPlus size={15} stroke={2} />
         </button>
         {openTables.map((t) => (
-          <button
+          <div
             key={t}
             className={`bud-qtab ${view === "data" && editTable?.table === t ? "on" : ""}`}
-            title={t}
-            onClick={() => {
-              if (editTable?.table === t) setView("data");
-              else void openTableData(t);
-            }}
           >
-            <IconTable size={14} stroke={1.7} className="bud-qtab-ic" />
-            <span>{t}</span>
-            <span
+            <button
+              className="bud-qtab-main"
+              role="tab"
+              aria-selected={view === "data" && editTable?.table === t}
+              tabIndex={view === "data" && editTable?.table === t ? 0 : -1}
+              title={t}
+              onClick={() => {
+                if (editTable?.table === t) setView("data");
+                else void openTableData(t);
+              }}
+            >
+              <IconTable size={14} stroke={1.7} className="bud-qtab-ic" />
+              <span>{t}</span>
+            </button>
+            <button
+              type="button"
               className="bud-qtab-x"
-              title="Close tab"
+              aria-label={`Close ${t}`}
               onClick={(e) => {
                 e.stopPropagation();
                 closeTableTab(t);
               }}
             >
               <IconX size={12} stroke={2} />
-            </span>
-          </button>
+            </button>
+          </div>
         ))}
         {view === "history" && (
-          <button className="bud-qtab on" onClick={() => setView("history")}>
-            <IconClock size={14} stroke={1.7} className="bud-qtab-ic" />
-            <span>SQL History</span>
-            <span className="bud-qtab-x" onClick={(e) => { e.stopPropagation(); setView("sql"); }}>
+          <div className="bud-qtab on">
+            <button className="bud-qtab-main" role="tab" aria-selected="true" onClick={() => setView("history")}>
+              <IconClock size={14} stroke={1.7} className="bud-qtab-ic" />
+              <span>SQL History</span>
+            </button>
+            <button type="button" className="bud-qtab-x" aria-label="Close SQL History" onClick={() => setView("sql")}>
               <IconX size={12} stroke={2} />
-            </span>
-          </button>
+            </button>
+          </div>
         )}
       </div>
 
@@ -192,13 +227,38 @@ export function DataView() {
       {error && <div className="bud-error">⚠ {error.message ?? error.kind}</div>}
 
       {!activeId ? (
-        <div className="bud-empty">Add a server, then pick a source on the left.</div>
+        <div className="bud-welcome">
+          <div className="bud-welcome-glow" aria-hidden />
+          <div className="bud-welcome-mark">
+            <img src="/orbitodb-logo.svg" alt="" />
+          </div>
+          <span className="bud-welcome-kicker">LOCAL-FIRST DATABASE WORKSPACE</span>
+          <h1>Bring your data into focus.</h1>
+          <p>Explore schemas, edit records, and run SQL across SQLite, PostgreSQL, and MySQL from one calm workspace.</p>
+          <div className="bud-welcome-actions">
+            <button className="primary" onClick={onAddServer}>
+              <IconDatabase size={17} stroke={1.8} /> Add data source
+            </button>
+            <button onClick={() => window.dispatchEvent(new Event("orbitodb:cmdk"))}>
+              <IconSearch size={17} stroke={1.8} /> Explore commands <kbd>⌘K</kbd>
+            </button>
+          </div>
+          <div className="bud-welcome-features">
+            <span><IconCode size={15} stroke={1.7} /> Fast SQL workflow</span>
+            <span><IconBolt size={15} stroke={1.7} /> Direct data editing</span>
+            <span><IconTable size={15} stroke={1.7} /> Schema-aware tools</span>
+          </div>
+        </div>
       ) : view === "history" ? (
         <HistoryView />
       ) : view === "sql" ? (
         <SqlPanel key={activeEditorId} />
       ) : !editTable ? (
-        <div className="bud-empty">Pick a table on the left to view and edit its data.</div>
+        <div className="bud-context-empty">
+          <span className="bud-context-empty-icon"><IconTable size={22} stroke={1.55} /></span>
+          <strong>Select a table</strong>
+          <span>Choose a table from the sidebar to browse and edit its rows.</span>
+        </div>
       ) : (
         <div className="bud-data-row">
           <DataGrid />

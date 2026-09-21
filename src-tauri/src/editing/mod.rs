@@ -133,8 +133,18 @@ mod tests {
 
     #[test]
     fn update_escapes_values_and_quotes_idents_pg() {
-        let sql = build_update(Engine::Postgres, "users", "name", &json!("O'Brien"), "id", &json!(7));
-        assert_eq!(sql, r#"UPDATE "users" SET "name" = 'O''Brien' WHERE "id" = '7'"#);
+        let sql = build_update(
+            Engine::Postgres,
+            "users",
+            "name",
+            &json!("O'Brien"),
+            "id",
+            &json!(7),
+        );
+        assert_eq!(
+            sql,
+            r#"UPDATE "users" SET "name" = 'O''Brien' WHERE "id" = '7'"#
+        );
     }
 
     #[test]
@@ -146,7 +156,14 @@ mod tests {
     #[test]
     fn quotes_in_identifiers_are_doubled() {
         // a column literally named  weird"col  must not break out of the quoting
-        let sql = build_update(Engine::Postgres, "t", "weird\"col", &json!("v"), "id", &json!(1));
+        let sql = build_update(
+            Engine::Postgres,
+            "t",
+            "weird\"col",
+            &json!("v"),
+            "id",
+            &json!(1),
+        );
         assert_eq!(sql, r#"UPDATE "t" SET "weird""col" = 'v' WHERE "id" = '1'"#);
     }
 
@@ -166,9 +183,24 @@ mod tests {
     fn drop_and_create_table() {
         assert_eq!(build_drop_table(Engine::Postgres, "t"), r#"DROP TABLE "t""#);
         let cols = vec![
-            ColumnDef { name: "id".into(), data_type: "SERIAL".into(), nullable: false, primary_key: true },
-            ColumnDef { name: "name".into(), data_type: "TEXT".into(), nullable: false, primary_key: false },
-            ColumnDef { name: "note".into(), data_type: "TEXT".into(), nullable: true, primary_key: false },
+            ColumnDef {
+                name: "id".into(),
+                data_type: "SERIAL".into(),
+                nullable: false,
+                primary_key: true,
+            },
+            ColumnDef {
+                name: "name".into(),
+                data_type: "TEXT".into(),
+                nullable: false,
+                primary_key: false,
+            },
+            ColumnDef {
+                name: "note".into(),
+                data_type: "TEXT".into(),
+                nullable: true,
+                primary_key: false,
+            },
         ];
         assert_eq!(
             build_create_table(Engine::Postgres, "t", &cols),
@@ -190,7 +222,12 @@ mod tests {
             build_rename_table(Engine::Postgres, "old", "new"),
             r#"ALTER TABLE "old" RENAME TO "new""#
         );
-        let col = ColumnDef { name: "note".into(), data_type: "TEXT".into(), nullable: true, primary_key: false };
+        let col = ColumnDef {
+            name: "note".into(),
+            data_type: "TEXT".into(),
+            nullable: true,
+            primary_key: false,
+        };
         assert_eq!(
             build_add_column(Engine::Sqlite, "t", &col),
             r#"ALTER TABLE "t" ADD COLUMN "note" TEXT"#

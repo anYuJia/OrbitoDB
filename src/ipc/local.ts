@@ -4,7 +4,7 @@
 //
 // Remote engines (PostgreSQL / MySQL) can't be reached from a browser tab, so
 // those require the OrbitoDB desktop build (Tauri); here they error clearly.
-import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
+import type { Database, SqlJsStatic } from "sql.js";
 import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 import type { Backend } from "./backend";
 import type {
@@ -104,7 +104,13 @@ class LocalBackend implements Backend {
   private txn = new Set<string>();
 
   private SQL(): Promise<SqlJsStatic> {
-    if (!this.sql) this.sql = initSqlJs({ locateFile: () => sqlWasmUrl });
+    // sql.js is only needed by the optional in-browser SQLite fallback. Keep
+    // its relatively large runtime out of the desktop/bridge startup bundle.
+    if (!this.sql) {
+      this.sql = import("sql.js").then(({ default: initSqlJs }) =>
+        initSqlJs({ locateFile: () => sqlWasmUrl }),
+      );
+    }
     return this.sql;
   }
 

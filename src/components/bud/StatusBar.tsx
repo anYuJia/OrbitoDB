@@ -5,6 +5,7 @@ export function StatusBar() {
   const conn = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const result = useStore((s) => s.result);
   const loadingResult = useStore((s) => s.loadingResult);
+  const running = useStore((s) => s.running);
   const selection = useStore((s) => s.selection);
   const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
   const txnDirty = useStore((s) => s.txnDirty);
@@ -16,11 +17,8 @@ export function StatusBar() {
   const secs = result ? (result.elapsedMs / 1000).toFixed(3) : "0.000";
 
   return (
-    <div className="bud-statusbar">
+    <footer className="bud-statusbar" aria-live="polite">
       <div className="bud-status-l">
-        <span className="bud-status-fmt">
-          Format: <em>&lt;Select a Cell&gt;</em>
-        </span>
         {conn ? (
           <span className="bud-status-conn">
             <IconPlugConnected size={13} stroke={1.8} />
@@ -52,16 +50,12 @@ export function StatusBar() {
             ● Uncommitted
           </span>
         )}
-        {loadingResult && <span className="bud-status-item">Loading…</span>}
+        {(loadingResult || running) && <span className="bud-status-item">{running ? "Running query…" : "Loading…"}</span>}
         {sel > 0 && <span className="bud-status-item accent">{sel} selected</span>}
-        <span className="bud-status-item">{secs}/0.000 sec</span>
-        <span className="bud-status-item">{rows > 0 ? `1/${rows.toLocaleString()}` : "0/0"}</span>
-        <span className="bud-status-item">1-1</span>
-        <span className="bud-status-mem" title="Heap memory">
-          <span className="bud-status-mem-fill" style={{ width: "10%" }} />
-          <span className="bud-status-mem-t">201M of 2048M</span>
-        </span>
+        {result && <span className="bud-status-item">{rows.toLocaleString()} rows</span>}
+        {result && <span className="bud-status-item">{secs}s</span>}
+        <span className="bud-status-ready"><i /> {loadingResult || running ? "Working" : "Ready"}</span>
       </div>
-    </div>
+    </footer>
   );
 }

@@ -3,7 +3,7 @@ import { getBackend } from "../ipc/backend";
 import { inferColumns } from "../lib/csv";
 import { resolveParams } from "../lib/params";
 import { confirmDelete, confirmDialog } from "./dialog";
-import { confirmIfDestructive, confirmProdWrite, isWrite } from "./safety";
+import { changesSchema, confirmIfDestructive, confirmProdWrite, isWrite } from "./safety";
 import { toast } from "./toast";
 
 const READONLY_KEY = "orbitodb.readonly";
@@ -216,6 +216,7 @@ export interface AppStore {
   toggleReadOnly: (id: string) => void;
   autoCommit: boolean;
   txnDirty: boolean;
+  txnConnectionId: string | null;
   setAutoCommit: (v: boolean) => void;
   beginTxnIfManual: () => Promise<void>;
   commitTxn: () => Promise<void>;
@@ -231,6 +232,7 @@ export interface AppStore {
   scanLocal: () => Promise<void>;
   addDetected: (cfg: ConnectionConfig) => Promise<void>;
   setView: (v: "data" | "sql" | "history") => void;
+  refreshSchema: () => Promise<void>;
   refresh: () => Promise<void>;
   reload: (table: string) => Promise<void>;
   addColumn: (table: string, column: ColumnDef) => Promise<void>;
@@ -334,6 +336,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   autoCommit: true,
   txnDirty: false,
+  txnConnectionId: null,
 
   setAutoCommit: (v) => {
     if (!v) {
@@ -343,6 +346,7 @@ export const useStore = create<AppStore>((set, get) => ({
     }
     void (async () => {
       if (get().txnDirty) await get().commitTxn();
+      if (get().txnDirty) return;
       set({ autoCommit: true });
       toast("Auto-commit on.", "info");
     })();
@@ -352,15 +356,15 @@ export const useStore = create<AppStore>((set, get) => ({
     const { autoCommit, txnDirty, activeConnectionId } = get();
     if (autoCommit || txnDirty || !activeConnectionId) return;
     await backend.runQuery(activeConnectionId, "BEGIN");
-    set({ txnDirty: true });
+    set({ txnDirty: true, txnConnectionId: activeConnectionId });
   },
 
   commitTxn: async () => {
-    const { txnDirty, activeConnectionId } = get();
-    if (!txnDirty || !activeConnectionId) return;
+    const { txnDirty, txnConnectionId } = get();
+    if (!txnDirty || !txnConnectionId) return;
     try {
-      await backend.runQuery(activeConnectionId, "COMMIT");
-      set({ txnDirty: false });
+      await backend.runQuery(txnConnectionId, "COMMIT");
+      set({ txnDirty: false, txnConnectionId: null });
       toast("Transaction committed.", "success");
     } catch (e) {
       toast(normalizeError(e).message ?? "Commit failed", "error");
@@ -368,13 +372,14 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   rollbackTxn: async () => {
-    const { txnDirty, activeConnectionId, editTable } = get();
-    if (!txnDirty || !activeConnectionId) return;
+    const { txnDirty, txnConnectionId, activeConnectionId, editTable } = get();
+    if (!txnDirty || !txnConnectionId) return;
     try {
-      await backend.runQuery(activeConnectionId, "ROLLBACK");
-      set({ txnDirty: false });
+      await backend.runQuery(txnConnectionId, "ROLLBACK");
+      set({ txnDirty: false, txnConnectionId: null });
       toast("Transaction rolled back.", "info");
-      if (editTable) await get().reload(editTable.table);
+      await get().refreshSchema();
+      if (editTable && activeConnectionId === txnConnectionId) await get().reload(editTable.table);
     } catch (e) {
       toast(normalizeError(e).message ?? "Rollback failed", "error");
     }
@@ -403,12 +408,20 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   deleteConnection: async (id) => {
+    if (get().txnDirty && get().txnConnectionId === id) await get().rollbackTxn();
     await backend.deleteConnection(id);
     if (get().activeConnectionId === id) set({ activeConnectionId: null });
+    if (get().txnConnectionId === id) set({ txnDirty: false, txnConnectionId: null });
     await get().loadConnections();
   },
 
   openAndIntrospect: async (id) => {
+    const { txnDirty, txnConnectionId } = get();
+    if (txnDirty && txnConnectionId) {
+      const action = txnConnectionId === id ? "reconnecting" : "switching connections";
+      toast(`Commit or roll back the open transaction before ${action}.`, "error");
+      return;
+    }
     persistLocal(LASTCONN_KEY, id);
     // Reset everything tied to the previous source so its tables/data don't
     // bleed through while the new source introspects (or if it errors).
@@ -549,7 +562,10 @@ export const useStore = create<AppStore>((set, get) => ({
   run: async () => {
     const { activeConnectionId, sql, activeEditorId, readOnlyConns } = get();
     if (!activeConnectionId) {
-      toast("Open a connection first.", "error");
+      const err: AppError = { kind: "notConnected", message: "Open a connection first." };
+      get().setEditorResult(activeEditorId, null, err);
+      set({ error: err });
+      toast(err.message ?? "Open a connection first.", "error");
       return;
     }
     if (readOnlyConns.includes(activeConnectionId) && isWrite(sql)) {
@@ -561,12 +577,13 @@ export const useStore = create<AppStore>((set, get) => ({
     const finalSql = await resolveParams(sql);
     if (finalSql == null) return; // a parameter prompt was cancelled
     if (!(await confirmIfDestructive(finalSql))) return;
-    if (isWrite(finalSql)) await get().beginTxnIfManual();
     set({ running: true, view: "sql", topView: "data" });
     try {
+      if (isWrite(finalSql)) await get().beginTxnIfManual();
       const result = await backend.runQuery(activeConnectionId, finalSql);
       get().setEditorResult(activeEditorId, result, null);
       set({ running: false });
+      if (changesSchema(finalSql)) await get().refreshSchema();
       await get().loadHistory();
     } catch (e) {
       // If a foreign-key constraint blocked it, offer to retry with FK checks off.
@@ -903,6 +920,17 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   setView: (v) => set({ view: v }),
+
+  refreshSchema: async () => {
+    const id = get().activeConnectionId;
+    if (!id) return;
+    try {
+      const tables = await backend.listTables(id);
+      set({ schema: { tables, columnsByTable: {} } });
+    } catch (e) {
+      set({ error: normalizeError(e) });
+    }
+  },
 
   refresh: async () => {
     const t = get().editTable?.table;

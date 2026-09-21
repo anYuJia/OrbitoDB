@@ -33,10 +33,24 @@ impl Store {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS connections (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, engine TEXT NOT NULL,
-                host TEXT, port INTEGER, database TEXT NOT NULL, username TEXT)",
+                host TEXT, port INTEGER, database TEXT NOT NULL, username TEXT,
+                env TEXT)",
         )
         .execute(&pool)
         .await?;
+        // Existing installs predate the environment safety label. Migrate them
+        // in place instead of dropping or rebuilding the user's connection list.
+        let columns = sqlx::query("PRAGMA table_info(connections)")
+            .fetch_all(&pool)
+            .await?;
+        if !columns
+            .iter()
+            .any(|row| row.get::<String, _>("name") == "env")
+        {
+            sqlx::query("ALTER TABLE connections ADD COLUMN env TEXT")
+                .execute(&pool)
+                .await?;
+        }
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS query_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, connection_id TEXT NOT NULL,
@@ -49,7 +63,7 @@ impl Store {
 
     pub async fn list_connections(&self) -> AppResult<Vec<ConnectionConfig>> {
         let rows = sqlx::query(
-            "SELECT id,name,engine,host,port,database,username FROM connections ORDER BY name",
+            "SELECT id,name,engine,host,port,database,username,env FROM connections ORDER BY name",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -63,6 +77,7 @@ impl Store {
                 port: r.get::<Option<i64>, _>("port").map(|p| p as u16),
                 database: r.get("database"),
                 username: r.get("username"),
+                env: r.get("env"),
             });
         }
         Ok(out)
@@ -75,10 +90,11 @@ impl Store {
             Engine::Sqlite => "sqlite",
         };
         sqlx::query(
-            "INSERT INTO connections (id,name,engine,host,port,database,username)
-             VALUES (?1,?2,?3,?4,?5,?6,?7)
+            "INSERT INTO connections (id,name,engine,host,port,database,username,env)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
              ON CONFLICT(id) DO UPDATE SET
-                name=?2, engine=?3, host=?4, port=?5, database=?6, username=?7",
+                name=?2, engine=?3, host=?4, port=?5, database=?6, username=?7,
+                env=?8",
         )
         .bind(&cfg.id)
         .bind(&cfg.name)
@@ -87,6 +103,7 @@ impl Store {
         .bind(cfg.port.map(|p| p as i64))
         .bind(&cfg.database)
         .bind(&cfg.username)
+        .bind(&cfg.env)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -144,12 +161,14 @@ mod tests {
             port: Some(5432),
             database: "app".into(),
             username: Some("me".into()),
+            env: Some("prod".into()),
         };
         store.upsert_connection(&cfg).await.unwrap();
         let list = store.list_connections().await.unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "local pg");
         assert_eq!(list[0].port, Some(5432));
+        assert_eq!(list[0].env.as_deref(), Some("prod"));
 
         store.add_history("c1", "SELECT 1").await.unwrap();
         store.add_history("c1", "SELECT 2").await.unwrap();
@@ -179,6 +198,7 @@ mod tests {
             port: None,
             database: ":memory:".into(),
             username: None,
+            env: None,
         };
         store.upsert_connection(&cfg).await.unwrap();
         assert_eq!(store.list_connections().await.unwrap().len(), 1);
@@ -188,6 +208,52 @@ mod tests {
         let store2 = Store::open(path).await.unwrap();
         assert_eq!(store2.list_connections().await.unwrap().len(), 1);
         drop(store2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn migrates_legacy_connections_to_persist_environment_labels() {
+        let dir =
+            std::env::temp_dir().join(format!("orbitodb_store_{}_legacy", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&dir);
+        let db = dir.join("app.db");
+        let path = db.to_str().unwrap();
+        let url = format!("sqlite:{path}?mode=rwc");
+
+        let legacy = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE connections (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, engine TEXT NOT NULL,
+                host TEXT, port INTEGER, database TEXT NOT NULL, username TEXT)",
+        )
+        .execute(&legacy)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO connections (id,name,engine,database) VALUES ('legacy','Legacy','sqlite',':memory:')",
+        )
+        .execute(&legacy)
+        .await
+        .unwrap();
+        legacy.close().await;
+
+        let store = Store::open(path).await.unwrap();
+        let mut cfg = store.list_connections().await.unwrap().remove(0);
+        assert!(cfg.env.is_none());
+        cfg.env = Some("prod".into());
+        store.upsert_connection(&cfg).await.unwrap();
+        drop(store);
+
+        let reopened = Store::open(path).await.unwrap();
+        assert_eq!(
+            reopened.list_connections().await.unwrap()[0].env.as_deref(),
+            Some("prod")
+        );
+        drop(reopened);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

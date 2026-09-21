@@ -8,7 +8,7 @@ export function ToastHost() {
   const dismiss = useToast((s) => s.dismiss);
 
   return (
-    <div className="bud-toasts">
+    <div className="bud-toasts" aria-live="polite" aria-atomic="false">
       <AnimatePresence initial={false}>
         {toasts.map((t) => (
           <motion.div
@@ -19,6 +19,7 @@ export function ToastHost() {
             initial="hidden"
             animate="show"
             exit="exit"
+            role={t.kind === "error" ? "alert" : "status"}
           >
             <span className="bud-toast-ic">
               {t.kind === "success" ? (
@@ -30,7 +31,7 @@ export function ToastHost() {
               )}
             </span>
             <span className="bud-toast-msg">{t.message}</span>
-            <button className="bud-toast-x" onClick={() => dismiss(t.id)} title="Dismiss">
+            <button className="bud-toast-x" onClick={() => dismiss(t.id)} aria-label="Dismiss notification">
               <IconX size={13} stroke={1.9} />
             </button>
           </motion.div>

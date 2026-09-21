@@ -22,7 +22,7 @@ import { formatSql } from "../../lib/sqlformat";
 import { CellViewer } from "./CellViewer";
 import { ExportMenu } from "./ExportMenu";
 import { confirmDialog, promptDialog } from "../../state/dialog";
-import { confirmIfDestructive, confirmProdWrite, isWrite } from "../../state/safety";
+import { changesSchema, confirmIfDestructive, confirmProdWrite, isWrite } from "../../state/safety";
 import { toast } from "../../state/toast";
 import type { AppError, Column } from "../../ipc/types";
 import { isFkError, useStore, withFkDisabled } from "../../state/store";
@@ -129,6 +129,7 @@ export function SqlPanel() {
   const beginTxnIfManual = useStore((s) => s.beginTxnIfManual);
   const commitTxn = useStore((s) => s.commitTxn);
   const rollbackTxn = useStore((s) => s.rollbackTxn);
+  const refreshSchema = useStore((s) => s.refreshSchema);
 
   const [running, setRunning] = useState(false);
   const [tab, setTab] = useState<Tab>("result");
@@ -166,17 +167,18 @@ export function SqlPanel() {
     const finalText = await resolveParams(text);
     if (finalText == null) return; // a parameter prompt was cancelled
     if (!(await confirmIfDestructive(finalText))) return;
-    if (isWrite(finalText)) await beginTxnIfManual();
     const id = ++runId.current;
     const edId = activeEditorId;
     setRunning(true);
     setEditorResult(edId, res, null); // keep current rows visible, clear any prior error
     try {
+      if (isWrite(finalText)) await beginTxnIfManual();
       const r = await getBackend().runQuery(connId, finalText);
       if (runId.current !== id) return; // superseded / stopped
       setEditorResult(edId, r, null);
       setSort(null);
       setTab("result");
+      if (changesSchema(finalText)) void refreshSchema();
       void loadHistory();
     } catch (e) {
       if (runId.current !== id) return;
@@ -524,7 +526,7 @@ export function SqlPanel() {
 
       <div className="bud-connbar">
         <label className="bud-cb-field grow">
-          <span className="bud-cb-label">Database Connection</span>
+          <span className="bud-cb-label">Connection</span>
           <select
             className="bud-cb-select"
             value={connId ?? ""}

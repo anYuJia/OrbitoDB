@@ -59,14 +59,18 @@ React 19
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run tauri dev
 ```
 
-Rust tests:
+Run the same verification gates used by CI:
 
 ```bash
+npm test
+npm run build
 cd src-tauri
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
@@ -76,9 +80,18 @@ Production build:
 npm run tauri build
 ```
 
+Versioned desktop releases are built only from semantic-version tags such as
+`v0.1.0`, after the frontend and Rust test suites pass.
+
 ## Local-first
 
 The desktop build connects directly to databases from the Rust backend. No OrbitoDB account is required. Database passwords are stored through the operating system credential service instead of plain-text project configuration.
+
+The optional Docker/web runtime includes a database bridge and has no user
+login. It binds to `127.0.0.1` by default; do not publish it to an untrusted
+network. Set `BIND_ADDR` only when you deliberately want access from a trusted
+LAN or VPN. Direct cross-origin bridge access is disabled unless an exact
+origin is listed in `BRIDGE_ALLOWED_ORIGINS`.
 
 ## Origin
 

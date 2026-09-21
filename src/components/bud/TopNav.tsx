@@ -16,17 +16,6 @@ import { MotionButton } from "../../lib/motion";
 import { promptDialog } from "../../state/dialog";
 import { useStore } from "../../state/store";
 
-/** Mac-style window controls (decorative, matches DbVisualizer on macOS). */
-function TrafficLights() {
-  return (
-    <div className="bud-traffic" aria-hidden>
-      <span className="tl r" />
-      <span className="tl y" />
-      <span className="tl g" />
-    </div>
-  );
-}
-
 export function TopNav({
   onAddServer,
   onToggleSidebar,
@@ -46,6 +35,7 @@ export function TopNav({
   const saveScript = useStore((s) => s.saveScript);
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
   const run = useStore((s) => s.run);
+  const running = useStore((s) => s.running);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const openFile = (file: File) => {
@@ -61,68 +51,78 @@ export function TopNav({
   };
 
   return (
-    <div className="bud-titlebar">
-      <TrafficLights />
+    <header className="bud-titlebar">
+      <div className="bud-tb-brand" aria-label="OrbitoDB home">
+        <span className="bud-tb-logo-wrap">
+          <img className="bud-tb-logo" src="/orbitodb-logo.svg" alt="" />
+        </span>
+        <span className="bud-tb-word">OrbitoDB</span>
+      </div>
+
       <div className="bud-tb-tools">
-        <button title={sidebarHidden ? "Show sidebar" : "Hide sidebar"} className={sidebarHidden ? "" : "on"} onClick={onToggleSidebar}>
+        <button className="bud-tb-icon" title={sidebarHidden ? "Show sidebar" : "Hide sidebar"} onClick={onToggleSidebar}>
           <IconLayoutSidebar size={16} stroke={1.6} />
         </button>
         <span className="bud-tb-divider" />
-        <button title="New SQL editor" onClick={newEditor}>
+        <button className="bud-tb-action" title="New SQL editor" onClick={newEditor}>
           <IconFilePlus size={16} stroke={1.6} />
+          <span>New query</span>
         </button>
-        <button title="Open .sql file" onClick={() => fileRef.current?.click()}>
+        <button className="bud-tb-icon bud-tb-secondary" title="Open .sql file" onClick={() => fileRef.current?.click()}>
           <IconFolderOpen size={16} stroke={1.6} />
         </button>
-        <button title="Save as script" onClick={() => void save()}>
+        <button className="bud-tb-icon bud-tb-secondary" title="Save as script" onClick={() => void save()}>
           <IconDeviceFloppy size={16} stroke={1.6} />
         </button>
         <span className="bud-tb-divider" />
-        <button title="New connection" onClick={onAddServer}>
+        <button className="bud-tb-action" title="New connection" onClick={onAddServer}>
           <IconPlugConnected size={16} stroke={1.6} />
+          <span>Connect</span>
         </button>
-        <button title="Reconnect" onClick={() => activeId && void openAndIntrospect(activeId)} disabled={!activeId}>
+        <button className="bud-tb-icon bud-tb-secondary" title="Reconnect" onClick={() => activeId && void openAndIntrospect(activeId)} disabled={!activeId}>
           <IconRefresh size={16} stroke={1.6} />
         </button>
-        <span className="bud-tb-divider" />
-        <MotionButton
-          className="bud-tb-run"
-          title="Execute (⌘↵)"
-          onClick={() => void run()}
-          disabled={!activeId}
-          whileTap={{ scale: 0.86 }}
-        >
-          <IconPlayerPlay size={16} stroke={1.7} />
-        </MotionButton>
-        <span className="bud-tb-divider" />
-        <button title="SQL history" onClick={() => setView("history")}>
-          <IconHistory size={16} stroke={1.6} />
-        </button>
-        <button title="Settings" onClick={() => setTopView("settings")}>
-          <IconSettings size={16} stroke={1.6} />
-        </button>
-        <button title="Keyboard shortcuts (?)" onClick={() => window.dispatchEvent(new Event("orbitodb:shortcuts"))}>
-          <IconKeyboard size={16} stroke={1.6} />
-        </button>
-        <span className="bud-tb-divider" />
-        <MotionButton
-          className="bud-cmdk-pill"
-          title="Command palette (⌘K)"
-          onClick={() => window.dispatchEvent(new Event("orbitodb:cmdk"))}
-        >
-          <IconSearch size={13} stroke={1.8} />
-          <span>Search</span>
-          <kbd>⌘K</kbd>
-        </MotionButton>
       </div>
+
+      <div className="bud-title-spacer" />
+
+      <MotionButton
+        className="bud-cmdk-pill"
+        title="Command palette (⌘K)"
+        onClick={() => window.dispatchEvent(new Event("orbitodb:cmdk"))}
+      >
+        <IconSearch size={14} stroke={1.8} />
+        <span>Search commands</span>
+        <kbd>⌘K</kbd>
+      </MotionButton>
 
       <div className={`bud-tb-conn ${active ? "on" : ""}`} title={active ? `Connected to ${active.name}` : "No active connection"}>
         <span className="bud-tb-conn-dot" />
-        <span>{active ? `Connected · ${active.name}` : "Disconnected"}</span>
+        <span>{active ? active.name : "No connection"}</span>
       </div>
-      <div className="bud-tb-brand">
-        <img className="bud-tb-logo" src="/orbitodb-logo.svg" alt="" />
-        <span className="bud-tb-word">OrbitoDB</span>
+
+      <MotionButton
+        className="bud-tb-run"
+        title="Execute query (⌘↵)"
+        onClick={() => void run()}
+        disabled={!activeId || running}
+        aria-busy={running}
+        whileTap={{ scale: 0.96 }}
+      >
+        <IconPlayerPlay size={15} stroke={2} />
+        <span>{running ? "Running…" : "Run"}</span>
+      </MotionButton>
+
+      <div className="bud-tb-utility">
+        <button title="SQL history" onClick={() => setView("history")}>
+          <IconHistory size={17} stroke={1.7} />
+        </button>
+        <button title="Settings" onClick={() => setTopView("settings")}>
+          <IconSettings size={17} stroke={1.7} />
+        </button>
+        <button title="Keyboard shortcuts (?)" onClick={() => window.dispatchEvent(new Event("orbitodb:shortcuts"))}>
+          <IconKeyboard size={17} stroke={1.7} />
+        </button>
       </div>
 
       <input
@@ -136,6 +136,6 @@ export function TopNav({
           e.target.value = "";
         }}
       />
-    </div>
+    </header>
   );
 }

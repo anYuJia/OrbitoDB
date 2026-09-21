@@ -41,6 +41,10 @@ pub struct ConnectionConfig {
     pub database: String,
     #[serde(default)]
     pub username: Option<String>,
+    /// Optional environment label used by the UI to require an extra
+    /// confirmation before writes to production connections.
+    #[serde(default)]
+    pub env: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +81,15 @@ pub struct ColumnInfo {
     pub is_primary_key: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignKey {
+    pub table: String,
+    pub column: String,
+    pub ref_table: String,
+    pub ref_column: String,
+}
+
 /// A column definition for the visual create-table designer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,5 +123,6 @@ mod tests {
         assert_eq!(cfg.engine, Engine::Sqlite);
         assert!(cfg.host.is_none());
         assert_eq!(cfg.database, "/tmp/x.db");
+        assert!(cfg.env.is_none());
     }
 }

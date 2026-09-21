@@ -47,10 +47,16 @@ pub fn pg_row_to_values(row: &sqlx::postgres::PgRow) -> AppResult<Vec<serde_json
         }
         let t = raw.type_info().name().to_uppercase();
         let value = match t.as_str() {
-            "INT2" => row.try_get::<i16, _>(i).map(|x| serde_json::json!(x as i64)),
-            "INT4" => row.try_get::<i32, _>(i).map(|x| serde_json::json!(x as i64)),
+            "INT2" => row
+                .try_get::<i16, _>(i)
+                .map(|x| serde_json::json!(x as i64)),
+            "INT4" => row
+                .try_get::<i32, _>(i)
+                .map(|x| serde_json::json!(x as i64)),
             "INT8" => row.try_get::<i64, _>(i).map(|x| serde_json::json!(x)),
-            "FLOAT4" => row.try_get::<f32, _>(i).map(|x| serde_json::json!(x as f64)),
+            "FLOAT4" => row
+                .try_get::<f32, _>(i)
+                .map(|x| serde_json::json!(x as f64)),
             "FLOAT8" => row.try_get::<f64, _>(i).map(|x| serde_json::json!(x)),
             "NUMERIC" => row
                 .try_get::<sqlx::types::BigDecimal, _>(i)
@@ -93,12 +99,16 @@ pub fn mysql_row_to_values(row: &sqlx::mysql::MySqlRow) -> AppResult<Vec<serde_j
         let t = raw.type_info().name().to_uppercase();
         let value = match t.as_str() {
             "TINYINT" => row.try_get::<i8, _>(i).map(|x| serde_json::json!(x as i64)),
-            "SMALLINT" | "YEAR" => row.try_get::<i16, _>(i).map(|x| serde_json::json!(x as i64)),
-            "INT" | "MEDIUMINT" | "INTEGER" => {
-                row.try_get::<i32, _>(i).map(|x| serde_json::json!(x as i64))
-            }
+            "SMALLINT" | "YEAR" => row
+                .try_get::<i16, _>(i)
+                .map(|x| serde_json::json!(x as i64)),
+            "INT" | "MEDIUMINT" | "INTEGER" => row
+                .try_get::<i32, _>(i)
+                .map(|x| serde_json::json!(x as i64)),
             "BIGINT" => row.try_get::<i64, _>(i).map(|x| serde_json::json!(x)),
-            "FLOAT" => row.try_get::<f32, _>(i).map(|x| serde_json::json!(x as f64)),
+            "FLOAT" => row
+                .try_get::<f32, _>(i)
+                .map(|x| serde_json::json!(x as f64)),
             "DOUBLE" => row.try_get::<f64, _>(i).map(|x| serde_json::json!(x)),
             "DECIMAL" | "NEWDECIMAL" => row
                 .try_get::<sqlx::types::BigDecimal, _>(i)
@@ -134,6 +144,7 @@ mod tests {
             port: None,
             database: ":memory:".into(),
             username: None,
+            env: None,
         };
         let d = SqliteDriver::connect(&cfg).await.unwrap();
         d.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT, score REAL, flag BOOLEAN)")
@@ -153,7 +164,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            r.columns.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            r.columns
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["id", "name", "score"]
         );
         assert_eq!(r.rows.len(), 2);

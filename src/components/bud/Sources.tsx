@@ -38,6 +38,21 @@ import { ContextMenu, type CtxAnchor, type MenuItem } from "./ContextMenu";
 
 const PANELS = ["Databases", "Scripts", "Favorites"] as const;
 
+function initialCompact(): boolean {
+  try {
+    return localStorage.getItem("orbitodb.sidebarCompact") === "true";
+  } catch {
+    return false;
+  }
+}
+
+function keyboardActivate(e: React.KeyboardEvent, action: () => void) {
+  if (e.target !== e.currentTarget) return;
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  action();
+}
+
 function EngineIcon({ engine }: { engine: Engine }) {
   if (engine === "mysql") return <IconBrandMysql size={15} stroke={1.7} />;
   return <IconDatabase size={14} stroke={1.7} />;
@@ -73,6 +88,10 @@ function ObjectGroup({
       <div
         className="bud-objgroup-head"
         onClick={() => setOpen((v) => !v)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onKeyDown={(e) => keyboardActivate(e, () => setOpen((v) => !v))}
         onContextMenu={
           menu
             ? (e) => {
@@ -110,7 +129,7 @@ export function Sources({
   const [panel, setPanel] = useState<(typeof PANELS)[number]>("Databases");
   const [rootOpen, setRootOpen] = useState(true);
   const [rootCtx, setRootCtx] = useState<CtxAnchor | null>(null);
-  const [compact, setCompact] = useState(false);
+  const [compact, setCompact] = useState(initialCompact);
 
   const rootMenu: MenuItem[] = [
     { label: "New connection…", icon: (<IconPlus size={15} stroke={1.7} />), onClick: onAddServer },
@@ -124,9 +143,26 @@ export function Sources({
 
   return (
     <aside className={`bud-sources ${compact ? "compact" : ""}`}>
-      <nav className="bud-panel-tabs">
+      <div className="bud-sources-head">
+        <div>
+          <span className="bud-sources-eyebrow">Workspace</span>
+          <strong>Data sources</strong>
+        </div>
+        <button className="bud-sources-add" onClick={onAddServer} title="Add data source">
+          <IconPlus size={15} stroke={2} />
+          <span>Add</span>
+        </button>
+      </div>
+
+      <nav className="bud-panel-tabs" role="tablist" aria-label="Data source panels">
         {PANELS.map((p) => (
-          <button key={p} className={`bud-panel-tab ${panel === p ? "on" : ""}`} onClick={() => setPanel(p)}>
+          <button
+            key={p}
+            className={`bud-panel-tab ${panel === p ? "on" : ""}`}
+            role="tab"
+            aria-selected={panel === p}
+            onClick={() => setPanel(p)}
+          >
             {p}
           </button>
         ))}
@@ -160,7 +196,16 @@ export function Sources({
         <button
           className={compact ? "on" : ""}
           title={compact ? "Comfortable spacing" : "Compact spacing"}
-          onClick={() => setCompact((v) => !v)}
+          aria-pressed={compact}
+          onClick={() => setCompact((value) => {
+            const next = !value;
+            try {
+              localStorage.setItem("orbitodb.sidebarCompact", String(next));
+            } catch {
+              /* ignore */
+            }
+            return next;
+          })}
         >
           <IconLayoutSidebar size={15} stroke={1.7} />
         </button>
@@ -169,7 +214,13 @@ export function Sources({
       {searchOpen && (
         <div className="bud-src-search">
           <IconSearch size={14} stroke={1.7} />
-          <input autoFocus placeholder="Filter objects…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <input
+            autoFocus
+            aria-label="Filter database objects"
+            placeholder="Filter objects…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
           {filter && (
             <button className="bud-src-search-x" title="Clear" onClick={() => setFilter("")}>
               <IconX size={13} stroke={1.9} />
@@ -184,6 +235,10 @@ export function Sources({
             <div
               className="bud-tnode root"
               onClick={() => setRootOpen((v) => !v)}
+              role="button"
+              tabIndex={0}
+              aria-expanded={rootOpen}
+              onKeyDown={(e) => keyboardActivate(e, () => setRootOpen((v) => !v))}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setRootCtx({ x: e.clientX, y: e.clientY, items: rootMenu });
@@ -193,13 +248,23 @@ export function Sources({
                 {rootOpen ? <IconChevronDown size={13} stroke={2} /> : <IconChevronRight size={13} stroke={2} />}
               </span>
               <IconFolderOpen size={14} stroke={1.7} className="bud-tnode-ic" />
-              <span className="bud-tnode-label">Connections</span>
+              <span className="bud-tnode-label">Saved connections</span>
+              <span className="bud-tree-count">{connections.length}</span>
             </div>
             {rootCtx && <ContextMenu anchor={rootCtx} onClose={() => setRootCtx(null)} />}
             {rootOpen && (
               <div className="bud-tree-children">
                 {connections.length === 0 ? (
-                  <div className="bud-ds-empty">No connections yet</div>
+                  <div className="bud-sidebar-empty">
+                    <span className="bud-sidebar-empty-icon">
+                      <IconDatabase size={20} stroke={1.55} />
+                    </span>
+                    <strong>No data sources yet</strong>
+                    <span>Connect SQLite, PostgreSQL, or MySQL to get started.</span>
+                    <button onClick={onAddServer}>
+                      <IconPlus size={14} stroke={2} /> Add data source
+                    </button>
+                  </div>
                 ) : (
                   connections.map((c) => (
                     <Datasource key={c.id} conn={c} onEditServer={onEditServer} filter={filter} />
@@ -240,7 +305,15 @@ function SavedList({ kind }: { kind: "Scripts" | "Favorites" }) {
   return (
     <div className="bud-saved-list">
       {items.map((it) => (
-        <div key={it.id} className="bud-saved-row" onClick={() => loadSql(it.sql)} title={it.sql}>
+        <div
+          key={it.id}
+          className="bud-saved-row"
+          onClick={() => loadSql(it.sql)}
+          onKeyDown={(e) => keyboardActivate(e, () => loadSql(it.sql))}
+          role="button"
+          tabIndex={0}
+          title={it.sql}
+        >
           <span className="bud-saved-ic">
             <Icon size={14} stroke={1.7} />
           </span>
@@ -275,6 +348,7 @@ function Datasource({
   const activeId = useStore((s) => s.activeConnectionId);
   const tables = useStore((s) => s.schema.tables);
   const loadingTables = useStore((s) => s.loadingTables);
+  const refreshSchema = useStore((s) => s.refreshSchema);
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
   const deleteConnection = useStore((s) => s.deleteConnection);
   const saveConnection = useStore((s) => s.saveConnection);
@@ -285,9 +359,11 @@ function Datasource({
   const toggleReadOnly = useStore((s) => s.toggleReadOnly);
   const isReadOnly = useStore((s) => s.readOnlyConns.includes(conn.id));
   const isActive = activeId === conn.id;
-  const shownTables = filter
+  const shownObjects = filter
     ? tables.filter((t) => t.name.toLowerCase().includes(filter.toLowerCase()))
     : tables;
+  const shownTables = shownObjects.filter((t) => t.kind.toLowerCase() !== "view");
+  const shownViews = shownObjects.filter((t) => t.kind.toLowerCase() === "view");
 
   // Multi-select of tables (Ctrl/Cmd-click toggles, Shift-click ranges).
   const [selTables, setSelTables] = useState<string[]>([]);
@@ -317,9 +393,6 @@ function Datasource({
     anchorRef.current = name;
     return false;
   };
-  const schemaName = conn.engine === "postgres" ? "public" : "main";
-  const dbName = conn.database || "database";
-
   const toggle = async () => {
     if (!isActive) await openAndIntrospect(conn.id);
     setOpen((v) => (isActive ? !v : true));
@@ -381,14 +454,12 @@ function Datasource({
     { label: "Remove data source", icon: (<IconTrash size={15} stroke={1.7} />), danger: true, onClick: remove },
   ];
 
-  const refresh = () => void openAndIntrospect(conn.id);
+  const refresh = () => {
+    if (isActive) void refreshSchema();
+    else void openAndIntrospect(conn.id);
+  };
   const refreshMenu: MenuItem[] = [{ label: "Refresh", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: refresh }];
-  // Views/Indexes/Sequences/… don't have a create flow yet, so the folder menu
-  // is just Refresh (no permanently-disabled "New …" placeholder).
-  const folderMenu = (_singular: string): MenuItem[] => [
-    { label: "Refresh", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: refresh },
-  ];
-  const allNames = tables.map((t) => t.name);
+  const allNames = tables.filter((t) => t.kind.toLowerCase() !== "view").map((t) => t.name);
   const tablesMenu: MenuItem[] = [
     { label: "New table…", icon: (<IconTablePlus size={15} stroke={1.7} />), onClick: () => void newTable() },
     { label: "Refresh", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: refresh },
@@ -415,6 +486,11 @@ function Datasource({
       <div
         className="bud-src ds"
         onClick={toggle}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isActive && open}
+        aria-current={isActive ? "true" : undefined}
+        onKeyDown={(e) => keyboardActivate(e, () => void toggle())}
         onContextMenu={(e) => {
           e.preventDefault();
           setCtx({ x: e.clientX, y: e.clientY, items });
@@ -435,35 +511,32 @@ function Datasource({
           {loadingTables ? (
             <div className="bud-ds-empty">Loading…</div>
           ) : (
-            <ObjectGroup label="Databases" count={1} defaultOpen menu={refreshMenu}>
-              <ObjectGroup label={`${dbName} (Default)`} count={1} defaultOpen menu={refreshMenu}>
-                <ObjectGroup label="Schemas" count={1} defaultOpen menu={refreshMenu}>
-                  <ObjectGroup label={schemaName} count={shownTables.length} defaultOpen menu={refreshMenu}>
-                    <ObjectGroup label="Tables" count={shownTables.length} defaultOpen menu={tablesMenu}>
-                      {shownTables.length === 0 ? (
-                        <div className="bud-ds-empty">{filter ? "No match" : "No tables"}</div>
-                      ) : (
-                        shownTables.map((t) => (
-                          <TableRow
-                            key={t.name}
-                            table={t.name}
-                            connectionId={conn.id}
-                            selected={selTables.includes(t.name)}
-                            selectedNames={selTables}
-                            onActivate={activateTable}
-                          />
-                        ))
-                      )}
-                    </ObjectGroup>
-                    <ObjectGroup label="Views" count={0} menu={folderMenu("view")} />
-                    <ObjectGroup label="Indexes" count={0} menu={folderMenu("index")} />
-                    <ObjectGroup label="Sequences" count={0} menu={folderMenu("sequence")} />
-                    <ObjectGroup label="Procedures" count={0} menu={folderMenu("procedure")} />
-                    <ObjectGroup label="Functions" count={0} menu={folderMenu("function")} />
-                  </ObjectGroup>
-                </ObjectGroup>
+            <>
+              <ObjectGroup label="Tables" count={shownTables.length} defaultOpen menu={tablesMenu}>
+                {shownTables.length === 0 ? (
+                  <div className="bud-ds-empty">{filter ? "No matching tables" : "No tables yet"}</div>
+                ) : (
+                  shownTables.map((t) => (
+                    <TableRow
+                      key={t.name}
+                      table={t.name}
+                      kind="table"
+                      connectionId={conn.id}
+                      selected={selTables.includes(t.name)}
+                      selectedNames={selTables}
+                      onActivate={activateTable}
+                    />
+                  ))
+                )}
               </ObjectGroup>
-            </ObjectGroup>
+              {shownViews.length > 0 && (
+                <ObjectGroup label="Views" count={shownViews.length} defaultOpen menu={refreshMenu}>
+                  {shownViews.map((view) => (
+                    <TableRow key={view.name} table={view.name} kind="view" connectionId={conn.id} />
+                  ))}
+                </ObjectGroup>
+              )}
+            </>
           )}
         </div>
       )}
@@ -474,12 +547,14 @@ function Datasource({
 
 function TableRow({
   table,
+  kind = "table",
   connectionId,
   selected = false,
   selectedNames = [],
   onActivate,
 }: {
   table: string;
+  kind?: "table" | "view";
   connectionId: string;
   selected?: boolean;
   selectedNames?: string[];
@@ -502,6 +577,7 @@ function TableRow({
   const loadSql = useStore((s) => s.loadSql);
   const addColumn = useStore((s) => s.addColumn);
   const showTableDdl = useStore((s) => s.showTableDdl);
+  const isDatabaseView = kind === "view";
   const myViews = views.filter((v) => v.connectionId === connectionId && v.table === table);
   const tableActive = editTable?.table === table && activeViewId === null;
 
@@ -513,8 +589,10 @@ function TableRow({
   const drop = async () => {
     if (
       await confirmDialog({
-        title: "Drop table",
-        message: `Drop "${table}"? This permanently deletes the table and all its rows.`,
+        title: isDatabaseView ? "Drop view" : "Drop table",
+        message: isDatabaseView
+          ? `Drop the view "${table}"?`
+          : `Drop "${table}"? This permanently deletes the table and all its rows.`,
         confirmLabel: "Drop",
         danger: true,
       })
@@ -542,11 +620,15 @@ function TableRow({
     { label: "Generate SELECT", icon: (<IconCode size={15} stroke={1.7} />), onClick: () => loadSql(`SELECT * FROM ${table} LIMIT 100;`) },
     { label: "Show CREATE (DDL)", icon: (<IconSchema size={15} stroke={1.7} />), onClick: () => void showTableDdl(table) },
     { label: "Count rows", icon: (<IconHash size={15} stroke={1.7} />), onClick: () => loadSql(`SELECT count(*) FROM ${table};`) },
-    { label: "Add column…", icon: (<IconColumnInsertRight size={15} stroke={1.7} />), onClick: () => void addColumnTo() },
+    ...(!isDatabaseView
+      ? [{ label: "Add column…", icon: (<IconColumnInsertRight size={15} stroke={1.7} />), onClick: () => void addColumnTo() }]
+      : []),
     { label: "Copy name", icon: (<IconCopy size={15} stroke={1.7} />), onClick: copyName },
     { divider: true },
-    { label: "Rename table", icon: (<IconPencil size={15} stroke={1.7} />), onClick: () => void rename() },
-    { label: "Drop table", icon: (<IconTrash size={15} stroke={1.7} />), danger: true, onClick: () => void drop() },
+    ...(!isDatabaseView
+      ? [{ label: "Rename table", icon: (<IconPencil size={15} stroke={1.7} />), onClick: () => void rename() }]
+      : []),
+    { label: isDatabaseView ? "Drop view" : "Drop table", icon: (<IconTrash size={15} stroke={1.7} />), danger: true, onClick: () => void drop() },
   ];
 
   // When several tables are multi-selected, right-clicking one shows bulk actions.
@@ -572,6 +654,14 @@ function TableRow({
     <>
       <div
         className={`bud-table ${tableActive ? "active" : ""} ${selected ? "multi" : ""}`}
+        role="button"
+        tabIndex={0}
+        aria-current={tableActive ? "page" : undefined}
+        aria-label={`${isDatabaseView ? "View" : "Table"} ${table}`}
+        onKeyDown={(e) => keyboardActivate(e, () => {
+          if (tableActive) setView("data");
+          else void openTableData(table);
+        })}
         onClick={(e) => {
           // Ctrl/Cmd-click opens the table in an additional tab.
           if (e.metaKey || e.ctrlKey) {
@@ -594,7 +684,7 @@ function TableRow({
         }}
       >
         <span className="bud-table-ic">
-          <IconTable size={14} stroke={1.7} />
+          {isDatabaseView ? <IconEye size={14} stroke={1.7} /> : <IconTable size={14} stroke={1.7} />}
         </span>
         {table}
       </div>
@@ -602,6 +692,10 @@ function TableRow({
         <div
           key={v.id}
           className={`bud-table bud-view ${activeViewId === v.id ? "active" : ""}`}
+          role="button"
+          tabIndex={0}
+          aria-current={activeViewId === v.id ? "page" : undefined}
+          onKeyDown={(e) => keyboardActivate(e, () => openView(v))}
           onClick={() => {
             if (activeViewId === v.id) {
               if (currentView !== "data") setView("data");

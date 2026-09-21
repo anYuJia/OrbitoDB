@@ -1,5 +1,5 @@
 import { AnimatePresence } from "framer-motion";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { ConnectionConfig } from "../ipc/types";
 import { installSmoothScroll } from "../lib/smoothScroll";
 import { useStore } from "../state/store";
@@ -8,27 +8,37 @@ import { DialogHost } from "./bud/DialogHost";
 import { ErDiagram } from "./bud/ErDiagram";
 import { ImportCsvModal } from "./bud/ImportCsvModal";
 import { SchemaDiff } from "./bud/SchemaDiff";
-import { ServerModal } from "./bud/ServerModal";
 import { ShortcutsOverlay } from "./bud/ShortcutsOverlay";
 import { Sources } from "./bud/Sources";
 import { StatusBar } from "./bud/StatusBar";
 import { ToastHost } from "./bud/ToastHost";
 import { TopNav } from "./bud/TopNav";
-import { WorkspacePanel } from "./bud/WorkspacePanel";
 import { CommandPalette } from "./dash/CommandPalette";
+
+const ServerModal = lazy(() => import("./bud/ServerModal").then((mod) => ({ default: mod.ServerModal })));
+const WorkspacePanel = lazy(() => import("./bud/WorkspacePanel").then((mod) => ({ default: mod.WorkspacePanel })));
 
 function initialWidth(): number {
   try {
-    return Number(localStorage.getItem("orbitodb.sidebarW")) || 270;
+    return Number(localStorage.getItem("orbitodb.sidebarW")) || 292;
   } catch {
-    return 270;
+    return 292;
+  }
+}
+
+function initialSidebarHidden(): boolean {
+  try {
+    return localStorage.getItem("orbitodb.sidebarHidden") === "true";
+  } catch {
+    return false;
   }
 }
 
 export function AppShell() {
   const [serverModal, setServerModal] = useState<ConnectionConfig | "new" | null>(null);
-  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(initialSidebarHidden);
   const [sidebarWidth, setSidebarWidth] = useState(initialWidth);
+  const shellRef = useRef<HTMLDivElement>(null);
   const topView = useStore((s) => s.topView);
   const restoreSession = useStore((s) => s.restoreSession);
 
@@ -43,51 +53,120 @@ export function AppShell() {
   const openAdd = () => setServerModal("new");
   const openEdit = (c: ConnectionConfig) => setServerModal(c);
 
-  const onResize = (e: React.MouseEvent) => {
-    e.preventDefault();
-    let last = sidebarWidth;
-    const move = (ev: MouseEvent) => {
-      last = Math.max(190, Math.min(ev.clientX, 560));
-      setSidebarWidth(last);
-    };
-    const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
+  const toggleSidebar = () => {
+    setSidebarHidden((hidden) => {
+      const next = !hidden;
       try {
-        localStorage.setItem("orbitodb.sidebarW", String(last));
+        localStorage.setItem("orbitodb.sidebarHidden", String(next));
       } catch {
         /* ignore */
       }
+      return next;
+    });
+  };
+
+  const saveSidebarWidth = (width: number) => {
+    try {
+      localStorage.setItem("orbitodb.sidebarW", String(width));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const resizeSidebar = (width: number) => {
+    const next = Math.max(240, Math.min(width, 480));
+    setSidebarWidth(next);
+    return next;
+  };
+
+  const onResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    shellRef.current?.classList.add("is-resizing");
+    let last = sidebarWidth;
+    const move = (ev: PointerEvent) => {
+      last = resizeSidebar(ev.clientX);
     };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      shellRef.current?.classList.remove("is-resizing");
+      saveSidebarWidth(last);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, { once: true });
+  };
+
+  const onResizeKey = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home") return;
+    e.preventDefault();
+    const next = e.key === "Home" ? 292 : resizeSidebar(sidebarWidth + (e.key === "ArrowLeft" ? -16 : 16));
+    setSidebarWidth(next);
+    saveSidebarWidth(next);
   };
 
   return (
     <div
+      ref={shellRef}
       className={`bud-app ${sidebarHidden ? "sidebar-hidden" : ""}`}
       style={{ ["--sidebar-w" as string]: `${sidebarWidth}px` }}
     >
-      <TopNav onAddServer={openAdd} onToggleSidebar={() => setSidebarHidden((v) => !v)} sidebarHidden={sidebarHidden} />
+      <TopNav onAddServer={openAdd} onToggleSidebar={toggleSidebar} sidebarHidden={sidebarHidden} />
       <div className="bud-body">
         <Sources onAddServer={openAdd} onEditServer={openEdit} />
         <AnimatePresence mode="wait" initial={false}>
           {topView === "data" ? (
-            <DataView key="data" />
+            <DataView key="data" onAddServer={openAdd} />
           ) : (
-            <WorkspacePanel key={topView} view={topView} />
+            <Suspense
+              key={topView}
+              fallback={
+                <main className="bud-main bud-route-loading" aria-busy="true" aria-label="Loading workspace">
+                  <span className="bud-loading-spinner" />
+                  Loading workspace…
+                </main>
+              }
+            >
+              <WorkspacePanel view={topView} />
+            </Suspense>
           )}
         </AnimatePresence>
       </div>
-      {!sidebarHidden && <div className="bud-hsplit" onMouseDown={onResize} title="Drag to resize sidebar" />}
+      {!sidebarHidden && (
+        <div
+          className="bud-hsplit"
+          role="separator"
+          aria-label="Resize data sources sidebar"
+          aria-orientation="vertical"
+          aria-valuemin={240}
+          aria-valuemax={480}
+          aria-valuenow={sidebarWidth}
+          tabIndex={0}
+          onPointerDown={onResize}
+          onKeyDown={onResizeKey}
+          onDoubleClick={() => {
+            setSidebarWidth(292);
+            saveSidebarWidth(292);
+          }}
+          title="Drag to resize · Double-click to reset"
+        />
+      )}
       <StatusBar />
       <AnimatePresence>
         {serverModal && (
-          <ServerModal
+          <Suspense
             key="server-modal"
-            existing={serverModal === "new" ? null : serverModal}
-            onClose={() => setServerModal(null)}
-          />
+            fallback={
+              <div className="bud-modal-backdrop bud-modal-loading" role="status" aria-label="Loading connection dialog">
+                <span className="bud-loading-spinner" />
+              </div>
+            }
+          >
+            <ServerModal
+              existing={serverModal === "new" ? null : serverModal}
+              onClose={() => setServerModal(null)}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
       <CommandPalette onAddServer={openAdd} />

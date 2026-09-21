@@ -1,15 +1,15 @@
 #![allow(dead_code)]
 
-mod error;
-mod types;
+mod commands;
+mod connections;
 mod drivers;
+mod editing;
+mod error;
 mod executor;
 mod schema;
-mod store;
 mod secrets;
-mod connections;
-mod commands;
-mod editing;
+mod store;
+mod types;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -51,6 +51,7 @@ pub fn run() {
             commands::run_query,
             commands::list_tables,
             commands::list_columns,
+            commands::list_foreign_keys,
             commands::recent_history,
             commands::update_cell,
             commands::delete_row,

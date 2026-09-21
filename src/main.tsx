@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { installInspectGuards } from "./lib/guards";
 import "./styles.css";
+import "./modern.css";
 
 installInspectGuards();
 

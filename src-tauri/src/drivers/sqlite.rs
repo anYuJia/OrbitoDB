@@ -1,14 +1,17 @@
 use async_trait::async_trait;
-use sqlx::sqlite::SqlitePoolOptions;
-use sqlx::{Column as _, Row, TypeInfo};
+use sqlx::sqlite::SqliteConnection;
+use sqlx::{Column as _, Connection as _, Row, TypeInfo};
+use tokio::sync::Mutex;
 
 use crate::drivers::Driver;
 use crate::error::{AppError, AppResult};
 use crate::executor::sqlite_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{
+    Column, ColumnInfo, ConnectionConfig, ForeignKey, QueryResult, TableInfo, MAX_ROWS,
+};
 
 pub struct SqliteDriver {
-    pub(crate) pool: sqlx::SqlitePool,
+    conn: Mutex<SqliteConnection>,
 }
 
 /// Build a sqlx connection URL. `:memory:` maps to a shared in-memory DB;
@@ -23,22 +26,16 @@ pub fn sqlite_url(database: &str) -> String {
 
 impl SqliteDriver {
     pub async fn connect(cfg: &ConnectionConfig) -> AppResult<Self> {
-        // Single connection: `:memory:` databases are per-connection, and this
-        // keeps the session behaving like one coherent SQL connection.
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(&sqlite_url(&cfg.database))
-            .await?;
-        Ok(Self { pool })
+        let conn = SqliteConnection::connect(&sqlite_url(&cfg.database)).await?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub async fn test(cfg: &ConnectionConfig) -> AppResult<()> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(&sqlite_url(&cfg.database))
-            .await?;
-        sqlx::query("SELECT 1").execute(&pool).await?;
-        pool.close().await;
+        let mut conn = SqliteConnection::connect(&sqlite_url(&cfg.database)).await?;
+        sqlx::query("SELECT 1").execute(&mut conn).await?;
+        conn.close().await?;
         Ok(())
     }
 }
@@ -47,6 +44,7 @@ impl SqliteDriver {
 impl Driver for SqliteDriver {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         let started = std::time::Instant::now();
+        let mut conn = self.conn.lock().await;
         let head = sql.trim_start().to_uppercase();
         let returns_rows = head.starts_with("SELECT")
             || head.starts_with("PRAGMA")
@@ -54,7 +52,7 @@ impl Driver for SqliteDriver {
             || head.starts_with("EXPLAIN");
 
         if !returns_rows {
-            let res = sqlx::query(sql).execute(&self.pool).await?;
+            let res = sqlx::query(sql).execute(&mut *conn).await?;
             return Ok(QueryResult {
                 columns: vec![],
                 rows: vec![],
@@ -64,7 +62,7 @@ impl Driver for SqliteDriver {
             });
         }
 
-        let fetched = sqlx::query(sql).fetch_all(&self.pool).await?;
+        let fetched = sqlx::query(sql).fetch_all(&mut *conn).await?;
         let columns = match fetched.first() {
             Some(first) => first
                 .columns()
@@ -91,29 +89,33 @@ impl Driver for SqliteDriver {
     }
 
     async fn list_tables(&self) -> AppResult<Vec<TableInfo>> {
+        let mut conn = self.conn.lock().await;
         let rows = sqlx::query(
             "SELECT name, type FROM sqlite_master \
              WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await?;
         Ok(rows
             .iter()
             .map(|r| TableInfo {
                 name: r.try_get::<String, _>("name").unwrap_or_default(),
-                kind: r.try_get::<String, _>("type").unwrap_or_else(|_| "table".into()),
+                kind: r
+                    .try_get::<String, _>("type")
+                    .unwrap_or_else(|_| "table".into()),
                 schema: None,
             })
             .collect())
     }
 
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>> {
-        // PRAGMA cannot bind parameters; guard the identifier before inlining.
-        if table.is_empty() || !table.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        if table.is_empty() {
             return Err(AppError::Internal("invalid table name".into()));
         }
-        let rows = sqlx::query(&format!("PRAGMA table_info({table})"))
-            .fetch_all(&self.pool)
+        let ident = format!("\"{}\"", table.replace('"', "\"\""));
+        let mut conn = self.conn.lock().await;
+        let rows = sqlx::query(&format!("PRAGMA table_info({ident})"))
+            .fetch_all(&mut *conn)
             .await?;
         Ok(rows
             .iter()
@@ -124,6 +126,33 @@ impl Driver for SqliteDriver {
                 is_primary_key: r.try_get::<i64, _>("pk").unwrap_or(0) > 0,
             })
             .collect())
+    }
+
+    async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
+        let mut conn = self.conn.lock().await;
+        let tables = sqlx::query(
+            "SELECT name FROM sqlite_master \
+             WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        let mut out = Vec::new();
+        for table_row in tables {
+            let table: String = table_row.try_get("name").unwrap_or_default();
+            let ident = format!("\"{}\"", table.replace('"', "\"\""));
+            let rows = sqlx::query(&format!("PRAGMA foreign_key_list({ident})"))
+                .fetch_all(&mut *conn)
+                .await?;
+            for row in rows {
+                out.push(ForeignKey {
+                    table: table.clone(),
+                    column: row.try_get("from").unwrap_or_default(),
+                    ref_table: row.try_get("table").unwrap_or_default(),
+                    ref_column: row.try_get("to").unwrap_or_default(),
+                });
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -141,6 +170,7 @@ mod tests {
             port: None,
             database: ":memory:".into(),
             username: None,
+            env: None,
         }
     }
 
@@ -164,12 +194,19 @@ mod tests {
         d.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)")
             .await
             .unwrap();
+        d.execute(
+            "CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id))",
+        )
+        .await
+        .unwrap();
         d.execute("CREATE VIEW v AS SELECT id FROM users")
             .await
             .unwrap();
 
         let tables = d.list_tables().await.unwrap();
-        assert!(tables.iter().any(|t| t.name == "users" && t.kind == "table"));
+        assert!(tables
+            .iter()
+            .any(|t| t.name == "users" && t.kind == "table"));
         assert!(tables.iter().any(|t| t.name == "v" && t.kind == "view"));
 
         let cols = d.list_columns("users").await.unwrap();
@@ -178,6 +215,26 @@ mod tests {
         let email = cols.iter().find(|c| c.name == "email").unwrap();
         assert!(!email.nullable);
 
-        assert!(d.list_columns("bad; DROP").await.is_err());
+        assert!(d.list_columns("bad; DROP").await.unwrap().is_empty());
+
+        let fks = d.list_foreign_keys().await.unwrap();
+        assert_eq!(fks.len(), 1);
+        assert_eq!(fks[0].table, "posts");
+        assert_eq!(fks[0].column, "user_id");
+        assert_eq!(fks[0].ref_table, "users");
+        assert_eq!(fks[0].ref_column, "id");
+    }
+
+    #[tokio::test]
+    async fn transaction_commands_share_one_session() {
+        let d = SqliteDriver::connect(&mem_cfg()).await.unwrap();
+        d.execute("CREATE TABLE tx_test (id INTEGER PRIMARY KEY)")
+            .await
+            .unwrap();
+        d.execute("BEGIN").await.unwrap();
+        d.execute("INSERT INTO tx_test VALUES (1)").await.unwrap();
+        d.execute("ROLLBACK").await.unwrap();
+        let result = d.execute("SELECT id FROM tx_test").await.unwrap();
+        assert!(result.rows.is_empty());
     }
 }

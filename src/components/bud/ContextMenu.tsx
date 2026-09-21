@@ -29,6 +29,10 @@ export function ContextMenu({ anchor, onClose }: { anchor: CtxAnchor; onClose: (
       left: Math.min(anchor.x, window.innerWidth - width - 8),
       top: Math.min(anchor.y, window.innerHeight - height - 8),
     });
+    const frame = window.requestAnimationFrame(() =>
+      el.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(),
+    );
+    return () => window.cancelAnimationFrame(frame);
   }, [anchor.x, anchor.y]);
 
   useEffect(() => {
@@ -38,6 +42,22 @@ export function ContextMenu({ anchor, onClose }: { anchor: CtxAnchor; onClose: (
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const moveFocus = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
+    const items = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+    if (items.length === 0) return;
+    e.preventDefault();
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = e.key === "Home"
+      ? 0
+      : e.key === "End"
+        ? items.length - 1
+        : current < 0
+          ? 0
+          : (current + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next].focus();
+  };
 
   return (
     <>
@@ -49,15 +69,23 @@ export function ContextMenu({ anchor, onClose }: { anchor: CtxAnchor; onClose: (
           onClose();
         }}
       />
-      <div ref={ref} className="bud-ctx-menu" style={{ left: pos.left, top: pos.top }}>
+      <div
+        ref={ref}
+        className="bud-ctx-menu"
+        style={{ left: pos.left, top: pos.top }}
+        role="menu"
+        aria-label="Context actions"
+        onKeyDown={moveFocus}
+      >
         {anchor.items.map((it, i) =>
           it.divider ? (
-            <div key={i} className="bud-ctx-sep" />
+            <div key={i} className="bud-ctx-sep" role="separator" />
           ) : (
             <button
               key={i}
               className={`bud-ctx-item ${it.danger ? "danger" : ""}`}
               disabled={it.disabled}
+              role="menuitem"
               onClick={() => {
                 it.onClick?.();
                 onClose();

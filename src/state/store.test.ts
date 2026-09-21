@@ -1,66 +1,170 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mock = vi.hoisted(() => {
+  const connections = [
+    { id: "alpha", name: "Alpha", engine: "sqlite", database: ":memory:", env: "dev" },
+    { id: "beta", name: "Beta", engine: "sqlite", database: ":memory:", env: "prod" },
+  ];
+  const tables = {
+    alpha: [{ name: "customers", kind: "table", schema: null }],
+    beta: [{ name: "invoices", kind: "table", schema: null }],
+  };
+  const columns = {
+    customers: [
+      { name: "id", dataType: "INTEGER", nullable: false, isPrimaryKey: true },
+      { name: "name", dataType: "TEXT", nullable: false, isPrimaryKey: false },
+    ],
+    invoices: [{ name: "id", dataType: "INTEGER", nullable: false, isPrimaryKey: true }],
+  };
+
+  const runQuery = vi.fn(async (_connectionId: string, sql: string) => {
+    if (/\bnope\b/i.test(sql)) throw { kind: "queryError", message: "no such table: nope" };
+    if (/\bcustomers\b/i.test(sql)) {
+      return {
+        columns: columns.customers.map(({ name, dataType }) => ({ name, dataType })),
+        rows: [
+          [1, "Ada"],
+          [2, "Linus"],
+        ],
+        rowsAffected: 0,
+        elapsedMs: 1,
+        truncated: false,
+      };
+    }
+    if (/\binvoices\b/i.test(sql)) {
+      return {
+        columns: [{ name: "id", dataType: "INTEGER" }],
+        rows: [[10]],
+        rowsAffected: 0,
+        elapsedMs: 1,
+        truncated: false,
+      };
+    }
+    return { columns: [], rows: [], rowsAffected: 0, elapsedMs: 1, truncated: false };
+  });
+
+  return {
+    backend: {
+      listConnections: vi.fn(async () => connections.map((connection) => ({ ...connection }))),
+      openConnection: vi.fn(async () => {}),
+      listTables: vi.fn(async (id: "alpha" | "beta") => tables[id].map((table) => ({ ...table }))),
+      listColumns: vi.fn(async (_id: string, table: "customers" | "invoices") =>
+        columns[table].map((column) => ({ ...column })),
+      ),
+      runQuery,
+      recentHistory: vi.fn(async () => []),
+    },
+  };
+});
+
+vi.mock("../ipc/backend", () => ({ getBackend: () => mock.backend }));
+
 import { useStore } from "./store";
 
 describe("store", () => {
   beforeEach(() => {
-    useStore.setState({ result: null, error: null, running: false, activeConnectionId: null });
+    vi.clearAllMocks();
+    useStore.setState({
+      connections: [],
+      activeConnectionId: null,
+      schema: { tables: [], columnsByTable: {} },
+      sql: "",
+      editors: [{ id: "ed-test", name: "Query 1", sql: "" }],
+      activeEditorId: "ed-test",
+      editorResults: {},
+      editorErrors: {},
+      result: null,
+      error: null,
+      running: false,
+      history: [],
+      editTable: null,
+      openTables: [],
+      autoCommit: true,
+      txnDirty: false,
+      txnConnectionId: null,
+    });
   });
 
-  it("loads seeded connections", async () => {
+  it("loads saved connections including their safety environment", async () => {
     await useStore.getState().loadConnections();
-    expect(useStore.getState().connections.length).toBeGreaterThan(0);
+    expect(useStore.getState().connections).toHaveLength(2);
+    expect(useStore.getState().connections[1].env).toBe("prod");
   });
 
-  it("openAndIntrospect sets the active connection and tables", async () => {
+  it("opens a connection and introspects its tables", async () => {
     await useStore.getState().loadConnections();
-    const id = useStore.getState().connections[0].id;
-    await useStore.getState().openAndIntrospect(id);
-    expect(useStore.getState().activeConnectionId).toBe(id);
-    expect(useStore.getState().schema.tables.length).toBeGreaterThan(0);
+    await useStore.getState().openAndIntrospect("alpha");
+    expect(useStore.getState().activeConnectionId).toBe("alpha");
+    expect(useStore.getState().schema.tables.map((table) => table.name)).toEqual(["customers"]);
   });
 
-  it("run() populates result and clears error", async () => {
+  it("stores successful query results per editor", async () => {
     await useStore.getState().loadConnections();
-    const id = useStore.getState().connections[0].id;
-    await useStore.getState().openAndIntrospect(id);
+    await useStore.getState().openAndIntrospect("alpha");
     useStore.getState().setSql("SELECT * FROM customers");
     await useStore.getState().run();
-    expect(useStore.getState().error).toBeNull();
-    expect(useStore.getState().result?.rows.length).toBeGreaterThan(0);
+    expect(useStore.getState().editorErrors["ed-test"]).toBeNull();
+    expect(useStore.getState().editorResults["ed-test"]?.rows).toHaveLength(2);
   });
 
-  it("run() sets a typed error and clears result for a bad query", async () => {
+  it("refreshes the schema tree after DDL", async () => {
     await useStore.getState().loadConnections();
-    const id = useStore.getState().connections[0].id;
-    await useStore.getState().openAndIntrospect(id);
+    await useStore.getState().openAndIntrospect("alpha");
+    const introspections = mock.backend.listTables.mock.calls.length;
+    useStore.getState().setSql("CREATE TABLE notes (id INTEGER PRIMARY KEY)");
+    await useStore.getState().run();
+    expect(mock.backend.listTables).toHaveBeenCalledTimes(introspections + 1);
+  });
+
+  it("stores typed query errors per editor", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
     useStore.getState().setSql("SELECT * FROM nope");
     await useStore.getState().run();
-    expect(useStore.getState().error?.kind).toBe("queryError");
-    expect(useStore.getState().result).toBeNull();
+    expect(useStore.getState().editorErrors["ed-test"]?.kind).toBe("queryError");
+    expect(useStore.getState().editorResults["ed-test"]).toBeNull();
   });
 
-  it("run() without a connection reports notConnected", async () => {
+  it("reports a typed error when a query has no connection", async () => {
     useStore.getState().setSql("SELECT 1");
     await useStore.getState().run();
     expect(useStore.getState().error?.kind).toBe("notConnected");
+    expect(useStore.getState().editorErrors["ed-test"]?.kind).toBe("notConnected");
   });
 
-  it("switching sources clears the previous source's tables and open table", async () => {
+  it("clears source-specific state when switching connections", async () => {
     await useStore.getState().loadConnections();
-    const ids = useStore.getState().connections.map((c) => c.id);
-    expect(ids.length).toBeGreaterThan(1);
+    await useStore.getState().openAndIntrospect("alpha");
+    await useStore.getState().openTableData("customers");
+    expect(useStore.getState().editTable?.table).toBe("customers");
 
-    // Open the first source and a table inside it.
-    await useStore.getState().openAndIntrospect(ids[0]);
-    const firstTable = useStore.getState().schema.tables[0].name;
-    await useStore.getState().openTableData(firstTable);
-    expect(useStore.getState().editTable).not.toBeNull();
-    expect(useStore.getState().result).not.toBeNull();
-
-    // Switch to a different source: the prior source's tables/open table must not bleed through.
-    await useStore.getState().openAndIntrospect(ids[1]);
+    await useStore.getState().openAndIntrospect("beta");
     expect(useStore.getState().editTable).toBeNull();
     expect(useStore.getState().result).toBeNull();
-    expect(useStore.getState().schema.tables.map((t) => t.name)).not.toContain(firstTable);
+    expect(useStore.getState().schema.tables.map((table) => table.name)).toEqual(["invoices"]);
+  });
+
+  it("pins a manual transaction to its connection and blocks unsafe switching", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    useStore.getState().setAutoCommit(false);
+    useStore.getState().setSql("UPDATE customers SET name = 'Grace' WHERE id = 1");
+    await useStore.getState().run();
+
+    expect(mock.backend.runQuery.mock.calls.slice(-2)).toEqual([
+      ["alpha", "BEGIN"],
+      ["alpha", "UPDATE customers SET name = 'Grace' WHERE id = 1"],
+    ]);
+    expect(useStore.getState().txnConnectionId).toBe("alpha");
+
+    const openCalls = mock.backend.openConnection.mock.calls.length;
+    await useStore.getState().openAndIntrospect("alpha");
+    await useStore.getState().openAndIntrospect("beta");
+    expect(useStore.getState().activeConnectionId).toBe("alpha");
+    expect(mock.backend.openConnection).toHaveBeenCalledTimes(openCalls);
+
+    await useStore.getState().rollbackTxn();
+    expect(mock.backend.runQuery).toHaveBeenLastCalledWith("alpha", "ROLLBACK");
+    expect(useStore.getState().txnDirty).toBe(false);
   });
 });

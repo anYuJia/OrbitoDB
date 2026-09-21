@@ -1,6 +1,6 @@
-import { IconAlertTriangle, IconCheck, IconInfoCircle, IconPlus, IconRefresh } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCheck, IconInfoCircle, IconPlus, IconRefresh, IconX } from "@tabler/icons-react";
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { backdropV, centeredModalV, MotionButton } from "../../lib/motion";
 import { getBackend, isTauri } from "../../ipc/backend";
 import { bridgeHealthy } from "../../ipc/http";
@@ -28,6 +28,43 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
   const saveConnection = useStore((s) => s.saveConnection);
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
   const editing = !!existing;
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const modal = modalRef.current;
+    const focusable = () => Array.from(
+      modal?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    );
+    const frame = window.requestAnimationFrame(() => focusable()[0]?.focus());
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKey);
+      previous?.focus();
+    };
+  }, [onClose]);
 
   const [engine, setEngine] = useState<Engine>(existing?.engine ?? "sqlite");
   const [bridgeUp, setBridgeUp] = useState<boolean | null>(null);
@@ -133,14 +170,28 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
         onClick={onClose}
       />
       <motion.div
+        ref={modalRef}
         className="bud-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="connection-dialog-title"
+        aria-describedby="connection-dialog-description"
         variants={centeredModalV}
         initial="hidden"
         animate="show"
         exit="exit"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bud-modal-head">{editing ? "Edit data source" : "Add data source"}</div>
+        <div className="bud-modal-head">
+          <div>
+            <span className="bud-modal-eyebrow">Connection</span>
+            <h2 id="connection-dialog-title">{editing ? "Edit data source" : "Add data source"}</h2>
+            <p id="connection-dialog-description">{editing ? "Update how OrbitoDB connects to this database." : "Connect a database to your local workspace."}</p>
+          </div>
+          <button className="bud-modal-close" onClick={onClose} aria-label="Close connection dialog">
+            <IconX size={18} stroke={1.7} />
+          </button>
+        </div>
         <div className="bud-modal-body">
           <label className="bud-field">
             <span>Engine</span>

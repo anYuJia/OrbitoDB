@@ -53,8 +53,8 @@ export function isTauri(): boolean {
 let active: Backend | null = null;
 
 /**
- * Tauri backend on the desktop; in the browser, a router that runs SQLite
- * in-process (sql.js) and sends PostgreSQL/MySQL to the local engine bridge.
+ * Tauri backend on the desktop; in the browser, a router that sends database
+ * work to the local engine bridge and keeps the connection registry locally.
  */
 export function getBackend(): Backend {
   if (!active) active = isTauri() ? tauriBackend : webBackend;

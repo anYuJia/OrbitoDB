@@ -58,20 +58,23 @@ export function DialogHost() {
             className="bud-dialog"
             role="dialog"
             aria-modal="true"
+            aria-labelledby="orbitodb-dialog-title"
+            aria-describedby={current.message ? "orbitodb-dialog-message" : undefined}
             variants={panelV}
             initial="hidden"
             animate="show"
             exit="exit"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bud-dialog-title">{current.title}</div>
-        {current.message && <div className="bud-dialog-msg">{current.message}</div>}
+            <div className="bud-dialog-title" id="orbitodb-dialog-title">{current.title}</div>
+        {current.message && <div className="bud-dialog-msg" id="orbitodb-dialog-message">{current.message}</div>}
         {current.kind === "prompt" && (
           <div className="bud-dialog-field">
             {current.label && <span className="bud-dialog-label">{current.label}</span>}
             <input
               className="bud-dialog-input"
               autoFocus
+              aria-label={current.label ?? current.title}
               value={value}
               placeholder={current.placeholder}
               onChange={(e) => setValue(e.target.value)}
