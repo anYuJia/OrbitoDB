@@ -7,6 +7,7 @@ import type { Backend } from "./backend";
 import { httpBackend, deleteSecret, saveSecret } from "./http";
 import { localBackend } from "./local";
 import type { ColumnDef, HistoryEntry } from "./types";
+import { MAX_QUERY_HISTORY } from "../lib/retention";
 
 const HIST_KEY = "orbitodb.history";
 
@@ -36,7 +37,7 @@ let histId = readHistory().reduce((m, h) => Math.max(m, h.id), 0);
 function pushHistory(connectionId: string, sql: string): void {
   const list = readHistory();
   list.unshift({ id: ++histId, connectionId, sql, ranAt: new Date().toISOString() });
-  if (list.length > 200) list.length = 200;
+  if (list.length > MAX_QUERY_HISTORY) list.length = MAX_QUERY_HISTORY;
   try {
     localStorage.setItem(HIST_KEY, JSON.stringify(list));
   } catch {
