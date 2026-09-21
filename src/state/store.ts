@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { getBackend } from "../ipc/backend";
 import { inferColumns } from "../lib/csv";
 import { buildBulkInsertStatements } from "../lib/importSql";
+import { buildDuplicateProjection } from "../lib/duplicateRow";
+import { buildMaintenancePlan, type MaintenanceAction } from "../lib/maintenance";
 import { buildTablePageSql } from "../lib/tablePaging";
 import { buildTableDdl, quoteDdlIdentifier } from "../lib/ddl";
 import { buildCreateViewSql, buildDropDatabaseObjectSql } from "../lib/databaseObjects";
@@ -279,6 +281,7 @@ export interface AppStore {
   clearSelection: () => void;
   deleteSelected: () => Promise<void>;
   duplicateSelected: () => Promise<void>;
+  runMaintenance: (action: MaintenanceAction, table?: string | null) => Promise<boolean>;
   loadSql: (sql: string) => void;
   showTableDdl: (table: string) => Promise<void>;
   saveScript: (name: string, sql: string) => void;
@@ -1434,34 +1437,87 @@ export const useStore = create<AppStore>((set, get) => ({
   duplicateSelected: async () => {
     const { activeConnectionId, result, editTable, selection } = get();
     if (!activeConnectionId || !result || !editTable || selection.length === 0) return;
-    if (get().readOnlyConns.includes(activeConnectionId)) return toast("Read-only — writes are blocked.", "error");
-    const pkIdx = editTable.pkColumn ? result.columns.findIndex((c) => c.name === editTable.pkColumn) : -1;
-    // Compute the next integer id when the PK looks like an auto-increment integer.
-    let nextId = 0;
-    let intPk = false;
-    if (pkIdx >= 0) {
-      const nums = result.rows.map((r) => Number(r[pkIdx]));
-      if (nums.length > 0 && nums.every((n) => Number.isInteger(n))) {
-        intPk = true;
-        nextId = Math.max(0, ...nums) + 1;
-      }
+    if (get().readOnlyConns.includes(activeConnectionId)) {
+      toast("Read-only — writes are blocked.", "error");
+      return;
     }
+    const conn = get().connections.find((item) => item.id === activeConnectionId);
+    if (!conn) return;
+    if (!(await confirmProdWrite(conn, "INSERT"))) return;
+
     try {
-      for (const i of [...selection].sort((a, b) => a - b)) {
-        const src = result.rows[i];
-        const columns: string[] = [];
-        const values: unknown[] = [];
-        result.columns.forEach((c, j) => {
-          columns.push(c.name);
-          if (j === pkIdx) values.push(intPk ? nextId++ : `${String(src[j])}-copy`);
-          else values.push(src[j]);
-        });
-        await backend.insertRow(activeConnectionId, editTable.table, columns, values);
+      let metadata = get().schema.columnsByTable[editTable.table] ?? [];
+      if (!metadata.length) {
+        await get().refreshColumns(editTable.table);
+        metadata = get().schema.columnsByTable[editTable.table] ?? [];
       }
+
+      const names = result.columns.map((column) => column.name);
+      for (const i of [...selection].sort((a, b) => a - b)) {
+        const projection = buildDuplicateProjection(
+          conn.engine,
+          metadata,
+          names,
+          result.rows[i],
+        );
+        await backend.insertRow(
+          activeConnectionId,
+          editTable.table,
+          projection.columns,
+          projection.values,
+        );
+      }
+      const count = selection.length;
       set({ selection: [] });
       await get().refresh();
+      toast(`Duplicated ${count} ${count === 1 ? "row" : "rows"}.`, "success");
     } catch (e) {
-      set({ error: normalizeError(e) });
+      const err = normalizeError(e);
+      set({ error: err });
+      toast(err.message ?? "Duplicate failed", "error");
+    }
+  },
+
+  runMaintenance: async (action, table = null) => {
+    const id = get().activeConnectionId;
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — maintenance operations are blocked.", "error");
+      return false;
+    }
+    const conn = get().connections.find((item) => item.id === id);
+    if (!conn) return false;
+
+    let plan;
+    try {
+      plan = buildMaintenancePlan(conn.engine, action, table);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+      return false;
+    }
+
+    if (
+      conn.env === "prod" &&
+      !(await confirmDialog({
+        title: `Run ${plan.label} on PRODUCTION?`,
+        message: `${plan.label} can take locks or consume significant I/O on “${conn.name}”. Continue?`,
+        confirmLabel: "Run on production",
+        danger: true,
+      }))
+    ) {
+      return false;
+    }
+
+    try {
+      await backend.runQuerySilent(id, plan.sql);
+      if (table) await get().reload(table);
+      toast(`${plan.label} completed.`, "success");
+      return true;
+    } catch (e) {
+      const err = normalizeError(e);
+      set({ error: err });
+      toast(err.message ?? `${plan.label} failed`, "error");
+      return false;
     }
   },
 
