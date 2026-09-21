@@ -41,6 +41,12 @@ jobs:
       - name: Frontend unit tests
         run: npm run test:ci
 
+      - name: Source quality gate
+        run: npm run check:quality
+
+      - name: Dependency audit
+        run: npm run audit:security
+
       - name: Bridge syntax check
         run: npm run check:bridge
 
