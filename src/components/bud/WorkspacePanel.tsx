@@ -1,5 +1,6 @@
 import {
   IconArrowsDiff,
+  IconCopy,
   IconDatabaseSearch,
   IconGitCompare,
   IconKey,
@@ -14,11 +15,14 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { viewV } from "../../lib/motion";
+import { buildNativeBackupCommands } from "../../lib/backup";
 import { getBackend } from "../../ipc/backend";
-import type { ConnectionDiagnostics } from "../../ipc/types";
+import type { BackupInfo, ConnectionDiagnostics } from "../../ipc/types";
 import { confirmDialog } from "../../state/dialog";
+import { confirmProdWrite } from "../../state/safety";
+import { toast } from "../../state/toast";
 import type { TopView } from "../../state/store";
 import { useStore } from "../../state/store";
 
@@ -125,6 +129,114 @@ function UtilitiesPanel() {
   const activeId = useStore((s) => s.activeConnectionId);
   const activeConnection = useStore((s) => s.connections.find((connection) => connection.id === s.activeConnectionId));
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
+  const readOnly = useStore((s) =>
+    s.activeConnectionId ? s.readOnlyConns.includes(s.activeConnectionId) : false,
+  );
+  const [backups, setBackups] = useState<BackupInfo[]>([]);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
+
+  const loadBackups = async () => {
+    if (!activeId || activeConnection?.engine !== "sqlite") {
+      setBackups([]);
+      return;
+    }
+    try {
+      setBackupError(null);
+      setBackups(await getBackend().listBackups(activeId));
+    } catch (error) {
+      setBackups([]);
+      setBackupError(
+        error && typeof error === "object" && "message" in error
+          ? String((error as { message?: unknown }).message ?? "Could not load backups")
+          : String(error),
+      );
+    }
+  };
+
+  useEffect(() => {
+    void loadBackups();
+    // Reload when the active connection changes. Backup mutations call this
+    // function explicitly after completing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, activeConnection?.engine]);
+
+  const createSnapshot = async () => {
+    if (!activeId || activeConnection?.engine !== "sqlite" || backupBusy) return;
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      const backup = await getBackend().createBackup(activeId);
+      toast(`Created SQLite snapshot ${backup.id}`, "success");
+      await loadBackups();
+    } catch (error) {
+      const message =
+        error && typeof error === "object" && "message" in error
+          ? String((error as { message?: unknown }).message ?? "Backup failed")
+          : String(error);
+      setBackupError(message);
+      toast(message, "error");
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const restoreSnapshot = async (backup: BackupInfo) => {
+    if (!activeId || !activeConnection || activeConnection.engine !== "sqlite" || backupBusy) return;
+    if (readOnly) {
+      toast("Read-only — restore is blocked.", "error");
+      return;
+    }
+    if (
+      !(await confirmDialog({
+        title: "Restore SQLite snapshot?",
+        message:
+          `Restore “${backup.id}”? OrbitoDB will create a safety snapshot of the current database first, then replace the active SQLite file.`,
+        confirmLabel: "Restore",
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+    if (!(await confirmProdWrite(activeConnection, "RESTORE SQLITE BACKUP"))) return;
+
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      await getBackend().restoreBackup(activeId, backup.id);
+      await openAndIntrospect(activeId);
+      await loadBackups();
+      toast(`Restored snapshot ${backup.id}`, "success");
+    } catch (error) {
+      const message =
+        error && typeof error === "object" && "message" in error
+          ? String((error as { message?: unknown }).message ?? "Restore failed")
+          : String(error);
+      setBackupError(message);
+      toast(message, "error");
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const nativeCommands =
+    activeConnection && activeConnection.engine !== "sqlite"
+      ? buildNativeBackupCommands(activeConnection)
+      : null;
+
+  const copyCommand = (command: string, label: string) => {
+    void navigator.clipboard
+      ?.writeText(command)
+      .then(() => toast(`Copied ${label}`, "success"))
+      .catch(() => toast("Clipboard unavailable", "error"));
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  };
 
   return (
     <PanelShell
@@ -156,6 +268,76 @@ function UtilitiesPanel() {
           disabled={!activeId}
           onClick={() => window.dispatchEvent(new Event("orbitodb:cross-table-search"))}
         />
+      </div>
+
+      <div className="odb-section">
+        <div className="odb-utility-section-head">
+          <div>
+            <span className="odb-page-eyebrow">Backup & restore</span>
+            <b>{activeConnection ? activeConnection.name : "No active connection"}</b>
+          </div>
+        </div>
+
+        {!activeConnection ? (
+          <div className="odb-empty-state compact">
+            <IconDatabaseSearch size={22} stroke={1.5} />
+            <b>Select a connection</b>
+            <span>Backup tools are scoped to the active database.</span>
+          </div>
+        ) : activeConnection.engine === "sqlite" ? (
+          <>
+            <ToolRow
+              icon={<IconDatabaseSearch size={18} stroke={1.6} />}
+              title="Create SQLite snapshot"
+              description="Create a consistent managed backup without adding filesystem permissions."
+              action={backupBusy ? "Working…" : "Create"}
+              disabled={backupBusy}
+              onClick={() => void createSnapshot()}
+            />
+            {backupError && <div className="odb-structure-meta-error">{backupError}</div>}
+            <div className="odb-backup-list">
+              {backups.length === 0 ? (
+                <div className="odb-backup-empty">No managed snapshots yet.</div>
+              ) : (
+                backups.map((backup) => (
+                  <div className="odb-backup-row" key={backup.id}>
+                    <div>
+                      <b>{new Date(backup.createdAt).toLocaleString()}</b>
+                      <span>{formatBytes(backup.sizeBytes)} · {backup.id}</span>
+                      {backup.path && <code title={backup.path}>{backup.path}</code>}
+                    </div>
+                    <button
+                      onClick={() => void restoreSnapshot(backup)}
+                      disabled={backupBusy || readOnly}
+                      title={readOnly ? "Restore is blocked by Read-only mode" : "Restore this snapshot"}
+                    >
+                      <IconRefresh size={13} stroke={1.8} />
+                      Restore
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        ) : nativeCommands ? (
+          <>
+            <ToolRow
+              icon={<IconTerminal2 size={18} stroke={1.6} />}
+              title={activeConnection.engine === "postgres" ? "pg_dump backup command" : "mysqldump backup command"}
+              description="Copy a native logical backup command. Passwords are never embedded."
+              action="Copy"
+              onClick={() => copyCommand(nativeCommands.backup, "backup command")}
+            />
+            <ToolRow
+              icon={<IconCopy size={18} stroke={1.6} />}
+              title={activeConnection.engine === "postgres" ? "pg_restore command" : "mysql restore command"}
+              description="Copy the matching native restore command for this connection."
+              action="Copy"
+              onClick={() => copyCommand(nativeCommands.restore, "restore command")}
+            />
+            <div className="odb-utility-note">{nativeCommands.note}</div>
+          </>
+        ) : null}
       </div>
     </PanelShell>
   );
