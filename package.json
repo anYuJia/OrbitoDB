@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "screenshot": "node scripts/screenshot.mjs",
-    "test:ci": "vitest run src/lib/crossTableSearch.test.ts src/lib/ddl.test.ts src/lib/schemaChanges.test.ts src/lib/databaseObjects.test.ts src/lib/explain.test.ts src/lib/backup.test.ts src/lib/csv.test.ts src/lib/importSql.test.ts src/lib/tablePaging.test.ts src/lib/duplicateRow.test.ts src/lib/maintenance.test.ts src/lib/retention.test.ts src/state/safety.test.ts src/state/store.test.ts",
+    "test:ci": "vitest run src/lib/crossTableSearch.test.ts src/lib/ddl.test.ts src/lib/schemaChanges.test.ts src/lib/databaseObjects.test.ts src/lib/explain.test.ts src/lib/backup.test.ts src/lib/csv.test.ts src/lib/importSql.test.ts src/lib/tablePaging.test.ts src/lib/duplicateRow.test.ts src/lib/maintenance.test.ts src/lib/retention.test.ts src/state/safety.test.ts src/state/store.test.ts src/lib/i18n.test.ts src/lib/platform.test.ts",
     "check:bridge": "node --check server/bridge.mjs",
     "check:release": "node scripts/validate-release.mjs",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
