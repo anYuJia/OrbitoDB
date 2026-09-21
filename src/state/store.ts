@@ -4,6 +4,7 @@ import { inferColumns } from "../lib/csv";
 import { buildBulkInsertStatements } from "../lib/importSql";
 import { buildDuplicateProjection } from "../lib/duplicateRow";
 import { buildMaintenancePlan, type MaintenanceAction } from "../lib/maintenance";
+import { MAX_SAVED_ITEMS, canOpenEditor, capNewest } from "../lib/retention";
 import { buildTablePageSql } from "../lib/tablePaging";
 import { buildTableDdl, quoteDdlIdentifier } from "../lib/ddl";
 import { buildCreateViewSql, buildDropDatabaseObjectSql } from "../lib/databaseObjects";
@@ -77,7 +78,7 @@ const FAVS_KEY = "orbitodb.favorites";
 function loadSaved(key: string): SavedItem[] {
   try {
     const raw = JSON.parse(localStorage.getItem(key) ?? "[]");
-    return Array.isArray(raw) ? (raw as SavedItem[]) : [];
+    return Array.isArray(raw) ? capNewest(raw as SavedItem[], MAX_SAVED_ITEMS) : [];
   } catch {
     return [];
   }
@@ -601,6 +602,10 @@ export const useStore = create<AppStore>((set, get) => ({
 
   newEditor: () =>
     set((s) => {
+      if (!canOpenEditor(s.editors.length)) {
+        toast("SQL tab limit reached — close a tab before opening another.", "error");
+        return {};
+      }
       const id = `ed-${Date.now().toString(36)}`;
       const editor: EditorTab = {
         id,
@@ -615,6 +620,10 @@ export const useStore = create<AppStore>((set, get) => ({
 
   openSqlTab: (name, sql) =>
     set((s) => {
+      if (!canOpenEditor(s.editors.length)) {
+        toast("SQL tab limit reached — close a tab before opening another.", "error");
+        return {};
+      }
       const id = "ed-" + Date.now().toString(36);
       const editor: EditorTab = {
         id,
@@ -1530,7 +1539,7 @@ export const useStore = create<AppStore>((set, get) => ({
   saveScript: (name, sql) =>
     set((s) => {
       const item: SavedItem = { id: `s-${Date.now()}-${s.scripts.length}`, name, sql, savedAt: new Date().toISOString() };
-      const scripts = [item, ...s.scripts];
+      const scripts = capNewest([item, ...s.scripts], MAX_SAVED_ITEMS);
       persistSaved(SCRIPTS_KEY, scripts);
       toast(`Saved script “${name}”`, "success");
       return { scripts };
@@ -1546,7 +1555,7 @@ export const useStore = create<AppStore>((set, get) => ({
   saveFavorite: (name, sql) =>
     set((s) => {
       const item: SavedItem = { id: `f-${Date.now()}-${s.favorites.length}`, name, sql, savedAt: new Date().toISOString() };
-      const favorites = [item, ...s.favorites];
+      const favorites = capNewest([item, ...s.favorites], MAX_SAVED_ITEMS);
       persistSaved(FAVS_KEY, favorites);
       toast(`Added “${name}” to Starred`, "success");
       return { favorites };
