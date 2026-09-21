@@ -132,6 +132,8 @@ function UtilitiesPanel() {
   const readOnly = useStore((s) =>
     s.activeConnectionId ? s.readOnlyConns.includes(s.activeConnectionId) : false,
   );
+  const activeTable = useStore((s) => s.editTable?.table ?? null);
+  const runMaintenance = useStore((s) => s.runMaintenance);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
@@ -268,6 +270,72 @@ function UtilitiesPanel() {
           disabled={!activeId}
           onClick={() => window.dispatchEvent(new Event("orbitodb:cross-table-search"))}
         />
+      </div>
+
+      <div className="odb-section">
+        <div className="odb-utility-section-head">
+          <div>
+            <span className="odb-page-eyebrow">Maintenance</span>
+            <b>{activeTable ? activeTable : "No table selected"}</b>
+          </div>
+        </div>
+        <ToolRow
+          icon={<IconDatabaseSearch size={18} stroke={1.6} />}
+          title="Analyze table"
+          description={
+            activeTable
+              ? "Refresh planner statistics for the active table."
+              : "Open a table first to analyze its planner statistics."
+          }
+          action={activeTable ? "Analyze" : "Unavailable"}
+          disabled={!activeId || !activeTable || readOnly}
+          onClick={() => activeTable && void runMaintenance("analyze", activeTable)}
+        />
+        <ToolRow
+          icon={<IconRefresh size={18} stroke={1.6} />}
+          title={
+            activeConnection?.engine === "sqlite"
+              ? "Optimize SQLite database"
+              : activeConnection?.engine === "postgres"
+                ? "Vacuum + analyze table"
+                : "Optimize table"
+          }
+          description={
+            activeConnection?.engine === "sqlite"
+              ? "Run PRAGMA optimize for the active SQLite database."
+              : activeTable
+                ? "Run the engine-native maintenance operation for the active table."
+                : "Open a table first to run table maintenance."
+          }
+          action={
+            activeConnection?.engine === "sqlite"
+              ? "Optimize"
+              : activeTable
+                ? "Run"
+                : "Unavailable"
+          }
+          disabled={
+            !activeId ||
+            readOnly ||
+            (!!activeConnection && activeConnection.engine !== "sqlite" && !activeTable)
+          }
+          onClick={() =>
+            void runMaintenance(
+              "optimize",
+              activeConnection?.engine === "sqlite" ? null : activeTable,
+            )
+          }
+        />
+        {activeConnection?.engine === "sqlite" && (
+          <ToolRow
+            icon={<IconRefresh size={18} stroke={1.6} />}
+            title="Vacuum SQLite database"
+            description="Rewrite the database file to reclaim free pages. This can be I/O intensive."
+            action="Vacuum"
+            disabled={!activeId || readOnly}
+            onClick={() => void runMaintenance("vacuum")}
+          />
+        )}
       </div>
 
       <div className="odb-section">
