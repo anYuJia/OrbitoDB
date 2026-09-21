@@ -113,6 +113,16 @@ pub struct ConnectionDiagnostics {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BackupInfo {
+    pub id: String,
+    pub created_at: String,
+    pub size_bytes: u64,
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Column {
     pub name: String,
     pub data_type: String,
