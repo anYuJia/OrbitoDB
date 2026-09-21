@@ -2,6 +2,7 @@ import { IconArrowUpRight, IconChevronLeft, IconChevronRight, IconFileImport, Ic
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getBackend } from "../../ipc/backend";
 import { displayRows } from "../../lib/cell";
+import { translate, useI18n } from "../../lib/i18n";
 import { promptDialog } from "../../state/dialog";
 import { toast } from "../../state/toast";
 import type { ColumnInfo } from "../../ipc/types";
@@ -28,7 +29,7 @@ function typeIcon(t: string): string {
 function GridSkeleton({ columns }: { columns?: ColumnInfo[] }) {
   // Structure not known yet — don't fake a grid, just say we're loading.
   if (!columns || columns.length === 0) {
-    return <div className="bud-empty">Loading…</div>;
+    return <div className="bud-empty">{translate("grid.loading")}</div>;
   }
   const rows = Array.from({ length: 8 });
   return (
@@ -67,6 +68,7 @@ function GridSkeleton({ columns }: { columns?: ColumnInfo[] }) {
 }
 
 export function DataGrid() {
+  const { t } = useI18n();
   const rawResult = useStore((s) => s.result);
   // Defensively normalize cells for display (pg/mysql JSON -> objects, binary ->
   // Buffer). Idempotent with the data-layer pass in lib/cell, so already-clean
@@ -293,27 +295,27 @@ export function DataGrid() {
           <b>{table}</b>
           <span>{result.columns.length} columns</span>
           <span>·</span>
-          <span>{result.rows.length.toLocaleString()} on page</span>
+          <span>{t("grid.onPage", { count: result.rows.length.toLocaleString() })}</span>
           <span>·</span>
-          <span>{dataPage.totalRows.toLocaleString()} total</span>
+          <span>{t("grid.total", { count: dataPage.totalRows.toLocaleString() })}</span>
         </div>
         <div className="bud-grid-search">
           <IconSearch size={13} stroke={2} />
           <input
             value={gridFilter}
-            placeholder="Search rows"
-            aria-label="Search rows"
+            placeholder={t("grid.searchRows")}
+            aria-label={t("grid.searchRows")}
             onChange={(e) => setGridFilter(e.target.value)}
           />
           {gridFilter && (
-            <button className="bud-grid-search-x" title="Clear filter" onClick={() => setGridFilter("")}>
+            <button className="bud-grid-search-x" title={t("grid.clearFilter")} onClick={() => setGridFilter("")}>
               <IconX size={13} stroke={2} />
             </button>
           )}
         </div>
         {hasFilters && (
           <span className="bud-grid-toolbar-info">
-            {dataPage.totalRows.toLocaleString()} match{dataPage.totalRows === 1 ? "" : "es"}
+            {t(dataPage.totalRows === 1 ? "grid.match" : "grid.matches", { count: dataPage.totalRows.toLocaleString() })}
           </span>
         )}
         <span className="bud-grid-foot-spacer" />
@@ -330,12 +332,12 @@ export function DataGrid() {
         />
         <button
           className="bud-tool odb-grid-import"
-          title="Import CSV or TSV"
+          title={t("grid.importCsvTsv")}
           disabled={readOnly}
           onClick={() => importInputRef.current?.click()}
         >
           <IconFileImport size={13} stroke={2} />
-          Import
+          {t("grid.import")}
         </button>
         <ExportMenu result={result} rows={filteredOrder.map((ri) => result.rows[ri])} table={table} />
       </div>
@@ -344,7 +346,7 @@ export function DataGrid() {
         <thead>
           <tr>
             <th className="bud-checkcol">
-              <input type="checkbox" checked={allSelected} onChange={selectAllRows} aria-label="Select all rows" />
+              <input type="checkbox" checked={allSelected} onChange={selectAllRows} aria-label={t("grid.selectAllRows")} />
             </th>
             <th className="bud-rownum" />
             {result.columns.map((c, i) => {
@@ -364,7 +366,7 @@ export function DataGrid() {
                   </button>
                   <button
                     className="bud-th-menu"
-                    title="Column actions"
+                    title={t("grid.columnActions")}
                     onClick={(e) => {
                       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                       setColEditor({ column: info, x: r.left - 280, y: r.bottom });
@@ -376,7 +378,7 @@ export function DataGrid() {
               );
             })}
             <th className="bud-addcol">
-              <button className="bud-addcol-btn" title="Add column" onClick={addColumnPrompt} disabled={readOnly}>
+              <button className="bud-addcol-btn" title={t("grid.addColumn")} onClick={addColumnPrompt} disabled={readOnly}>
                 <IconPlus size={14} stroke={2} />
               </button>
             </th>
@@ -415,7 +417,7 @@ export function DataGrid() {
               <td className="bud-checkcol" />
               <td className="bud-rownum" />
               <td className="bud-empty-cell" colSpan={result.columns.length + 1}>
-                {hasFilters ? "No rows match the filters." : "This table is empty — add a row below."}
+                {hasFilters ? t("grid.noMatch") : t("grid.emptyTable")}
               </td>
             </tr>
           )}
@@ -436,7 +438,7 @@ export function DataGrid() {
                 </td>
                 <td className="bud-rownum">
                   <span className="rn-num">{curPage * pageSize + pos + 1}</span>
-                  <button className="rn-expand" title="Edit row in panel" onClick={() => openInspector(ri)}>
+                  <button className="rn-expand" title={t("grid.editRow")} onClick={() => openInspector(ri)}>
                     ⤢
                   </button>
                 </td>
@@ -494,7 +496,7 @@ export function DataGrid() {
           })}
           <tr className="bud-addrow">
             <td className="bud-checkcol">
-              <button className="bud-addrow-btn" onClick={() => setNewRow(result.columns.map(() => ""))} title="Add row" disabled={readOnly}>
+              <button className="bud-addrow-btn" onClick={() => setNewRow(result.columns.map(() => ""))} title={t("grid.addRow")} disabled={readOnly}>
                 <IconPlus size={15} stroke={2} />
               </button>
             </td>
@@ -511,28 +513,29 @@ export function DataGrid() {
         <div className="bud-grid-foot">
           <span className="bud-grid-foot-info">
             {dataPage.totalRows === 0
-              ? "0 rows"
-              : `Showing ${(curPage * pageSize + 1).toLocaleString()}–${Math.min(
-                  curPage * pageSize + result.rows.length,
-                  dataPage.totalRows,
-                ).toLocaleString()} of ${dataPage.totalRows.toLocaleString()}${hasFilters ? " matches" : ""}`}
+              ? t("grid.zeroRows")
+              : t(hasFilters ? "grid.showingMatches" : "grid.showing", {
+                  from: (curPage * pageSize + 1).toLocaleString(),
+                  to: Math.min(curPage * pageSize + result.rows.length, dataPage.totalRows).toLocaleString(),
+                  total: dataPage.totalRows.toLocaleString(),
+                })}
           </span>
           <span className="bud-grid-foot-spacer" />
           {pageCount > 1 && (
             <span className="bud-pager">
-              <button title="Previous page" disabled={curPage === 0 || loadingResult} onClick={() => void loadTablePage(curPage - 1)}>
+              <button title={t("grid.previousPage")} disabled={curPage === 0 || loadingResult} onClick={() => void loadTablePage(curPage - 1)}>
                 <IconChevronLeft size={14} stroke={2} />
               </button>
               <span className="bud-pager-info">
                 {curPage + 1} / {pageCount}
               </span>
-              <button title="Next page" disabled={curPage >= pageCount - 1 || loadingResult} onClick={() => void loadTablePage(curPage + 1)}>
+              <button title={t("grid.nextPage")} disabled={curPage >= pageCount - 1 || loadingResult} onClick={() => void loadTablePage(curPage + 1)}>
                 <IconChevronRight size={14} stroke={2} />
               </button>
             </span>
           )}
           <label className="bud-pagesize">
-            Rows
+            {t("grid.rowsPerPage")}
             <select
               value={pageSize}
               onChange={(e) => void setTablePageSize(Number(e.target.value))}
