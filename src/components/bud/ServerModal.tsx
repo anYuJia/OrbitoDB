@@ -18,7 +18,7 @@ import type { ConnEnv, ConnectionConfig, Engine, SshAuth, TlsMode } from "../../
 import { getBackend, isTauri } from "../../ipc/backend";
 import { bridgeHealthy } from "../../ipc/http";
 import { backdropV, centeredModalV, MotionButton } from "../../lib/motion";
-import { useI18n } from "../../lib/i18n";
+import { translate, useI18n } from "../../lib/i18n";
 import { promptDialog } from "../../state/dialog";
 import { useStore } from "../../state/store";
 import { toast } from "../../state/toast";
@@ -86,13 +86,13 @@ function parseConnectionUrl(raw: string): {
   ignoredParams: string[];
 } {
   const value = raw.trim();
-  if (!value) throw new Error("Paste a PostgreSQL or MySQL connection URL.");
+  if (!value) throw new Error(translate("connection.urlPaste"));
 
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw new Error("Invalid connection URL.");
+    throw new Error(translate("connection.urlInvalid"));
   }
 
   const protocol = url.protocol.toLowerCase();
@@ -102,12 +102,12 @@ function parseConnectionUrl(raw: string): {
       : protocol === "mysql:" || protocol === "mariadb:"
         ? "mysql"
         : (() => {
-            throw new Error("Supported URL schemes: postgresql://, postgres://, mysql:// and mariadb://.");
+            throw new Error(translate("connection.urlScheme"));
           })();
 
   const database = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
-  if (!url.hostname) throw new Error("The connection URL is missing a host.");
-  if (!database) throw new Error("The connection URL is missing a database name.");
+  if (!url.hostname) throw new Error(translate("connection.urlMissingHost"));
+  if (!database) throw new Error(translate("connection.urlMissingDatabase"));
 
   const tlsMode = parseTlsMode(engine, url);
   const tlsCaPath =
@@ -216,10 +216,10 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
       setStatus({
         kind: "ok",
         msg: parsed.ignoredParams.length
-          ? `Imported URL · unsupported query options were ignored: ${parsed.ignoredParams.join(", ")}`
+          ? t("connection.urlIgnoredOptions", { options: parsed.ignoredParams.join(", ") })
           : parsed.tlsMode === "disable"
-            ? "Imported connection URL."
-            : `Imported connection URL · TLS ${parsed.tlsMode}.`,
+            ? t("connection.urlImported")
+            : t("connection.urlImportedTls", { mode: parsed.tlsMode }),
       });
       setConnectionUrl("");
       setShowConnectionUrl(false);
@@ -282,15 +282,15 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
         setStatus({
           kind: "ok",
           msg: targetDatabase
-            ? `Connected to ${targetDatabase} · ${dbs.length} database${dbs.length === 1 ? "" : "s"} visible`
-            : `Server reachable · ${dbs.length} database${dbs.length === 1 ? "" : "s"} available`,
+            ? t("connection.connectedDatabases", { database: targetDatabase, count: dbs.length })
+            : t("connection.serverReachable", { count: dbs.length }),
         });
       } catch (listError) {
         if (!targetDatabase) throw listError;
         setDatabases(null);
         setStatus({
           kind: "ok",
-          msg: `Connected to ${targetDatabase}. Database discovery is unavailable for this account.`,
+          msg: t("connection.discoveryUnavailable", { database: targetDatabase }),
         });
       }
     } catch (e) {
@@ -302,7 +302,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
   };
 
   const newDatabase = async () => {
-    const dbName = await promptDialog({ title: "Create database", label: "Database name", placeholder: "e.g. analytics" });
+    const dbName = await promptDialog({ title: t("connection.createDatabase"), label: t("connection.databaseNamePrompt"), placeholder: t("connection.databasePlaceholder") });
     const safe = dbName?.trim();
     if (!safe) return;
     setTesting(true);
@@ -312,7 +312,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
       const dbs = await getBackend().listDatabases(draftCfg(""), password || null);
       setDatabases(dbs);
       setDatabase(safe);
-      setStatus({ kind: "ok", msg: `Created "${safe}"` });
+      setStatus({ kind: "ok", msg: t("connection.createdDatabase", { name: safe }) });
     } catch (e) {
       setStatus({ kind: "error", msg: errMsg(e) });
     } finally {
@@ -327,7 +327,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
       const cfg = draftCfg(database.trim());
       await saveConnection(cfg, password || null);
       await openAndIntrospect(cfg.id);
-      toast(`Connected to ${cfg.name}`, "success");
+      toast(t("connection.connectedTo", { name: cfg.name }), "success");
       onClose();
     } catch (e) {
       setStatus({ kind: "error", msg: errMsg(e) });
@@ -591,7 +591,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                       <input
                         value={database}
                         onChange={(e) => setDatabase(e.target.value)}
-                        placeholder="Test connection to discover databases, or type a name"
+                        placeholder={t("connection.discoverHint")}
                       />
                     )}
                     <button onClick={() => void newDatabase()} disabled={testing || !remoteReady} title="Create database">

@@ -192,7 +192,7 @@ export function SqlPanel() {
     try {
       await saveConnection({ ...conn, schema: nextSchema }, null);
       await openAndIntrospect(conn.id);
-      toast(`Schema · ${nextSchema}`, "success");
+      toast(t("sql.schemaSwitched", { schema: nextSchema }), "success");
     } catch (error) {
       const normalized = normalize(error);
       toast(normalized.message ?? "Could not switch schema", "error");
@@ -203,7 +203,7 @@ export function SqlPanel() {
     const editor = editors.find((item) => item.id === activeEditorId);
     if (!editor?.connectionId) bindEditorConnection(activeEditorId, connId);
     if (readOnly && isWrite(text)) {
-      toast("Connection is read-only — writes are blocked.", "error");
+      toast(t("sql.readOnlyWriteBlocked"), "error");
       return;
     }
     if (!(await confirmProdWrite(conn, text))) return;
@@ -259,16 +259,16 @@ export function SqlPanel() {
   const explain = async (mode: "plan" | "analyze") => {
     if (!connId || !conn || running) return;
     if (mode === "analyze" && readOnly) {
-      toast("Read-only — Explain Analyze executes the query and is blocked.", "error");
+      toast(t("sql.readOnlyAnalyzeBlocked"), "error");
       return;
     }
     if (
       mode === "analyze" &&
       conn.env === "prod" &&
       !(await confirmDialog({
-        title: "Run Explain Analyze on PRODUCTION?",
+        title: t("sql.analyzeProdTitle"),
         message: "Explain Analyze executes the selected SELECT/WITH query on the production database. Continue?",
-        confirmLabel: "Analyze on production",
+        confirmLabel: t("sql.analyzeProdConfirm"),
         danger: true,
       }))
     ) {
@@ -523,19 +523,19 @@ export function SqlPanel() {
   const saveAs = async (kind: "script" | "favorite") => {
     if (!sql.trim()) return;
     const name = await promptDialog({
-      title: kind === "script" ? "Save SQL script" : "Add to Starred",
-      label: "Name",
-      placeholder: kind === "script" ? "e.g. monthly report" : "e.g. active customers",
+      title: kind === "script" ? t("sql.saveScriptTitle") : t("sql.addStarredTitle"),
+      label: t("sql.name"),
+      placeholder: kind === "script" ? t("sql.scriptPlaceholder") : t("sql.starPlaceholder"),
     });
     if (!name?.trim()) return;
     if (kind === "script") {
       const nextName = name.trim();
       saveScript(nextName, sql);
       renameEditor(activeEditorId, nextName);
-      toast(`Saved script · ${nextName}`, "success");
+      toast(t("sql.savedScript", { name: nextName }), "success");
     } else {
       saveFavorite(name.trim(), sql);
-      toast("Added to Starred", "success");
+      toast(t("sql.addedStarred"), "success");
     }
   };
 
@@ -880,11 +880,11 @@ export function SqlPanel() {
                       <div className="bud-log-row err">
                         <span className="bud-logs-date">{fmtLogDate(new Date().toISOString())}</span>
                         <span className="bud-logs-chev">›</span>
-                        <span className="bud-logs-msg">ERROR: {err.message ?? err.kind}</span>
+                        <span className="bud-logs-msg">{t("sql.errorPrefix")}: {err.message ?? err.kind}</span>
                       </div>
                     )}
                     {rows.length === 0 && !err ? (
-                      <div className="bud-empty">{history.length === 0 ? "No queries run yet." : "No matching log entries."}</div>
+                      <div className="bud-empty">{history.length === 0 ? t("sql.noQueriesYet") : t("sql.noMatchingLogs")}</div>
                     ) : (
                       rows.map((h) => (
                         <div className="bud-log-row" key={h.id}>

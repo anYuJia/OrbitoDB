@@ -153,7 +153,7 @@ function UtilitiesPanel() {
       setBackups([]);
       setBackupError(
         error && typeof error === "object" && "message" in error
-          ? String((error as { message?: unknown }).message ?? "Could not load backups")
+          ? String((error as { message?: unknown }).message ?? t("workspace.backupLoadFailed"))
           : String(error),
       );
     }
@@ -172,12 +172,12 @@ function UtilitiesPanel() {
     setBackupError(null);
     try {
       const backup = await getBackend().createBackup(activeId);
-      toast(`Created SQLite snapshot ${backup.id}`, "success");
+      toast(t("workspace.snapshotCreated", { id: backup.id }), "success");
       await loadBackups();
     } catch (error) {
       const message =
         error && typeof error === "object" && "message" in error
-          ? String((error as { message?: unknown }).message ?? "Backup failed")
+          ? String((error as { message?: unknown }).message ?? t("workspace.backupFailed"))
           : String(error);
       setBackupError(message);
       toast(message, "error");
@@ -189,15 +189,14 @@ function UtilitiesPanel() {
   const restoreSnapshot = async (backup: BackupInfo) => {
     if (!activeId || !activeConnection || activeConnection.engine !== "sqlite" || backupBusy) return;
     if (readOnly) {
-      toast("Read-only — restore is blocked.", "error");
+      toast(t("workspace.restoreReadOnly"), "error");
       return;
     }
     if (
       !(await confirmDialog({
-        title: "Restore SQLite snapshot?",
-        message:
-          `Restore “${backup.id}”? OrbitoDB will create a safety snapshot of the current database first, then replace the active SQLite file.`,
-        confirmLabel: "Restore",
+        title: t("workspace.restoreSnapshotTitle"),
+        message: t("workspace.restoreSnapshotMessage", { id: backup.id }),
+        confirmLabel: t("common.restore"),
         danger: true,
       }))
     ) {
@@ -211,11 +210,11 @@ function UtilitiesPanel() {
       await getBackend().restoreBackup(activeId, backup.id);
       await openAndIntrospect(activeId);
       await loadBackups();
-      toast(`Restored snapshot ${backup.id}`, "success");
+      toast(t("workspace.snapshotRestored", { id: backup.id }), "success");
     } catch (error) {
       const message =
         error && typeof error === "object" && "message" in error
-          ? String((error as { message?: unknown }).message ?? "Restore failed")
+          ? String((error as { message?: unknown }).message ?? t("workspace.restoreFailed"))
           : String(error);
       setBackupError(message);
       toast(message, "error");
@@ -232,8 +231,8 @@ function UtilitiesPanel() {
   const copyCommand = (command: string, label: string) => {
     void navigator.clipboard
       ?.writeText(command)
-      .then(() => toast(`Copied ${label}`, "success"))
-      .catch(() => toast("Clipboard unavailable", "error"));
+      .then(() => toast(t("workspace.copied", { label }), "success"))
+      .catch(() => toast(t("workspace.clipboardUnavailable"), "error"));
   };
 
   const formatBytes = (bytes: number) => {
@@ -451,7 +450,7 @@ function SettingsPanel({
     } catch (error) {
       setDiagnosticsError(
         error && typeof error === "object" && "message" in error
-          ? String((error as { message?: unknown }).message ?? "Diagnostics failed")
+          ? String((error as { message?: unknown }).message ?? t("workspace.diagnosticsFailed"))
           : String(error),
       );
     } finally {

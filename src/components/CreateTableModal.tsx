@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import type { ColumnDef, Engine } from "../ipc/types";
 import { backdropV, centeredModalV, MotionButton } from "../lib/motion";
+import { useI18n } from "../lib/i18n";
 import { useStore } from "../state/store";
 
 const TYPES: Record<Engine, string[]> = {
@@ -12,6 +13,7 @@ const TYPES: Record<Engine, string[]> = {
 };
 
 export function CreateTableModal({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
   const createTable = useStore((s) => s.createTable);
   const conn = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const [name, setName] = useState("");
@@ -84,18 +86,18 @@ export function CreateTableModal({ onClose }: { onClose: () => void }) {
       >
         <header className="odb-create-table-head">
           <div>
-            <span>Schema</span>
-            <h2>Create table</h2>
-            <p>{conn ? conn.name + " · " + conn.database : "Active connection"}</p>
+            <span>{t("createTable.eyebrow")}</span>
+            <h2>{t("createTable.title")}</h2>
+            <p>{conn ? conn.name + " · " + conn.database : t("createTable.activeConnection")}</p>
           </div>
-          <button onClick={onClose} title="Close">
+          <button onClick={onClose} title={t("common.close")} aria-label={t("common.close")}>
             <IconX size={16} stroke={1.8} />
           </button>
         </header>
 
         <div className="odb-create-table-body">
           <label className="odb-form-field odb-table-name-field">
-            <span>Table name</span>
+            <span>{t("createTable.tableName")}</span>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -110,10 +112,10 @@ export function CreateTableModal({ onClose }: { onClose: () => void }) {
           <div className="odb-create-columns">
             <div className="odb-create-column-row header">
               <span>#</span>
-              <span>Name</span>
-              <span>SQL type</span>
-              <span>NULL</span>
-              <span>PK</span>
+              <span>{t("createTable.name")}</span>
+              <span>{t("createTable.sqlType")}</span>
+              <span>{t("createTable.null")}</span>
+              <span>{t("createTable.primaryKey")}</span>
               <span />
             </div>
             {cols.map((column, index) => (
@@ -123,19 +125,19 @@ export function CreateTableModal({ onClose }: { onClose: () => void }) {
                   value={column.name}
                   onChange={(e) => update(index, { name: e.target.value })}
                   placeholder={index === 0 ? "id" : "column_name"}
-                  aria-label={"Column " + (index + 1) + " name"}
+                  aria-label={t("createTable.columnNameAria", { index: index + 1 })}
                 />
                 <select
                   value={column.dataType}
                   onChange={(e) => update(index, { dataType: e.target.value })}
-                  aria-label={"Column " + (index + 1) + " type"}
+                  aria-label={t("createTable.columnTypeAria", { index: index + 1 })}
                 >
                   {!types.includes(column.dataType) && <option value={column.dataType}>{column.dataType}</option>}
                   {types.map((type) => (
                     <option key={type} value={type}>{type}</option>
                   ))}
                 </select>
-                <label className="odb-check-cell" title="Allow NULL">
+                <label className="odb-check-cell" title={t("createTable.allowNull")}>
                   <input
                     type="checkbox"
                     checked={column.nullable}
@@ -143,7 +145,7 @@ export function CreateTableModal({ onClose }: { onClose: () => void }) {
                     onChange={(e) => update(index, { nullable: e.target.checked })}
                   />
                 </label>
-                <label className="odb-check-cell pk" title="Primary key">
+                <label className="odb-check-cell pk" title={t("createTable.primaryKeyTitle")}>
                   <input
                     type="checkbox"
                     checked={column.primaryKey}
@@ -153,7 +155,7 @@ export function CreateTableModal({ onClose }: { onClose: () => void }) {
                 </label>
                 <button
                   className="odb-remove-column"
-                  title="Remove column"
+                  title={t("createTable.removeColumn")} aria-label={t("createTable.removeColumn")}
                   onClick={() => removeCol(index)}
                   disabled={cols.length <= 1}
                 >
@@ -165,16 +167,16 @@ export function CreateTableModal({ onClose }: { onClose: () => void }) {
 
           <button className="odb-add-column" onClick={addCol}>
             <IconPlus size={14} stroke={2} />
-            Add column
+            {t("createTable.addColumn")}
           </button>
         </div>
 
         <footer className="odb-create-table-footer">
-          <span>⌘/Ctrl + Enter to create</span>
+          <span>{t("createTable.shortcut")}</span>
           <div>
-            <MotionButton className="odb-modal-secondary" onClick={onClose}>Cancel</MotionButton>
+            <MotionButton className="odb-modal-secondary" onClick={onClose}>{t("common.cancel")}</MotionButton>
             <MotionButton className="odb-modal-primary" onClick={() => void submit()} disabled={!canCreate}>
-              {busy ? "Creating…" : "Create table"}
+              {busy ? t("createTable.creating") : t("createTable.title")}
             </MotionButton>
           </div>
         </footer>
