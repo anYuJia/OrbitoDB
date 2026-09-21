@@ -1,5 +1,7 @@
 use crate::error::AppResult;
-use crate::types::{ConnectionConfig, Engine};
+const MAX_QUERY_HISTORY: i64 = 1000;
+
+use crate::types::{ConnectionConfig, Engine, SshTunnelConfig, TlsConfig};
 use serde::Serialize;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::Row;
@@ -33,10 +35,42 @@ impl Store {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS connections (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, engine TEXT NOT NULL,
-                host TEXT, port INTEGER, database TEXT NOT NULL, username TEXT)",
+                host TEXT, port INTEGER, database TEXT NOT NULL, username TEXT, env TEXT,
+                group_name TEXT, schema_name TEXT, tls_json TEXT, ssh_json TEXT)",
         )
         .execute(&pool)
         .await?;
+
+        // Migration for profiles created before environment labels were persisted.
+        let connection_cols = sqlx::query("PRAGMA table_info(connections)")
+            .fetch_all(&pool)
+            .await?;
+        let has_env = connection_cols
+            .iter()
+            .any(|row| row.get::<String, _>("name") == "env");
+        if !has_env {
+            sqlx::query("ALTER TABLE connections ADD COLUMN env TEXT")
+                .execute(&pool)
+                .await?;
+        }
+
+        let connection_cols = sqlx::query("PRAGMA table_info(connections)")
+            .fetch_all(&pool)
+            .await?;
+        for (name, ddl) in [
+            ("group_name", "ALTER TABLE connections ADD COLUMN group_name TEXT"),
+            ("schema_name", "ALTER TABLE connections ADD COLUMN schema_name TEXT"),
+            ("tls_json", "ALTER TABLE connections ADD COLUMN tls_json TEXT"),
+            ("ssh_json", "ALTER TABLE connections ADD COLUMN ssh_json TEXT"),
+        ] {
+            let exists = connection_cols
+                .iter()
+                .any(|row| row.get::<String, _>("name") == name);
+            if !exists {
+                sqlx::query(ddl).execute(&pool).await?;
+            }
+        }
+
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS query_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, connection_id TEXT NOT NULL,
@@ -49,7 +83,8 @@ impl Store {
 
     pub async fn list_connections(&self) -> AppResult<Vec<ConnectionConfig>> {
         let rows = sqlx::query(
-            "SELECT id,name,engine,host,port,database,username FROM connections ORDER BY name",
+            "SELECT id,name,engine,host,port,database,username,env,group_name,schema_name,tls_json,ssh_json
+             FROM connections ORDER BY COALESCE(group_name,''), name",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -63,6 +98,15 @@ impl Store {
                 port: r.get::<Option<i64>, _>("port").map(|p| p as u16),
                 database: r.get("database"),
                 username: r.get("username"),
+                env: r.get("env"),
+                group: r.get("group_name"),
+                schema: r.get("schema_name"),
+                tls: r
+                    .get::<Option<String>, _>("tls_json")
+                    .and_then(|json| serde_json::from_str::<TlsConfig>(&json).ok()),
+                ssh: r
+                    .get::<Option<String>, _>("ssh_json")
+                    .and_then(|json| serde_json::from_str::<SshTunnelConfig>(&json).ok()),
             });
         }
         Ok(out)
@@ -75,10 +119,11 @@ impl Store {
             Engine::Sqlite => "sqlite",
         };
         sqlx::query(
-            "INSERT INTO connections (id,name,engine,host,port,database,username)
-             VALUES (?1,?2,?3,?4,?5,?6,?7)
+            "INSERT INTO connections (id,name,engine,host,port,database,username,env,group_name,schema_name,tls_json,ssh_json)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
              ON CONFLICT(id) DO UPDATE SET
-                name=?2, engine=?3, host=?4, port=?5, database=?6, username=?7",
+                name=?2, engine=?3, host=?4, port=?5, database=?6, username=?7, env=?8,
+                group_name=?9, schema_name=?10, tls_json=?11, ssh_json=?12",
         )
         .bind(&cfg.id)
         .bind(&cfg.name)
@@ -87,6 +132,11 @@ impl Store {
         .bind(cfg.port.map(|p| p as i64))
         .bind(&cfg.database)
         .bind(&cfg.username)
+        .bind(&cfg.env)
+        .bind(&cfg.group)
+        .bind(&cfg.schema)
+        .bind(cfg.tls.as_ref().and_then(|tls| serde_json::to_string(tls).ok()))
+        .bind(cfg.ssh.as_ref().and_then(|ssh| serde_json::to_string(ssh).ok()))
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -101,11 +151,22 @@ impl Store {
     }
 
     pub async fn add_history(&self, connection_id: &str, sql: &str) -> AppResult<()> {
+        let mut tx = self.pool.begin().await?;
         sqlx::query("INSERT INTO query_history (connection_id, sql) VALUES (?1,?2)")
             .bind(connection_id)
             .bind(sql)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+        sqlx::query(
+            "DELETE FROM query_history
+             WHERE id NOT IN (
+               SELECT id FROM query_history ORDER BY id DESC LIMIT ?1
+             )",
+        )
+        .bind(MAX_QUERY_HISTORY)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -144,12 +205,39 @@ mod tests {
             port: Some(5432),
             database: "app".into(),
             username: Some("me".into()),
+            env: Some("prod".into()),
+            group: Some("Work".into()),
+            schema: Some("analytics".into()),
+            tls: Some(TlsConfig {
+                mode: crate::types::TlsMode::VerifyCa,
+                ca_path: Some("C:/certs/root-ca.pem".into()),
+            }),
+            ssh: Some(SshTunnelConfig {
+                enabled: true,
+                host: "bastion.example.com".into(),
+                port: 2222,
+                username: "deploy".into(),
+                auth: crate::types::SshAuth::Key,
+                private_key_path: Some("~/.ssh/id_ed25519".into()),
+            }),
         };
         store.upsert_connection(&cfg).await.unwrap();
         let list = store.list_connections().await.unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "local pg");
         assert_eq!(list[0].port, Some(5432));
+        assert_eq!(list[0].env.as_deref(), Some("prod"));
+        assert_eq!(list[0].group.as_deref(), Some("Work"));
+        assert_eq!(list[0].schema.as_deref(), Some("analytics"));
+        let tls = list[0].tls.as_ref().expect("TLS config persisted");
+        assert_eq!(tls.mode, crate::types::TlsMode::VerifyCa);
+        assert_eq!(tls.ca_path.as_deref(), Some("C:/certs/root-ca.pem"));
+        let ssh = list[0].ssh.as_ref().expect("SSH config persisted");
+        assert!(ssh.enabled);
+        assert_eq!(ssh.host, "bastion.example.com");
+        assert_eq!(ssh.port, 2222);
+        assert_eq!(ssh.username, "deploy");
+        assert_eq!(ssh.private_key_path.as_deref(), Some("~/.ssh/id_ed25519"));
 
         store.add_history("c1", "SELECT 1").await.unwrap();
         store.add_history("c1", "SELECT 2").await.unwrap();
@@ -159,6 +247,68 @@ mod tests {
 
         store.delete_connection("c1").await.unwrap();
         assert!(store.list_connections().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn caps_query_history_to_latest_entries() {
+        let store = Store::open(":memory:").await.unwrap();
+        for i in 0..(MAX_QUERY_HISTORY + 5) {
+            store
+                .add_history("c1", &format!("SELECT {i}"))
+                .await
+                .unwrap();
+        }
+        let history = store.recent_history(MAX_QUERY_HISTORY + 100).await.unwrap();
+        assert_eq!(history.len() as i64, MAX_QUERY_HISTORY);
+        assert_eq!(history.first().unwrap().sql, format!("SELECT {}", MAX_QUERY_HISTORY + 4));
+        assert_eq!(history.last().unwrap().sql, "SELECT 5");
+    }
+
+    #[tokio::test]
+    async fn migrates_legacy_connection_environment_column() {
+        let dir = std::env::temp_dir().join(format!(
+            "orbitodb_store_migration_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let db = dir.join("legacy.db");
+        let path = db.to_str().unwrap();
+        let url = format!("sqlite:{path}?mode=rwc");
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE connections (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, engine TEXT NOT NULL,
+                host TEXT, port INTEGER, database TEXT NOT NULL, username TEXT
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO connections (id,name,engine,host,port,database,username)
+             VALUES ('legacy','Legacy','sqlite',NULL,NULL,':memory:',NULL)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        drop(pool);
+
+        let store = Store::open(path).await.unwrap();
+        let mut cfg = store.list_connections().await.unwrap().remove(0);
+        assert!(cfg.env.is_none());
+
+        cfg.env = Some("staging".into());
+        store.upsert_connection(&cfg).await.unwrap();
+        let list = store.list_connections().await.unwrap();
+        assert_eq!(list[0].env.as_deref(), Some("staging"));
+
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
@@ -179,6 +329,11 @@ mod tests {
             port: None,
             database: ":memory:".into(),
             username: None,
+            env: None,
+            group: None,
+            schema: None,
+            tls: None,
+            ssh: None,
         };
         store.upsert_connection(&cfg).await.unwrap();
         assert_eq!(store.list_connections().await.unwrap().len(), 1);

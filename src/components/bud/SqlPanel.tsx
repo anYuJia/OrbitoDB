@@ -1,4 +1,5 @@
 import {
+  IconActivity,
   IconAlignLeft,
   IconArrowBackUp,
   IconChartBar,
@@ -19,11 +20,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getBackend } from "../../ipc/backend";
 import { resolveParams } from "../../lib/params";
 import { formatSql } from "../../lib/sqlformat";
+import { buildExplainSql } from "../../lib/explain";
 import { CellViewer } from "./CellViewer";
 import { ExportMenu } from "./ExportMenu";
 import { confirmDialog, promptDialog } from "../../state/dialog";
 import { confirmIfDestructive, confirmProdWrite, isWrite } from "../../state/safety";
 import { toast } from "../../state/toast";
+import { translate, useI18n } from "../../lib/i18n";
+import { shortcutLabel } from "../../lib/platform";
 import type { AppError, Column } from "../../ipc/types";
 import { isFkError, useStore, withFkDisabled } from "../../state/store";
 
@@ -104,12 +108,17 @@ function caretXY(ta: HTMLTextAreaElement): { x: number; y: number } {
 }
 
 export function SqlPanel() {
+  const { locale, t } = useI18n();
+  const runShortcut = shortcutLabel("Enter");
+  const formatShortcut = shortcutLabel("F", { shift: true });
+  const commentShortcut = shortcutLabel("/");
   const sql = useStore((s) => s.sql);
   const setSql = useStore((s) => s.setSql);
   const connId = useStore((s) => s.activeConnectionId);
   const connections = useStore((s) => s.connections);
   const conn = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
+  const saveConnection = useStore((s) => s.saveConnection);
   const loadHistory = useStore((s) => s.loadHistory);
   const history = useStore((s) => s.history);
   const tables = useStore((s) => s.schema.tables);
@@ -119,6 +128,8 @@ export function SqlPanel() {
   const activeEditorId = useStore((s) => s.activeEditorId);
   const editors = useStore((s) => s.editors);
   const selectEditor = useStore((s) => s.selectEditor);
+  const renameEditor = useStore((s) => s.renameEditor);
+  const bindEditorConnection = useStore((s) => s.bindEditorConnection);
   const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
   const res = useStore((s) => s.editorResults[s.activeEditorId] ?? null);
   const err = useStore((s) => s.editorErrors[s.activeEditorId] ?? null);
@@ -132,9 +143,8 @@ export function SqlPanel() {
 
   const [running, setRunning] = useState(false);
   const [tab, setTab] = useState<Tab>("result");
-  const [sticky, setSticky] = useState(false);
   const [maxRows, setMaxRows] = useState("1000");
-  const [maxChars, setMaxChars] = useState("-1");
+  const [schemas, setSchemas] = useState<string[]>([]);
   const [caretLine, setCaretLine] = useState(1);
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const [editorH, setEditorH] = useState<number | null>(null);
@@ -153,13 +163,47 @@ export function SqlPanel() {
   const pendingSel = useRef<{ s: number; e: number } | null>(null);
   const runId = useRef(0);
 
-  const schemaName = conn?.engine === "postgres" ? "public" : conn?.database || "main";
-  const explainPrefix = conn?.engine === "sqlite" ? "EXPLAIN QUERY PLAN " : "EXPLAIN ";
+  const schemaName =
+    conn?.engine === "postgres" ? conn.schema?.trim() || "public" : conn?.database || "main";
 
+  useEffect(() => {
+    if (!connId || conn?.engine !== "postgres") {
+      setSchemas([]);
+      return;
+    }
+    let alive = true;
+    void getBackend()
+      .listSchemas(connId)
+      .then((items) => {
+        if (!alive) return;
+        const unique = [...new Set([schemaName, ...items.filter(Boolean)])];
+        setSchemas(unique);
+      })
+      .catch(() => {
+        if (alive) setSchemas([schemaName]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [connId, conn?.engine, schemaName]);
+
+  const switchSchema = async (nextSchema: string) => {
+    if (!conn || conn.engine !== "postgres" || !nextSchema || nextSchema === schemaName) return;
+    try {
+      await saveConnection({ ...conn, schema: nextSchema }, null);
+      await openAndIntrospect(conn.id);
+      toast(t("sql.schemaSwitched", { schema: nextSchema }), "success");
+    } catch (error) {
+      const normalized = normalize(error);
+      toast(normalized.message ?? "Could not switch schema", "error");
+    }
+  };
   const exec = async (text = sql) => {
     if (!connId || running) return;
+    const editor = editors.find((item) => item.id === activeEditorId);
+    if (!editor?.connectionId) bindEditorConnection(activeEditorId, connId);
     if (readOnly && isWrite(text)) {
-      toast("Connection is read-only — writes are blocked.", "error");
+      toast(t("sql.readOnlyWriteBlocked"), "error");
       return;
     }
     if (!(await confirmProdWrite(conn, text))) return;
@@ -212,9 +256,61 @@ export function SqlPanel() {
     }
   };
 
-  const stop = () => {
-    runId.current++; // any in-flight result will be ignored
-    setRunning(false);
+  const explain = async (mode: "plan" | "analyze") => {
+    if (!connId || !conn || running) return;
+    if (mode === "analyze" && readOnly) {
+      toast(t("sql.readOnlyAnalyzeBlocked"), "error");
+      return;
+    }
+    if (
+      mode === "analyze" &&
+      conn.env === "prod" &&
+      !(await confirmDialog({
+        title: t("sql.analyzeProdTitle"),
+        message: "Explain Analyze executes the selected SELECT/WITH query on the production database. Continue?",
+        confirmLabel: t("sql.analyzeProdConfirm"),
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+    try {
+      let serverVersion: string | null = null;
+      if (mode === "analyze" && conn.engine === "mysql") {
+        try {
+          serverVersion = (await getBackend().connectionDiagnostics(connId)).serverVersion;
+        } catch {
+          // Fall back to MySQL EXPLAIN ANALYZE syntax; a server-side syntax
+          // error remains visible if an old/limited server does not support it.
+        }
+      }
+      const statement = buildExplainSql(conn.engine, selectedOrAll(), mode, serverVersion);
+      await exec(statement);
+    } catch (error) {
+      const normalized = normalize(error);
+      toast(normalized.message ?? "Could not build query plan", "error");
+    }
+  };
+
+  const stop = async () => {
+    if (!connId || !running) return;
+    runId.current++; // Ignore any response that races with cancellation.
+    try {
+      const cancelled = await getBackend().cancelQuery(connId);
+      toast(
+        cancelled
+          ? "Query cancelled"
+          : "This database backend cannot interrupt the active query; its eventual result will be ignored.",
+        cancelled ? "success" : "info",
+      );
+    } catch (error) {
+      const normalized = normalize(error);
+      toast(normalized.message ?? "Could not cancel query", "error");
+    } finally {
+      // Keep Execute locked until the cancellation attempt finishes so a fast
+      // second query cannot replace the tracked backend id and get cancelled.
+      setRunning(false);
+    }
   };
 
   /** The highlighted selection if there is one, otherwise the whole editor. */
@@ -427,13 +523,20 @@ export function SqlPanel() {
   const saveAs = async (kind: "script" | "favorite") => {
     if (!sql.trim()) return;
     const name = await promptDialog({
-      title: kind === "script" ? "Save SQL script" : "Add to favorites",
-      label: "Name",
-      placeholder: kind === "script" ? "e.g. monthly report" : "e.g. active customers",
+      title: kind === "script" ? t("sql.saveScriptTitle") : t("sql.addStarredTitle"),
+      label: t("sql.name"),
+      placeholder: kind === "script" ? t("sql.scriptPlaceholder") : t("sql.starPlaceholder"),
     });
     if (!name?.trim()) return;
-    if (kind === "script") saveScript(name.trim(), sql);
-    else saveFavorite(name.trim(), sql);
+    if (kind === "script") {
+      const nextName = name.trim();
+      saveScript(nextName, sql);
+      renameEditor(activeEditorId, nextName);
+      toast(t("sql.savedScript", { name: nextName }), "success");
+    } else {
+      saveFavorite(name.trim(), sql);
+      toast(t("sql.addedStarred"), "success");
+    }
   };
 
   const lineCount = sql.split("\n").length;
@@ -471,68 +574,85 @@ export function SqlPanel() {
       <div className="bud-ide-toolbar">
         <button
           className="bud-sql-run bud-tb-exec"
-          title="Execute — runs the selection if any (⌘↵)"
+          title={t("sql.executeSelection", { shortcut: runShortcut })} aria-label={t("sql.executeSelection", { shortcut: runShortcut })}
           onClick={() => void exec(selectedOrAll())}
           disabled={running || !connId}
         >
           <IconPlayerPlay size={15} stroke={1.8} />
         </button>
-        <button className="bud-tb-exec" title="Execute as script" onClick={() => void exec()} disabled={running || !connId}>
+        <button className="bud-tb-exec" title={t("sql.executeScript")} aria-label={t("sql.executeScript")} onClick={() => void exec()} disabled={running || !connId}>
           <IconPlayerSkipForward size={15} stroke={1.8} />
         </button>
-        <button title="Stop" onClick={stop} disabled={!running}>
+        <button title={t("sql.stop")} aria-label={t("sql.stop")} onClick={() => void stop()} disabled={!running}>
           <IconPlayerStop size={15} stroke={1.8} />
         </button>
         <span className="bud-tb-sep" />
         <button
           className={`bud-tb-toggle ${autoCommit ? "" : "on"}`}
-          title={autoCommit ? "Auto-commit is on — click for manual transactions" : "Manual commit — writes run in a transaction"}
+          title={autoCommit ? t("sql.autoCommitOn") : t("sql.manualCommit")}
           onClick={() => setAutoCommit(!autoCommit)}
         >
-          {autoCommit ? "Auto" : "Manual"}
+          {autoCommit ? t("sql.auto") : t("sql.manual")}
         </button>
-        <button className={`bud-tb-commit ${txnDirty ? "live" : ""}`} title="Commit transaction" onClick={() => void commitTxn()} disabled={!txnDirty}>
+        <button className={`bud-tb-commit ${txnDirty ? "live" : ""}`} title={t("sql.commitTransaction")} aria-label={t("sql.commitTransaction")} onClick={() => void commitTxn()} disabled={!txnDirty}>
           <IconCheck size={15} stroke={1.8} />
         </button>
-        <button className={`bud-tb-rollback ${txnDirty ? "live" : ""}`} title="Rollback transaction" onClick={() => void rollbackTxn()} disabled={!txnDirty}>
+        <button className={`bud-tb-rollback ${txnDirty ? "live" : ""}`} title={t("sql.rollbackTransaction")} aria-label={t("sql.rollbackTransaction")} onClick={() => void rollbackTxn()} disabled={!txnDirty}>
           <IconArrowBackUp size={15} stroke={1.8} />
         </button>
         <span className="bud-tb-sep" />
-        <button title="Format SQL (Ctrl+Shift+F)" onClick={() => setSql(formatSql(sql))} disabled={!sql.trim()}>
+        <button title={t("sql.format", { shortcut: formatShortcut })} aria-label={t("sql.format", { shortcut: formatShortcut })} onClick={() => setSql(formatSql(sql))} disabled={!sql.trim()}>
           <IconAlignLeft size={15} stroke={1.8} />
         </button>
-        <button title="Toggle comment (Ctrl+/)" onClick={toggleComment} disabled={!sql.trim()}>
+        <button title={t("sql.toggleComment", { shortcut: commentShortcut })} aria-label={t("sql.toggleComment", { shortcut: commentShortcut })} onClick={toggleComment} disabled={!sql.trim()}>
           <IconMessage2 size={15} stroke={1.8} />
         </button>
-        <button title="Re-run" onClick={() => void exec(selectedOrAll())} disabled={running || !connId}>
+        <button title={t("sql.rerun")} aria-label={t("sql.rerun")} onClick={() => void exec(selectedOrAll())} disabled={running || !connId}>
           <IconRefresh size={15} stroke={1.8} />
         </button>
-        <button title="Explain plan" onClick={() => void exec(explainPrefix + selectedOrAll())} disabled={!sql.trim() || !connId}>
+        <button
+          title={t("sql.explain")} aria-label={t("sql.explain")}
+          onClick={() => void explain("plan")}
+          disabled={running || !sql.trim() || !connId}
+        >
           <IconFileCode size={15} stroke={1.8} />
         </button>
+        <button
+          title={
+            conn?.engine === "sqlite"
+              ? t("sql.analyzeUnavailable")
+              : t("sql.explainAnalyze")
+          }
+          onClick={() => void explain("analyze")}
+          disabled={running || !sql.trim() || !connId || conn?.engine === "sqlite" || readOnly}
+        >
+          <IconActivity size={15} stroke={1.8} />
+        </button>
         <span className="bud-tb-sep" />
-        <button title="Save as script" onClick={() => void saveAs("script")} disabled={!sql.trim()}>
+        <button title={t("sql.saveScript")} aria-label={t("sql.saveScript")} onClick={() => void saveAs("script")} disabled={!sql.trim()}>
           <IconDeviceFloppy size={15} stroke={1.8} />
         </button>
-        <button title="Add to favorites" onClick={() => void saveAs("favorite")} disabled={!sql.trim()}>
+        <button title={t("sql.addStarred")} aria-label={t("sql.addStarred")} onClick={() => void saveAs("favorite")} disabled={!sql.trim()}>
           <IconStar size={15} stroke={1.8} />
         </button>
-        <button title="Clear editor" onClick={() => setSql("")} disabled={!sql}>
+        <button title={t("sql.clearEditor")} aria-label={t("sql.clearEditor")} onClick={() => setSql("")} disabled={!sql}>
           <IconEraser size={15} stroke={1.8} />
         </button>
       </div>
 
-      <div className="bud-connbar">
-        <label className="bud-cb-field grow">
-          <span className="bud-cb-label">Database Connection</span>
+      <div className="odb-query-context">
+        <label className="odb-query-connection">
+          <span>{t("sql.connection")}</span>
           <select
-            className="bud-cb-select"
             value={connId ?? ""}
             onChange={(e) => {
-              if (e.target.value && e.target.value !== connId) void openAndIntrospect(e.target.value);
+              const nextId = e.target.value;
+              if (!nextId || nextId === connId) return;
+              bindEditorConnection(activeEditorId, nextId);
+              void openAndIntrospect(nextId);
             }}
           >
-            {!connId && <option value="">No connection</option>}
+            {!connId && <option value="">{t("sql.noConnection")}</option>}
             {connections.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -540,23 +660,35 @@ export function SqlPanel() {
             ))}
           </select>
         </label>
-        <label className="bud-cb-check">
-          <input type="checkbox" checked={sticky} onChange={(e) => setSticky(e.target.checked)} />
-          <span>Sticky Database</span>
-        </label>
-        <label className="bud-cb-field grow">
-          <span className="bud-cb-label">Schema</span>
-          <select className="bud-cb-select" defaultValue={schemaName}>
-            <option>{schemaName}</option>
-          </select>
-        </label>
-        <label className="bud-cb-field sm">
-          <span className="bud-cb-label">Max Rows</span>
-          <input className="bud-cb-input" value={maxRows} onChange={(e) => setMaxRows(e.target.value)} />
-        </label>
-        <label className="bud-cb-field sm">
-          <span className="bud-cb-label">Max Chars</span>
-          <input className="bud-cb-input" value={maxChars} onChange={(e) => setMaxChars(e.target.value)} />
+        <span className="odb-query-separator" />
+        {conn?.engine === "postgres" ? (
+          <label className="odb-query-schema">
+            <span>{t("sql.schema")}</span>
+            <select value={schemaName} onChange={(e) => void switchSchema(e.target.value)}>
+              {(schemas.length ? schemas : [schemaName]).map((schema) => (
+                <option key={schema} value={schema}>{schema}</option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <div className="odb-query-context-item">
+            <span>{t("sql.database")}</span>
+            <b>{schemaName}</b>
+          </div>
+        )}
+        <div className="odb-query-context-item">
+          <span>{t("sql.engine")}</span>
+          <b>{conn?.engine === "postgres" ? "PostgreSQL" : conn?.engine === "mysql" ? "MySQL" : conn?.engine === "sqlite" ? "SQLite" : "—"}</b>
+        </div>
+        <span className="odb-query-context-spacer" />
+        <label className="odb-query-limit">
+          <span>{t("sql.displayLimit")}</span>
+          <input
+            inputMode="numeric"
+            value={maxRows}
+            onChange={(e) => setMaxRows(e.target.value.replace(/\D/g, ""))}
+            aria-label={t("sql.rowLimit")}
+          />
         </label>
       </div>
 
@@ -680,15 +812,14 @@ export function SqlPanel() {
         <div className="bud-sql-bar">
           <button
             className="bud-sql-exec"
-            title="Execute — runs the selection if any (⌘↵)"
+            title={t("sql.executeSelection", { shortcut: runShortcut })} aria-label={t("sql.executeSelection", { shortcut: runShortcut })}
             onClick={() => void exec(selectedOrAll())}
             disabled={running || !connId}
           >
             <IconPlayerPlay size={13} stroke={1.9} />
-            {running ? "Running…" : "Execute"}
+            {running ? t("sql.running") : t("sql.execute")}
             <span className="bud-kbd">
-              <kbd>⌘</kbd>
-              <kbd>↵</kbd>
+              <kbd>{runShortcut}</kbd>
             </span>
           </button>
           <span className="bud-ed-status">
@@ -696,33 +827,33 @@ export function SqlPanel() {
           </span>
           <span className="bud-ed-mode">INS</span>
           <span className="bud-ed-spacer" />
-          {running && <span className="bud-ed-running">Running…</span>}
+          {running && <span className="bud-ed-running">{t("sql.running")}</span>}
           {res && !err && (
             <span className="bud-ed-meta">
-              {res.rows.length} {res.rows.length === 1 ? "row" : "rows"} · {res.elapsedMs} ms
+              {t("status.rows", { count: res.rows.length.toLocaleString(locale) })} · {res.elapsedMs} ms
             </span>
           )}
-          {txnDirty && <span className="bud-ed-uncommitted" title="Uncommitted changes — Commit or Rollback">● Uncommitted</span>}
+          {txnDirty && <span className="bud-ed-uncommitted" title={t("sql.uncommitted")}>● {t("sql.uncommittedShort")}</span>}
           <span className="bud-ed-eol">LF</span>
-          <button className="bud-ed-eol bud-ed-commitmode" onClick={() => setAutoCommit(!autoCommit)} title="Toggle auto-commit">
-            Auto Commit: {autoCommit ? "ON" : "OFF"}
+          <button className="bud-ed-eol bud-ed-commitmode" onClick={() => setAutoCommit(!autoCommit)} title={t("sql.toggleAutocommit")}>
+            {t("sql.autoCommit")}: {autoCommit ? "ON" : "OFF"}
           </button>
           <span className="bud-ed-eol">UTF-8</span>
         </div>
       </div>
 
-      <div className="bud-vsplit" onMouseDown={onSplitDown} title="Drag to resize" />
+      <div className="bud-vsplit" onMouseDown={onSplitDown} title={t("sql.resize")} />
 
       <div className="bud-sql-results">
         <div className="bud-results-tabs">
-          <button className={tab === "log" ? "on" : ""} onClick={() => setTab("log")}>
-            Log
+          <button className={tab === "result" ? "on" : ""} onClick={() => setTab("result")}>
+            {res ? `${t("sql.result")} · ${res.rows.length.toLocaleString(locale)}` : t("sql.result")}
           </button>
           <button className={tab === "dbms" ? "on" : ""} onClick={() => setTab("dbms")}>
-            DBMS Output
+            {t("sql.messages")}
           </button>
-          <button className={tab === "result" ? "on" : ""} onClick={() => setTab("result")}>
-            {res ? `1: Result [${res.rows.length}]` : "Result"}
+          <button className={tab === "log" ? "on" : ""} onClick={() => setTab("log")}>
+            {t("sql.log")}
           </button>
         </div>
         <div className="bud-results-body">
@@ -735,25 +866,25 @@ export function SqlPanel() {
                   <div className="bud-logs-bar">
                     <div className="bud-logs-search">
                       <IconSearch size={13} stroke={1.7} />
-                      <input value={logFilter} placeholder="Filter logs…" onChange={(e) => setLogFilter(e.target.value)} />
+                      <input value={logFilter} placeholder={t("sql.filterLogs")} onChange={(e) => setLogFilter(e.target.value)} />
                     </div>
-                    <span className="bud-logs-count">{rows.length.toLocaleString()} entries</span>
+                    <span className="bud-logs-count">{t("sql.entries", { count: rows.length.toLocaleString() })}</span>
                   </div>
                   <div className="bud-logs-head">
-                    <span className="bud-logs-date">Date</span>
+                    <span className="bud-logs-date">{t("sql.date")}</span>
                     <span className="bud-logs-chev" />
-                    <span className="bud-logs-msg">Message</span>
+                    <span className="bud-logs-msg">{t("sql.message")}</span>
                   </div>
                   <div className="bud-logs-body">
                     {err && (
                       <div className="bud-log-row err">
                         <span className="bud-logs-date">{fmtLogDate(new Date().toISOString())}</span>
                         <span className="bud-logs-chev">›</span>
-                        <span className="bud-logs-msg">ERROR: {err.message ?? err.kind}</span>
+                        <span className="bud-logs-msg">{t("sql.errorPrefix")}: {err.message ?? err.kind}</span>
                       </div>
                     )}
                     {rows.length === 0 && !err ? (
-                      <div className="bud-empty">{history.length === 0 ? "No queries run yet." : "No matching log entries."}</div>
+                      <div className="bud-empty">{history.length === 0 ? t("sql.noQueriesYet") : t("sql.noMatchingLogs")}</div>
                     ) : (
                       rows.map((h) => (
                         <div className="bud-log-row" key={h.id}>
@@ -768,31 +899,31 @@ export function SqlPanel() {
               );
             })()
           ) : tab === "dbms" ? (
-            <div className="bud-results-log">No DBMS output.</div>
+            <div className="bud-results-log">{t("sql.noMessages")}</div>
           ) : err ? (
             <div className="bud-error">⚠ {err.message ?? err.kind}</div>
           ) : res && res.columns.length > 0 ? (
             <>
               <div className="bud-res-toolbar">
                 <div className="bud-res-seg">
-                  <button className={resultView === "table" ? "on" : ""} title="Table view" onClick={() => setResultView("table")}>
-                    <IconTable size={14} stroke={1.7} /> Table
+                  <button className={resultView === "table" ? "on" : ""} title={t("sql.tableView")} onClick={() => setResultView("table")}>
+                    <IconTable size={14} stroke={1.7} /> {t("sql.table")}
                   </button>
-                  <button className={resultView === "chart" ? "on" : ""} title="Chart view" onClick={() => setResultView("chart")}>
-                    <IconChartBar size={14} stroke={1.7} /> Chart
+                  <button className={resultView === "chart" ? "on" : ""} title={t("sql.chartView")} onClick={() => setResultView("chart")}>
+                    <IconChartBar size={14} stroke={1.7} /> {t("sql.chart")}
                   </button>
                 </div>
                 <div className="bud-res-filter">
                   <IconSearch size={13} stroke={1.7} />
-                  <input value={rowFilter} onChange={(e) => setRowFilter(e.target.value)} placeholder="Filter rows…" />
+                  <input value={rowFilter} onChange={(e) => setRowFilter(e.target.value)} placeholder={t("sql.filterRows")} />
                 </div>
-                <button title="Re-run" onClick={() => void exec()} disabled={running || !connId}>
+                <button title={t("sql.rerun")} aria-label={t("sql.rerun")} onClick={() => void exec()} disabled={running || !connId}>
                   <IconRefresh size={14} stroke={1.7} />
                 </button>
                 <ExportMenu result={{ ...res, rows: filteredRows }} />
                 <span className="bud-res-meta">
-                  {filteredRows.length.toLocaleString()} {filteredRows.length === 1 ? "row" : "rows"}
-                  {limited ? ` (capped at ${cap})` : ""} · {res.elapsedMs} ms
+                  {t("sql.resultRows", { count: filteredRows.length.toLocaleString(), label: t(filteredRows.length === 1 ? "sql.row" : "sql.rows") })}
+                  {limited ? ` (${t("sql.cappedAt", { count: cap })})` : ""} · {res.elapsedMs} ms
                 </span>
               </div>
               {resultView === "chart" ? (
@@ -821,7 +952,7 @@ export function SqlPanel() {
                             <td
                               key={ci}
                               className={cell == null ? "bud-null" : ""}
-                              title="Click to inspect"
+                              title={t("sql.clickInspect")}
                               onClick={() => setCellView({ value: cell == null ? "NULL" : String(cell), column: res.columns[ci]?.name })}
                             >
                               {cell == null ? "NULL" : String(cell)}
@@ -835,9 +966,9 @@ export function SqlPanel() {
               )}
             </>
           ) : res ? (
-            <div className="bud-empty">Statement ran. {res.rowsAffected} rows affected.</div>
+            <div className="bud-empty">{t("sql.statementRan", { count: res.rowsAffected ?? 0, label: t((res.rowsAffected ?? 0) === 1 ? "sql.row" : "sql.rows") })}</div>
           ) : (
-            <div className="bud-empty">Write SQL and press Run (⌘/Ctrl + ↵).</div>
+            <div className="bud-empty">{t("sql.emptyHint", { shortcut: runShortcut })}</div>
           )}
         </div>
       </div>
@@ -875,7 +1006,7 @@ function ResultChart({ columns, rows }: { columns: Column[]; rows: unknown[][] }
 
   const idLike = (name: string) => /(^id$|_id$|^.*key$)/i.test(name);
   const numericIdxs = columns.map((_, i) => i).filter((i) => isNum(i));
-  if (numericIdxs.length === 0) return <div className="bud-empty">No numeric column to chart.</div>;
+  if (numericIdxs.length === 0) return <div className="bud-empty">{translate("sql.noNumericChart")}</div>;
   // Prefer a real measure over a primary/foreign key column.
   const valueIdx = numericIdxs.find((i) => !idLike(columns[i].name)) ?? numericIdxs[0];
   const textIdx = columns.findIndex((_, i) => i !== valueIdx && !isNum(i));

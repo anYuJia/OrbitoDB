@@ -1,25 +1,29 @@
 name: Release
 
-# Builds a standalone Windows .exe and publishes it to GitHub Releases.
-# - every push to main  -> updates the rolling "latest" release
-# - a version tag (v*)  -> creates a versioned release
 on:
   push:
-    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
-jobs:
-  windows-exe:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
+env:
+  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('v0.1.{0}', github.run_number) }}
 
-      - uses: actions/setup-node@v4
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
         with:
-          node-version: "20"
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          package-manager-cache: false
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -27,37 +31,254 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Install JS dependencies
-        run: npm install
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Stamp version 0.1.${{ github.run_number }}
+      - name: Frontend unit tests
+        run: npm run test:ci
+
+      - name: Bridge syntax check
+        run: npm run check:bridge
+
+      - name: Release configuration check
+        run: npm run check:release
+
+      - name: Dependency audit
+        run: npm run audit:security
+
+      - name: TypeScript + Vite build
+        run: npm run build
+
+      - name: Rust check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+
+  windows:
+    needs: validate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          package-manager-cache: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Stamp application version
         shell: pwsh
         run: |
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
+            throw "Invalid release version: $version"
+          }
           $p = "src-tauri/tauri.conf.json"
-          (Get-Content $p -Raw) -replace '"version":\s*"[^"]*"', '"version": "0.1.${{ github.run_number }}"' | Set-Content $p -Encoding utf8
-          Write-Output "App version -> 0.1.${{ github.run_number }}"
+          (Get-Content $p -Raw) -replace '"version":\s*"[^"]*"', ('"version": "' + $version + '"') | Set-Content $p -Encoding utf8
 
-      - name: Build standalone .exe (no installer / no wizard)
-        run: npm run tauri build -- --no-bundle
+      - name: Build Windows NSIS + portable executable
+        run: npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
 
-      - name: Stage artifact
+      - name: Stage Windows artifacts and checksums
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist-exe | Out-Null
-          Copy-Item "src-tauri/target/release/orbitodb.exe" "dist-exe/OrbitoDB.exe"
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          $exe = "src-tauri/target/x86_64-pc-windows-msvc/release/orbitodb.exe"
+          if (-not (Test-Path $exe)) { throw "Portable executable missing: $exe" }
+          Copy-Item $exe "release-assets/OrbitoDB-windows-x64-portable.exe"
 
-      - name: Publish to Releases
+          $installer = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "NSIS installer was not produced" }
+          Copy-Item $installer.FullName "release-assets/OrbitoDB-windows-x64-setup.exe"
+
+          Get-ChildItem release-assets/* | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)" | Set-Content "$($_.FullName).sha256" -Encoding ascii
+          }
+
+      - name: Publish Windows assets
         uses: softprops/action-gh-release@v2
         with:
-          files: dist-exe/OrbitoDB.exe
-          tag_name: v0.1.${{ github.run_number }}
-          name: v0.1.${{ github.run_number }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          files: |
+            release-assets/*
+          fail_on_unmatched_files: true
+
+  macos:
+    needs: validate
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: arm64
+          - target: x86_64-apple-darwin
+            arch: x64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          package-manager-cache: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Stamp application version
+        shell: bash
+        run: |
+          version="${RELEASE_TAG#v}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Invalid release version: $version" >&2
+            exit 1
+          }
+          node -e 'const fs=require("fs");const p="src-tauri/tauri.conf.json";const c=JSON.parse(fs.readFileSync(p,"utf8"));c.version=process.argv[1];fs.writeFileSync(p,JSON.stringify(c,null,2)+"\n")' "$version"
+
+      - name: Build macOS DMG
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles dmg
+
+      - name: Stage macOS artifact and checksum
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          dmg="$(find "src-tauri/target/${{ matrix.target }}/release/bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$dmg" || { echo "DMG was not produced" >&2; exit 1; }
+          out="release-assets/OrbitoDB-macos-${{ matrix.arch }}.dmg"
+          cp "$dmg" "$out"
+          shasum -a 256 "$out" | sed 's#release-assets/##' > "$out.sha256"
+
+      - name: Publish macOS assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          files: |
+            release-assets/*
+          fail_on_unmatched_files: true
+
+  linux:
+    needs: validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          package-manager-cache: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Stamp application version
+        shell: bash
+        run: |
+          version="${RELEASE_TAG#v}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Invalid release version: $version" >&2
+            exit 1
+          }
+          node -e 'const fs=require("fs");const p="src-tauri/tauri.conf.json";const c=JSON.parse(fs.readFileSync(p,"utf8"));c.version=process.argv[1];fs.writeFileSync(p,JSON.stringify(c,null,2)+"\n")' "$version"
+
+      - name: Build Linux DEB + AppImage
+        run: npm run tauri build -- --target x86_64-unknown-linux-gnu --bundles deb,appimage
+
+      - name: Stage Linux artifacts and checksums
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          deb="$(find src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb -maxdepth 1 -name '*.deb' -print -quit)"
+          appimage="$(find src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage -maxdepth 1 -name '*.AppImage' -print -quit)"
+          test -n "$deb" || { echo "DEB was not produced" >&2; exit 1; }
+          test -n "$appimage" || { echo "AppImage was not produced" >&2; exit 1; }
+          cp "$deb" release-assets/OrbitoDB-linux-x64.deb
+          cp "$appimage" release-assets/OrbitoDB-linux-x64.AppImage
+          for file in release-assets/*; do
+            shasum -a 256 "$file" | sed 's#release-assets/##' > "$file.sha256"
+          done
+
+      - name: Publish Linux assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          files: |
+            release-assets/*
+          fail_on_unmatched_files: true
+
+  finalize:
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release notes
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
           prerelease: false
           make_latest: true
-          fail_on_unmatched_files: true
+          generate_release_notes: true
           body: |
-            **OrbitoDB — standalone Windows executable.**
+            ## OrbitoDB ${{ env.RELEASE_TAG }}
 
-            Download **`OrbitoDB.exe`** below and run it. No installer, no wizard,
-            nothing else to download. (Uses the Microsoft Edge WebView2 runtime,
-            which ships with Windows 10 & 11.)
+            Local-first PostgreSQL, MySQL/MariaDB and SQLite workbench.
+
+            ### Downloads
+            - Windows x64: portable EXE + NSIS installer
+            - macOS: Apple Silicon (arm64) + Intel (x64) DMG
+            - Linux x64: DEB + AppImage
+
+            Every binary package is accompanied by a `.sha256` checksum file.
+
+            macOS builds use ad-hoc signing unless official Apple signing/notarization
+            credentials are configured in a future release.

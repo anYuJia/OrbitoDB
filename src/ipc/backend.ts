@@ -1,10 +1,15 @@
 import { tauriBackend } from "./tauri";
 import { webBackend } from "./web";
 import type {
+  BackupInfo,
   ColumnDef,
   ColumnInfo,
   ConnectionConfig,
+  ConnectionDiagnostics,
+  ConstraintInfo,
+  DatabaseObjectInfo,
   ForeignKey,
+  IndexInfo,
   HistoryEntry,
   QueryResult,
   TableInfo,
@@ -21,9 +26,20 @@ export interface Backend {
   openConnection(id: string): Promise<void>;
   closeConnection(id: string): Promise<void>;
   runQuery(connectionId: string, sql: string): Promise<QueryResult>;
+  /** Execute an internal/preview query without adding it to user-visible history. */
+  runQuerySilent(connectionId: string, sql: string): Promise<QueryResult>;
+  cancelQuery(connectionId: string): Promise<boolean>;
+  connectionDiagnostics(connectionId: string): Promise<ConnectionDiagnostics>;
+  listBackups(connectionId: string): Promise<BackupInfo[]>;
+  createBackup(connectionId: string): Promise<BackupInfo>;
+  restoreBackup(connectionId: string, backupId: string): Promise<void>;
+  listSchemas(connectionId: string): Promise<string[]>;
   listTables(connectionId: string): Promise<TableInfo[]>;
+  listDatabaseObjects(connectionId: string): Promise<DatabaseObjectInfo[]>;
   listColumns(connectionId: string, table: string): Promise<ColumnInfo[]>;
   listForeignKeys(connectionId: string): Promise<ForeignKey[]>;
+  listIndexes(connectionId: string, table: string): Promise<IndexInfo[]>;
+  listConstraints(connectionId: string, table: string): Promise<ConstraintInfo[]>;
   recentHistory(limit: number): Promise<HistoryEntry[]>;
   updateCell(
     connectionId: string,

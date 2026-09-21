@@ -19,7 +19,7 @@ services:
     # On a machine that's exposed to a network you don't trust, set BIND_ADDR in
     # .env to a single interface (e.g. 127.0.0.1, or a VPN address).
     ports:
-      - "${BIND_ADDR:-0.0.0.0}:${WEB_PORT:-5001}:80"
+      - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-5001}:80"
     depends_on:
       - bridge
     restart: always
@@ -31,6 +31,7 @@ services:
     image: ghcr.io/anYuJia/orbitodb-bridge:${ORBITODB_VERSION:-latest}
     environment:
       BRIDGE_PORT: "5174"
+      BRIDGE_HOST: "0.0.0.0"
       # SQLite database files live here — a named volume so they persist across
       # restarts and are shared by every browser/tab/port that connects.
       DATA_DIR: "/data"

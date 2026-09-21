@@ -4,6 +4,22 @@ export type Engine = "postgres" | "mysql" | "sqlite";
 
 /** Environment tag for a connection — drives the colour dot and the prod guard. */
 export type ConnEnv = "dev" | "staging" | "prod";
+export type SshAuth = "agent" | "key";
+export type TlsMode = "disable" | "allow" | "prefer" | "require" | "verify-ca" | "verify-full";
+
+export interface TlsConfig {
+  mode: TlsMode;
+  caPath?: string | null;
+}
+
+export interface SshTunnelConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  auth: SshAuth;
+  privateKeyPath?: string | null;
+}
 
 export interface ConnectionConfig {
   id: string;
@@ -14,6 +30,24 @@ export interface ConnectionConfig {
   database: string;
   username?: string | null;
   env?: ConnEnv | null;
+  group?: string | null;
+  schema?: string | null;
+  tls?: TlsConfig | null;
+  ssh?: SshTunnelConfig | null;
+}
+
+export interface ConnectionDiagnostics {
+  serverVersion: string;
+  database: string;
+  schema: string | null;
+  latencyMs: number;
+}
+
+export interface BackupInfo {
+  id: string;
+  createdAt: string;
+  sizeBytes: number;
+  path?: string | null;
 }
 
 export interface Column {
@@ -35,19 +69,56 @@ export interface TableInfo {
   schema: string | null;
 }
 
+export type DatabaseObjectKind =
+  | "view"
+  | "index"
+  | "sequence"
+  | "procedure"
+  | "function"
+  | "trigger";
+
+export interface DatabaseObjectInfo {
+  name: string;
+  kind: DatabaseObjectKind;
+  schema?: string | null;
+  table?: string | null;
+  signature?: string | null;
+  definition?: string | null;
+}
+
 export interface ColumnInfo {
   name: string;
   dataType: string;
   nullable: boolean;
   isPrimaryKey: boolean;
+  defaultValue?: string | null;
+  generated?: string | null;
+  comment?: string | null;
+  extra?: string | null;
 }
 
 /** A foreign-key relationship: table.column references refTable.refColumn. */
 export interface ForeignKey {
+  name?: string | null;
   table: string;
   column: string;
   refTable: string;
   refColumn: string;
+}
+
+export interface IndexInfo {
+  name: string;
+  unique: boolean;
+  detail: string;
+}
+
+export type ConstraintKind = "primary" | "unique" | "check";
+
+export interface ConstraintInfo {
+  name?: string | null;
+  kind: ConstraintKind;
+  definition: string;
+  columns: string[];
 }
 
 export interface ColumnDef {

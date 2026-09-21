@@ -1,7 +1,8 @@
-import { IconArrowUpRight, IconChevronLeft, IconChevronRight, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
+import { IconArrowUpRight, IconChevronLeft, IconChevronRight, IconFileImport, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getBackend } from "../../ipc/backend";
 import { displayRows } from "../../lib/cell";
+import { translate, useI18n } from "../../lib/i18n";
 import { promptDialog } from "../../state/dialog";
 import { toast } from "../../state/toast";
 import type { ColumnInfo } from "../../ipc/types";
@@ -9,6 +10,7 @@ import { useStore } from "../../state/store";
 import { CellViewer, isExpandable } from "./CellViewer";
 import { ColumnEditor, type ColumnEditorAnchor } from "./ColumnEditor";
 import { ExportMenu } from "./ExportMenu";
+import { ImportDialog } from "./ImportDialog";
 
 function typeIcon(t: string): string {
   const u = t.toUpperCase();
@@ -17,15 +19,6 @@ function typeIcon(t: string): string {
   if (/BOOL/.test(u)) return "✓";
   return "T";
 }
-
-const PILL_COLORS: [string, string][] = [
-  ["#36275f", "#c4b5fd"],
-  ["#123a2c", "#6ee7b7"],
-  ["#3a2a10", "#fcd34d"],
-  ["#0f3040", "#7dd3fc"],
-  ["#3a1230", "#f9a8d4"],
-  ["#2a1240", "#d8b4fe"],
-];
 
 /**
  * Loading placeholder that mirrors the table it's about to show: the real
@@ -36,7 +29,7 @@ const PILL_COLORS: [string, string][] = [
 function GridSkeleton({ columns }: { columns?: ColumnInfo[] }) {
   // Structure not known yet — don't fake a grid, just say we're loading.
   if (!columns || columns.length === 0) {
-    return <div className="bud-empty">Loading…</div>;
+    return <div className="bud-empty">{translate("grid.loading")}</div>;
   }
   const rows = Array.from({ length: 8 });
   return (
@@ -75,6 +68,7 @@ function GridSkeleton({ columns }: { columns?: ColumnInfo[] }) {
 }
 
 export function DataGrid() {
+  const { t } = useI18n();
   const rawResult = useStore((s) => s.result);
   // Defensively normalize cells for display (pg/mysql JSON -> objects, binary ->
   // Buffer). Idempotent with the data-layer pass in lib/cell, so already-clean
@@ -99,8 +93,10 @@ export function DataGrid() {
   const navigateFk = useStore((s) => s.navigateFk);
   const pendingColFilter = useStore((s) => s.pendingColFilter);
   const setPendingColFilter = useStore((s) => s.setPendingColFilter);
-  const openTableData = useStore((s) => s.openTableData);
   const searchTable = useStore((s) => s.searchTable);
+  const dataPage = useStore((s) => s.dataPage);
+  const loadTablePage = useStore((s) => s.loadTablePage);
+  const setTablePageSize = useStore((s) => s.setTablePageSize);
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null);
   const [draft, setDraft] = useState("");
   const [newRow, setNewRow] = useState<string[] | null>(null);
@@ -109,9 +105,8 @@ export function DataGrid() {
   const [cellView, setCellView] = useState<{ value: string; column?: string } | null>(null);
   const [selCell, setSelCell] = useState<{ r: number; c: number } | null>(null);
   const [gridFilter, setGridFilter] = useState("");
-  const serverSearched = useRef(false);
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(50);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [allFks, setAllFks] = useState<{ table: string; column: string; refTable: string; refColumn: string }[]>([]);
   // Only show the skeleton if loading actually lingers — avoids a flash on the
   // near-instant in-browser SQLite loads.
@@ -167,31 +162,20 @@ export function DataGrid() {
 
   useEffect(() => setSort(null), [editTable?.table]);
 
-  // Reset filters/paging when the table changes.
   useEffect(() => {
     setGridFilter("");
-    setPage(0);
-    serverSearched.current = false;
+    setImportFile(null);
   }, [editTable?.table]);
 
-  // Whole-table search: debounce the filter and run it on the server so matches
-  // beyond the loaded window are found too (the client-side filter above still
-  // gives instant feedback while this resolves). Clearing it reloads the table.
+  // Whole-table search is server-side and page-aware. The current page remains
+  // visible while the debounced query resolves.
   useEffect(() => {
     if (!editTable) return;
     const q = gridFilter.trim();
-    const id = setTimeout(() => {
-      if (q) {
-        serverSearched.current = true;
-        void searchTable(q);
-      } else if (serverSearched.current) {
-        serverSearched.current = false;
-        void openTableData(editTable.table);
-      }
-    }, 300);
+    if (q === dataPage.search) return;
+    const id = setTimeout(() => void searchTable(q), 300);
     return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gridFilter, editTable?.table]);
+  }, [gridFilter, editTable?.table, dataPage.search, searchTable]);
 
   // Foreign keys are per-connection, so fetch them once (not on every table
   // switch) and derive the current table's map below.
@@ -224,7 +208,6 @@ export function DataGrid() {
   useEffect(() => {
     if (!pendingColFilter) return;
     setGridFilter(pendingColFilter.value);
-    setPage(0);
     setPendingColFilter(null);
   }, [pendingColFilter]);
 
@@ -260,14 +243,12 @@ export function DataGrid() {
   const table = editTable.table;
   const allSelected = result.rows.length > 0 && selection.length === result.rows.length;
 
-  const q = gridFilter.trim().toLowerCase();
-  const filteredOrder = q
-    ? order.filter((ri) => result.rows[ri].some((c) => c != null && String(c).toLowerCase().includes(q)))
-    : order;
-  const hasFilters = !!q;
-  const pageCount = Math.max(1, Math.ceil(filteredOrder.length / pageSize));
-  const curPage = Math.min(page, pageCount - 1);
-  const pagedOrder = filteredOrder.slice(curPage * pageSize, curPage * pageSize + pageSize);
+  const filteredOrder = order;
+  const hasFilters = !!dataPage.search;
+  const pageCount = Math.max(1, Math.ceil(dataPage.totalRows / dataPage.pageSize));
+  const curPage = Math.min(dataPage.page, pageCount - 1);
+  const pageSize = dataPage.pageSize;
+  const pagedOrder = order;
 
   const colInfo = (name: string): ColumnInfo =>
     columns?.find((c) => c.name === name) ?? { name, dataType: "TEXT", nullable: true, isPrimaryKey: false };
@@ -305,45 +286,59 @@ export function DataGrid() {
       "TEXT";
     void addColumn(table, { name: name.trim(), dataType, nullable: true, primaryKey: false });
   };
-  const pill = (v: unknown) => {
-    const s = String(v);
-    let h = 0;
-    for (let k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) >>> 0;
-    const [bg, fg] = PILL_COLORS[h % PILL_COLORS.length];
-    return (
-      <span className="bud-pill" style={{ background: bg, color: fg }}>
-        {s}
-      </span>
-    );
-  };
+  const pill = (v: unknown) => <span className="odb-value-pill">{String(v)}</span>;
 
   return (
     <div className="bud-grid-area">
-      <div className="bud-grid-toolbar">
+      <div className="bud-grid-toolbar odb-grid-toolbar">
+        <div className="odb-grid-summary">
+          <b>{table}</b>
+          <span>{result.columns.length} columns</span>
+          <span>·</span>
+          <span>{t("grid.onPage", { count: result.rows.length.toLocaleString() })}</span>
+          <span>·</span>
+          <span>{t("grid.total", { count: dataPage.totalRows.toLocaleString() })}</span>
+        </div>
         <div className="bud-grid-search">
           <IconSearch size={13} stroke={2} />
           <input
             value={gridFilter}
-            placeholder="Filter rows…"
-            aria-label="Filter rows"
-            onChange={(e) => {
-              setGridFilter(e.target.value);
-              setPage(0);
-            }}
+            placeholder={t("grid.searchRows")}
+            aria-label={t("grid.searchRows")}
+            onChange={(e) => setGridFilter(e.target.value)}
           />
           {gridFilter && (
-            <button className="bud-grid-search-x" title="Clear filter" onClick={() => setGridFilter("")}>
+            <button className="bud-grid-search-x" title={t("grid.clearFilter")} onClick={() => setGridFilter("")}>
               <IconX size={13} stroke={2} />
             </button>
           )}
         </div>
         {hasFilters && (
           <span className="bud-grid-toolbar-info">
-            {filteredOrder.length.toLocaleString()} match{filteredOrder.length === 1 ? "" : "es"}
-            {result.rows.length >= 1000 ? " (first 1,000)" : ""}
+            {t(dataPage.totalRows === 1 ? "grid.match" : "grid.matches", { count: dataPage.totalRows.toLocaleString() })}
           </span>
         )}
         <span className="bud-grid-foot-spacer" />
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".csv,.tsv,.tab,text/csv,text/tab-separated-values"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0] ?? null;
+            setImportFile(file);
+            event.currentTarget.value = "";
+          }}
+        />
+        <button
+          className="bud-tool odb-grid-import"
+          title={t("grid.importCsvTsv")}
+          disabled={readOnly}
+          onClick={() => importInputRef.current?.click()}
+        >
+          <IconFileImport size={13} stroke={2} />
+          {t("grid.import")}
+        </button>
         <ExportMenu result={result} rows={filteredOrder.map((ri) => result.rows[ri])} table={table} />
       </div>
       <div className="bud-grid-wrap">
@@ -351,30 +346,39 @@ export function DataGrid() {
         <thead>
           <tr>
             <th className="bud-checkcol">
-              <input type="checkbox" checked={allSelected} onChange={selectAllRows} aria-label="Select all rows" />
+              <input type="checkbox" checked={allSelected} onChange={selectAllRows} aria-label={t("grid.selectAllRows")} />
             </th>
             <th className="bud-rownum" />
-            {result.columns.map((c, i) => (
-              <th key={i} className={sort?.col === i ? "sorted" : ""}>
-                <button className="bud-th-sort" title={`Sort by ${c.name}`} onClick={() => toggleSort(i)}>
-                  <span className="bud-th-ic">{typeIcon(c.dataType)}</span>
-                  <span className="bud-th-name">{c.name}</span>
-                  {sort?.col === i && <span className="bud-th-arrow">{sort.dir === 1 ? "↑" : "↓"}</span>}
-                </button>
-                <button
-                  className="bud-th-menu"
-                  title="Edit column"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setColEditor({ column: colInfo(c.name), x: r.left - 280, y: r.bottom });
-                  }}
-                >
-                  ⋯
-                </button>
-              </th>
-            ))}
+            {result.columns.map((c, i) => {
+              const info = colInfo(c.name);
+              return (
+                <th key={i} className={sort?.col === i ? "sorted" : ""}>
+                  <button className="bud-th-sort odb-th-sort" title={`Sort by ${c.name}`} onClick={() => toggleSort(i)}>
+                    <span className="bud-th-ic">{typeIcon(info.dataType || c.dataType)}</span>
+                    <span className="odb-th-copy">
+                      <span className="odb-th-name-line">
+                        <span className="bud-th-name">{c.name}</span>
+                        {info.isPrimaryKey && <span className="odb-pk-tag">PK</span>}
+                      </span>
+                      <span className="odb-th-type">{info.dataType || c.dataType}</span>
+                    </span>
+                    {sort?.col === i && <span className="bud-th-arrow">{sort.dir === 1 ? "↑" : "↓"}</span>}
+                  </button>
+                  <button
+                    className="bud-th-menu"
+                    title={t("grid.columnActions")}
+                    onClick={(e) => {
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setColEditor({ column: info, x: r.left - 280, y: r.bottom });
+                    }}
+                  >
+                    ⋯
+                  </button>
+                </th>
+              );
+            })}
             <th className="bud-addcol">
-              <button className="bud-addcol-btn" title="Add column" onClick={addColumnPrompt} disabled={readOnly}>
+              <button className="bud-addcol-btn" title={t("grid.addColumn")} onClick={addColumnPrompt} disabled={readOnly}>
                 <IconPlus size={14} stroke={2} />
               </button>
             </th>
@@ -413,7 +417,7 @@ export function DataGrid() {
               <td className="bud-checkcol" />
               <td className="bud-rownum" />
               <td className="bud-empty-cell" colSpan={result.columns.length + 1}>
-                {hasFilters ? "No rows match the filters." : "This table is empty — add a row below."}
+                {hasFilters ? t("grid.noMatch") : t("grid.emptyTable")}
               </td>
             </tr>
           )}
@@ -434,7 +438,7 @@ export function DataGrid() {
                 </td>
                 <td className="bud-rownum">
                   <span className="rn-num">{curPage * pageSize + pos + 1}</span>
-                  <button className="rn-expand" title="Edit row in panel" onClick={() => openInspector(ri)}>
+                  <button className="rn-expand" title={t("grid.editRow")} onClick={() => openInspector(ri)}>
                     ⤢
                   </button>
                 </td>
@@ -492,7 +496,7 @@ export function DataGrid() {
           })}
           <tr className="bud-addrow">
             <td className="bud-checkcol">
-              <button className="bud-addrow-btn" onClick={() => setNewRow(result.columns.map(() => ""))} title="Add row" disabled={readOnly}>
+              <button className="bud-addrow-btn" onClick={() => setNewRow(result.columns.map(() => ""))} title={t("grid.addRow")} disabled={readOnly}>
                 <IconPlus size={15} stroke={2} />
               </button>
             </td>
@@ -508,33 +512,33 @@ export function DataGrid() {
       {filteredOrder.length > 0 && (
         <div className="bud-grid-foot">
           <span className="bud-grid-foot-info">
-            {hasFilters
-              ? `${filteredOrder.length.toLocaleString()} of ${result.rows.length.toLocaleString()} rows`
-              : `${result.rows.length.toLocaleString()} ${result.rows.length === 1 ? "row" : "rows"}`}
-            {result.truncated ? " (first 1000)" : ""}
+            {dataPage.totalRows === 0
+              ? t("grid.zeroRows")
+              : t(hasFilters ? "grid.showingMatches" : "grid.showing", {
+                  from: (curPage * pageSize + 1).toLocaleString(),
+                  to: Math.min(curPage * pageSize + result.rows.length, dataPage.totalRows).toLocaleString(),
+                  total: dataPage.totalRows.toLocaleString(),
+                })}
           </span>
           <span className="bud-grid-foot-spacer" />
           {pageCount > 1 && (
             <span className="bud-pager">
-              <button title="Previous page" disabled={curPage === 0} onClick={() => setPage(curPage - 1)}>
+              <button title={t("grid.previousPage")} disabled={curPage === 0 || loadingResult} onClick={() => void loadTablePage(curPage - 1)}>
                 <IconChevronLeft size={14} stroke={2} />
               </button>
               <span className="bud-pager-info">
                 {curPage + 1} / {pageCount}
               </span>
-              <button title="Next page" disabled={curPage >= pageCount - 1} onClick={() => setPage(curPage + 1)}>
+              <button title={t("grid.nextPage")} disabled={curPage >= pageCount - 1 || loadingResult} onClick={() => void loadTablePage(curPage + 1)}>
                 <IconChevronRight size={14} stroke={2} />
               </button>
             </span>
           )}
           <label className="bud-pagesize">
-            Rows
+            {t("grid.rowsPerPage")}
             <select
               value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setPage(0);
-              }}
+              onChange={(e) => void setTablePageSize(Number(e.target.value))}
             >
               {[50, 100, 200, 500].map((n) => (
                 <option key={n} value={n}>
@@ -547,6 +551,15 @@ export function DataGrid() {
       )}
       {colEditor && <ColumnEditor anchor={colEditor} table={table} onClose={() => setColEditor(null)} />}
       {cellView && <CellViewer value={cellView.value} column={cellView.column} onClose={() => setCellView(null)} />}
+      {importFile && (
+        <ImportDialog
+          file={importFile}
+          table={table}
+          columns={columns ?? []}
+          readOnly={readOnly}
+          onClose={() => setImportFile(null)}
+        />
+      )}
     </div>
   );
 }

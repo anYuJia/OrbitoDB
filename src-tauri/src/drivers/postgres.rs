@@ -1,19 +1,25 @@
 use async_trait::async_trait;
-use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 use sqlx::{Column as _, Row, TypeInfo};
 use std::collections::HashSet;
+use tokio::sync::Mutex;
 
-use crate::drivers::Driver;
+use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
 use crate::executor::pg_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
 
 pub struct PgDriver {
     pool: sqlx::PgPool,
+    active_pid: Mutex<Option<i32>>,
 }
 
 fn options(cfg: &ConnectionConfig, password: Option<&str>) -> PgConnectOptions {
-    base_options(cfg, password).database(&cfg.database)
+    let options = base_options(cfg, password).database(&cfg.database);
+    match cfg.schema.as_deref().map(str::trim).filter(|schema| !schema.is_empty()) {
+        Some(schema) => options.options([("search_path", schema)]),
+        None => options.options([("search_path", "public")]),
+    }
 }
 
 /// Postgres requires connecting to *some* database; use the standard `postgres`
@@ -26,12 +32,34 @@ fn base_options(cfg: &ConnectionConfig, password: Option<&str>) -> PgConnectOpti
     let mut o = PgConnectOptions::new()
         .host(cfg.host.as_deref().unwrap_or("localhost"))
         .port(cfg.port.unwrap_or(5432));
+
     if let Some(u) = cfg.username.as_deref() {
         o = o.username(u);
     }
     if let Some(p) = password {
         o = o.password(p);
     }
+
+    let tls_mode = cfg.tls.as_ref().map(|tls| tls.mode).unwrap_or(TlsMode::Disable);
+    o = o.ssl_mode(match tls_mode {
+        TlsMode::Disable => PgSslMode::Disable,
+        TlsMode::Allow => PgSslMode::Allow,
+        TlsMode::Prefer => PgSslMode::Prefer,
+        TlsMode::Require => PgSslMode::Require,
+        TlsMode::VerifyCa => PgSslMode::VerifyCa,
+        TlsMode::VerifyFull => PgSslMode::VerifyFull,
+    });
+
+    if let Some(ca_path) = cfg
+        .tls
+        .as_ref()
+        .and_then(|tls| tls.ca_path.as_deref())
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        o = o.ssl_root_cert(expand_home_path(ca_path));
+    }
+
     o
 }
 
@@ -45,7 +73,7 @@ impl PgDriver {
             .max_connections(5)
             .connect_with(options(cfg, password))
             .await?;
-        Ok(Self { pool })
+        Ok(Self { pool, active_pid: Mutex::new(None) })
     }
 
     pub async fn test(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<()> {
@@ -96,56 +124,107 @@ impl PgDriver {
 impl Driver for PgDriver {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         let started = std::time::Instant::now();
-        let head = sql.trim_start().to_uppercase();
-        let returns_rows = head.starts_with("SELECT")
-            || head.starts_with("WITH")
-            || head.starts_with("SHOW")
-            || head.starts_with("TABLE")
-            || head.starts_with("VALUES")
-            || head.starts_with("EXPLAIN");
+        let mut conn = self.pool.acquire().await?;
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *conn)
+            .await?;
+        *self.active_pid.lock().await = Some(pid);
 
-        if !returns_rows {
-            let res = sqlx::query(sql).execute(&self.pool).await?;
-            return Ok(QueryResult {
-                columns: vec![],
-                rows: vec![],
-                rows_affected: res.rows_affected(),
+        let result: AppResult<QueryResult> = async {
+            let head = sql.trim_start().to_uppercase();
+            let returns_rows = head.starts_with("SELECT")
+                || head.starts_with("WITH")
+                || head.starts_with("SHOW")
+                || head.starts_with("TABLE")
+                || head.starts_with("VALUES")
+                || head.starts_with("EXPLAIN");
+
+            if !returns_rows {
+                let res = sqlx::query(sql).execute(&mut *conn).await?;
+                return Ok(QueryResult {
+                    columns: vec![],
+                    rows: vec![],
+                    rows_affected: res.rows_affected(),
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                    truncated: false,
+                });
+            }
+
+            let fetched = sqlx::query(sql).fetch_all(&mut *conn).await?;
+            let columns = match fetched.first() {
+                Some(first) => first
+                    .columns()
+                    .iter()
+                    .map(|c| Column {
+                        name: c.name().to_string(),
+                        data_type: c.type_info().name().to_string(),
+                    })
+                    .collect(),
+                None => vec![],
+            };
+            let truncated = fetched.len() > MAX_ROWS;
+            let mut rows = Vec::with_capacity(fetched.len().min(MAX_ROWS));
+            for row in fetched.iter().take(MAX_ROWS) {
+                rows.push(pg_row_to_values(row)?);
+            }
+            Ok(QueryResult {
+                columns,
+                rows,
+                rows_affected: 0,
                 elapsed_ms: started.elapsed().as_millis() as u64,
-                truncated: false,
-            });
+                truncated,
+            })
         }
+        .await;
 
-        let fetched = sqlx::query(sql).fetch_all(&self.pool).await?;
-        let columns = match fetched.first() {
-            Some(first) => first
-                .columns()
-                .iter()
-                .map(|c| Column {
-                    name: c.name().to_string(),
-                    data_type: c.type_info().name().to_string(),
-                })
-                .collect(),
-            None => vec![],
+        *self.active_pid.lock().await = None;
+        result
+    }
+
+    async fn cancel(&self) -> AppResult<bool> {
+        let Some(pid) = *self.active_pid.lock().await else {
+            return Ok(false);
         };
-        let truncated = fetched.len() > MAX_ROWS;
-        let mut rows = Vec::with_capacity(fetched.len().min(MAX_ROWS));
-        for row in fetched.iter().take(MAX_ROWS) {
-            rows.push(pg_row_to_values(row)?);
-        }
-        Ok(QueryResult {
-            columns,
-            rows,
-            rows_affected: 0,
-            elapsed_ms: started.elapsed().as_millis() as u64,
-            truncated,
+        let cancelled: bool = sqlx::query_scalar("SELECT pg_cancel_backend($1)")
+            .bind(pid)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(cancelled)
+    }
+    async fn diagnostics(&self) -> AppResult<ConnectionDiagnostics> {
+        let started = std::time::Instant::now();
+        let row = sqlx::query(
+            "SELECT version() AS server_version, current_database() AS database, current_schema() AS schema",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(ConnectionDiagnostics {
+            server_version: row.try_get("server_version").unwrap_or_else(|_| "PostgreSQL".into()),
+            database: row.try_get("database").unwrap_or_default(),
+            schema: row.try_get("schema").ok(),
+            latency_ms: started.elapsed().as_millis() as u64,
         })
+    }
+
+    async fn list_schemas(&self) -> AppResult<Vec<String>> {
+        let rows = sqlx::query(
+            "SELECT schema_name FROM information_schema.schemata
+             WHERE schema_name <> 'information_schema' AND schema_name NOT LIKE 'pg_%'
+             ORDER BY schema_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .filter_map(|row| row.try_get::<String, _>("schema_name").ok())
+            .collect())
     }
 
     async fn list_tables(&self) -> AppResult<Vec<TableInfo>> {
         let rows = sqlx::query(
             "SELECT table_name, table_type, table_schema FROM information_schema.tables \
-             WHERE table_schema NOT IN ('pg_catalog','information_schema') \
-             ORDER BY table_schema, table_name",
+             WHERE table_schema = current_schema() \
+             ORDER BY table_name",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -163,13 +242,121 @@ impl Driver for PgDriver {
             .collect())
     }
 
+    async fn list_database_objects(&self) -> AppResult<Vec<DatabaseObjectInfo>> {
+        let mut out = Vec::new();
+
+        let views = sqlx::query(
+            "SELECT schemaname, viewname, \
+                    'CREATE OR REPLACE VIEW ' || quote_ident(viewname) || ' AS ' || \
+                    pg_get_viewdef((quote_ident(schemaname) || '.' || quote_ident(viewname))::regclass, true) || ';' AS definition \
+             FROM pg_views WHERE schemaname = current_schema() ORDER BY viewname",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        out.extend(views.iter().map(|row| DatabaseObjectInfo {
+            name: row.try_get("viewname").unwrap_or_default(),
+            kind: "view".into(),
+            schema: row.try_get("schemaname").ok(),
+            table: None,
+            signature: None,
+            definition: row.try_get("definition").ok(),
+        }));
+
+        let indexes = sqlx::query(
+            "SELECT pgi.schemaname, pgi.tablename, pgi.indexname, pgi.indexdef \
+             FROM pg_indexes pgi \
+             WHERE pgi.schemaname = current_schema() \
+               AND NOT EXISTS ( \
+                 SELECT 1 FROM pg_constraint con \
+                 JOIN pg_class idx ON idx.oid = con.conindid \
+                 JOIN pg_namespace ns ON ns.oid = idx.relnamespace \
+                 WHERE con.conindid <> 0 \
+                   AND ns.nspname = pgi.schemaname \
+                   AND idx.relname = pgi.indexname \
+               ) \
+             ORDER BY pgi.tablename, pgi.indexname",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        out.extend(indexes.iter().map(|row| DatabaseObjectInfo {
+            name: row.try_get("indexname").unwrap_or_default(),
+            kind: "index".into(),
+            schema: row.try_get("schemaname").ok(),
+            table: row.try_get("tablename").ok(),
+            signature: None,
+            definition: row.try_get::<String, _>("indexdef").ok().map(|value| format!("{value};")),
+        }));
+
+        let sequences = sqlx::query(
+            "SELECT schemaname, sequencename, \
+                    format('CREATE SEQUENCE %I INCREMENT BY %s MINVALUE %s MAXVALUE %s START WITH %s CACHE %s %s;', \
+                           sequencename, increment_by, min_value, max_value, start_value, cache_size, \
+                           CASE WHEN cycle THEN 'CYCLE' ELSE 'NO CYCLE' END) AS definition \
+             FROM pg_sequences WHERE schemaname = current_schema() ORDER BY sequencename",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        out.extend(sequences.iter().map(|row| DatabaseObjectInfo {
+            name: row.try_get("sequencename").unwrap_or_default(),
+            kind: "sequence".into(),
+            schema: row.try_get("schemaname").ok(),
+            table: None,
+            signature: None,
+            definition: row.try_get("definition").ok(),
+        }));
+
+        let routines = sqlx::query(
+            "SELECT p.proname, p.prokind::text AS prokind, n.nspname AS schema_name, \
+                    pg_get_function_identity_arguments(p.oid) AS signature, \
+                    pg_get_functiondef(p.oid) AS definition \
+             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace \
+             WHERE n.nspname = current_schema() AND p.prokind IN ('f','p') \
+             ORDER BY p.prokind, p.proname, pg_get_function_identity_arguments(p.oid)",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        out.extend(routines.iter().map(|row| {
+            let prokind: String = row.try_get("prokind").unwrap_or_default();
+            DatabaseObjectInfo {
+                name: row.try_get("proname").unwrap_or_default(),
+                kind: if prokind == "p" { "procedure".into() } else { "function".into() },
+                schema: row.try_get("schema_name").ok(),
+                table: None,
+                signature: row.try_get("signature").ok(),
+                definition: row.try_get::<String, _>("definition").ok().map(|value| value.trim_end_matches(';').to_string() + ";"),
+            }
+        }));
+
+        let triggers = sqlx::query(
+            "SELECT tg.tgname, cls.relname AS table_name, ns.nspname AS schema_name, \
+                    pg_get_triggerdef(tg.oid, true) || ';' AS definition \
+             FROM pg_trigger tg \
+             JOIN pg_class cls ON cls.oid = tg.tgrelid \
+             JOIN pg_namespace ns ON ns.oid = cls.relnamespace \
+             WHERE NOT tg.tgisinternal AND ns.nspname = current_schema() \
+             ORDER BY cls.relname, tg.tgname",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        out.extend(triggers.iter().map(|row| DatabaseObjectInfo {
+            name: row.try_get("tgname").unwrap_or_default(),
+            kind: "trigger".into(),
+            schema: row.try_get("schema_name").ok(),
+            table: row.try_get("table_name").ok(),
+            signature: None,
+            definition: row.try_get("definition").ok(),
+        }));
+
+        Ok(out)
+    }
+
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>> {
         let pk_rows = sqlx::query(
             "SELECT kcu.column_name FROM information_schema.table_constraints tc \
              JOIN information_schema.key_column_usage kcu \
                ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema \
              WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = $1 \
-               AND tc.table_schema NOT IN ('pg_catalog','information_schema')",
+               AND tc.table_schema = current_schema()",
         )
         .bind(table)
         .fetch_all(&self.pool)
@@ -180,9 +367,20 @@ impl Driver for PgDriver {
             .collect();
 
         let rows = sqlx::query(
-            "SELECT column_name, data_type, is_nullable FROM information_schema.columns \
-             WHERE table_name = $1 AND table_schema NOT IN ('pg_catalog','information_schema') \
-             ORDER BY ordinal_position",
+            "SELECT a.attname AS column_name, \
+                    pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type, \
+                    NOT a.attnotnull AS is_nullable, \
+                    CASE WHEN a.attgenerated = '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS column_default, \
+                    CASE WHEN a.attgenerated <> '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS generation_expression, \
+                    pg_catalog.col_description(a.attrelid, a.attnum) AS column_comment, \
+                    CASE a.attidentity WHEN 'a' THEN 'IDENTITY ALWAYS' WHEN 'd' THEN 'IDENTITY BY DEFAULT' ELSE NULL END AS column_extra \
+             FROM pg_catalog.pg_attribute a \
+             JOIN pg_catalog.pg_class cls ON cls.oid = a.attrelid \
+             JOIN pg_catalog.pg_namespace ns ON ns.oid = cls.relnamespace \
+             LEFT JOIN pg_catalog.pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum \
+             WHERE ns.nspname = current_schema() AND cls.relname = $1 \
+               AND a.attnum > 0 AND NOT a.attisdropped \
+             ORDER BY a.attnum",
         )
         .bind(table)
         .fetch_all(&self.pool)
@@ -193,18 +391,113 @@ impl Driver for PgDriver {
                 let name: String = r.try_get("column_name").unwrap_or_default();
                 ColumnInfo {
                     is_primary_key: pks.contains(&name),
-                    nullable: r
-                        .try_get::<String, _>("is_nullable")
-                        .map(|v| v == "YES")
-                        .unwrap_or(true),
+                    nullable: r.try_get::<bool, _>("is_nullable").unwrap_or(true),
                     data_type: r
                         .try_get::<String, _>("data_type")
                         .unwrap_or_else(|_| "unknown".into()),
+                    default_value: r.try_get::<Option<String>, _>("column_default").ok().flatten(),
+                    generated: r
+                        .try_get::<Option<String>, _>("generation_expression")
+                        .ok()
+                        .flatten(),
+                    comment: r.try_get::<Option<String>, _>("column_comment").ok().flatten(),
+                    extra: r.try_get::<Option<String>, _>("column_extra").ok().flatten(),
                     name,
                 }
             })
             .collect())
     }
+    async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
+        let rows = sqlx::query(
+            "SELECT tc.constraint_name, tc.table_name, kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column \
+             FROM information_schema.table_constraints tc \
+             JOIN information_schema.key_column_usage kcu \
+               ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema \
+             JOIN information_schema.constraint_column_usage ccu \
+               ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema \
+             WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = current_schema() \
+             ORDER BY tc.table_name, kcu.ordinal_position",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|row| ForeignKey {
+                name: row.try_get("constraint_name").ok(),
+                table: row.try_get("table_name").unwrap_or_default(),
+                column: row.try_get("column_name").unwrap_or_default(),
+                ref_table: row.try_get("ref_table").unwrap_or_default(),
+                ref_column: row.try_get("ref_column").unwrap_or_default(),
+            })
+            .collect())
+    }
+
+    async fn list_indexes(&self, table: &str) -> AppResult<Vec<IndexInfo>> {
+        let rows = sqlx::query(
+            "SELECT indexname, indexdef FROM pg_indexes \
+             WHERE schemaname = current_schema() AND tablename = $1 \
+             ORDER BY indexname",
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|row| {
+                let definition: String = row.try_get("indexdef").unwrap_or_default();
+                IndexInfo {
+                    name: row.try_get("indexname").unwrap_or_default(),
+                    unique: definition.to_uppercase().contains("CREATE UNIQUE INDEX"),
+                    detail: definition,
+                }
+            })
+            .collect())
+    }
+    async fn list_constraints(&self, table: &str) -> AppResult<Vec<ConstraintInfo>> {
+        let rows = sqlx::query(
+            "SELECT con.conname, con.contype::text AS contype, pg_catalog.pg_get_constraintdef(con.oid, true) AS definition, \
+                    COALESCE(string_agg(att.attname, ',' ORDER BY ord.ordinality), '') AS columns_csv \
+             FROM pg_catalog.pg_constraint con \
+             JOIN pg_catalog.pg_class rel ON rel.oid = con.conrelid \
+             JOIN pg_catalog.pg_namespace ns ON ns.oid = rel.relnamespace \
+             LEFT JOIN LATERAL unnest(con.conkey) WITH ORDINALITY ord(attnum, ordinality) ON true \
+             LEFT JOIN pg_catalog.pg_attribute att ON att.attrelid = rel.oid AND att.attnum = ord.attnum \
+             WHERE ns.nspname = current_schema() AND rel.relname = $1 \
+               AND con.contype IN ('p', 'u', 'c') \
+             GROUP BY con.oid, con.conname, con.contype \
+             ORDER BY CASE con.contype WHEN 'p' THEN 0 WHEN 'u' THEN 1 ELSE 2 END, con.conname",
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|row| {
+                let kind = match row.try_get::<String, _>("contype").unwrap_or_default().as_str() {
+                    "p" => "primary",
+                    "u" => "unique",
+                    _ => "check",
+                };
+                let columns_csv: String = row.try_get("columns_csv").unwrap_or_default();
+                ConstraintInfo {
+                    name: row.try_get("conname").ok(),
+                    kind: kind.into(),
+                    definition: row.try_get("definition").unwrap_or_default(),
+                    columns: columns_csv
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)
+                        .collect(),
+                }
+            })
+            .collect())
+    }
+
+
 }
 
 #[cfg(test)]
@@ -228,6 +521,11 @@ mod tests {
             ),
             database: std::env::var("ORBITODB_PG_DB").unwrap_or_else(|_| "postgres".into()),
             username: Some(std::env::var("ORBITODB_PG_USER").unwrap_or_else(|_| "postgres".into())),
+            env: None,
+            group: None,
+            schema: None,
+            tls: None,
+            ssh: None,
         };
         Some((cfg, std::env::var("ORBITODB_PG_PASS").ok()))
     }

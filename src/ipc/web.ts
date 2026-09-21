@@ -7,8 +7,18 @@ import type { Backend } from "./backend";
 import { httpBackend, deleteSecret, saveSecret } from "./http";
 import { localBackend } from "./local";
 import type { ColumnDef, HistoryEntry } from "./types";
+import { MAX_QUERY_HISTORY } from "../lib/retention";
 
 const HIST_KEY = "orbitodb.history";
+
+function assertWebConnection(cfg: import("./types").ConnectionConfig): void {
+  if (cfg.ssh?.enabled) {
+    throw {
+      kind: "notSupported",
+      message: "SSH tunnels are available in the OrbitoDB desktop app only.",
+    };
+  }
+}
 
 /** Engine work for every connection goes through the bridge. */
 function sub(_id: string): Backend {
@@ -27,7 +37,7 @@ let histId = readHistory().reduce((m, h) => Math.max(m, h.id), 0);
 function pushHistory(connectionId: string, sql: string): void {
   const list = readHistory();
   list.unshift({ id: ++histId, connectionId, sql, ranAt: new Date().toISOString() });
-  if (list.length > 200) list.length = 200;
+  if (list.length > MAX_QUERY_HISTORY) list.length = MAX_QUERY_HISTORY;
   try {
     localStorage.setItem(HIST_KEY, JSON.stringify(list));
   } catch {
@@ -40,7 +50,9 @@ export const webBackend: Backend = {
   listConnections: () => localBackend.listConnections(),
   saveConnection: async (cfg, password = null) => {
     await localBackend.saveConnection(cfg, password);
-    if (cfg.engine !== "sqlite") await saveSecret(cfg.id, password);
+    // Match the desktop/keychain behavior: null means "keep the existing
+    // password", while a non-null value explicitly replaces it.
+    if (cfg.engine !== "sqlite" && password !== null) await saveSecret(cfg.id, password);
   },
   deleteConnection: async (id) => {
     try {
@@ -53,21 +65,51 @@ export const webBackend: Backend = {
   },
 
   /* cfg-driven ops — all engines go through the bridge */
-  testConnection: (cfg, password = null) => httpBackend.testConnection(cfg, password),
-  listDatabases: (cfg, password = null) => httpBackend.listDatabases(cfg, password),
-  createDatabase: (cfg, password, name) => httpBackend.createDatabase(cfg, password, name),
+  testConnection: (cfg, password = null) => {
+    assertWebConnection(cfg);
+    return httpBackend.testConnection(cfg, password);
+  },
+  listDatabases: (cfg, password = null) => {
+    assertWebConnection(cfg);
+    return httpBackend.listDatabases(cfg, password);
+  },
+  createDatabase: (cfg, password, name) => {
+    assertWebConnection(cfg);
+    return httpBackend.createDatabase(cfg, password, name);
+  },
 
   /* id-driven ops route by the connection's engine */
-  openConnection: (id) => sub(id).openConnection(id),
+  openConnection: (id) => {
+    const cfg = (() => {
+      try {
+        const raw = JSON.parse(localStorage.getItem("orbitodb.connections") ?? "[]");
+        return Array.isArray(raw) ? raw.find((item) => item?.id === id) : null;
+      } catch {
+        return null;
+      }
+    })();
+    if (cfg) assertWebConnection(cfg);
+    return sub(id).openConnection(id);
+  },
   closeConnection: (id) => sub(id).closeConnection(id),
   runQuery: async (id, sql) => {
     const r = await sub(id).runQuery(id, sql);
     pushHistory(id, sql);
     return r;
   },
+  runQuerySilent: (id, sql) => sub(id).runQuerySilent(id, sql),
+  cancelQuery: (id) => sub(id).cancelQuery(id),
+  connectionDiagnostics: (id) => sub(id).connectionDiagnostics(id),
+  listBackups: (id) => sub(id).listBackups(id),
+  createBackup: (id) => sub(id).createBackup(id),
+  restoreBackup: (id, backupId) => sub(id).restoreBackup(id, backupId),
+  listSchemas: (id) => sub(id).listSchemas(id),
   listTables: (id) => sub(id).listTables(id),
+  listDatabaseObjects: (id) => sub(id).listDatabaseObjects(id),
   listColumns: (id, table) => sub(id).listColumns(id, table),
   listForeignKeys: (id) => sub(id).listForeignKeys(id),
+  listIndexes: (id, table) => sub(id).listIndexes(id, table),
+  listConstraints: (id, table) => sub(id).listConstraints(id, table),
   recentHistory: async (limit) => readHistory().slice(0, limit),
 
   updateCell: (id, table, pkColumn, pkValue, column, value) =>

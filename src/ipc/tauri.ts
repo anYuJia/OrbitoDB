@@ -1,9 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Backend } from "./backend";
 import type {
+  BackupInfo,
   ColumnInfo,
   ConnectionConfig,
+  ConnectionDiagnostics,
+  ConstraintInfo,
+  DatabaseObjectInfo,
   ForeignKey,
+  IndexInfo,
   HistoryEntry,
   QueryResult,
   TableInfo,
@@ -25,11 +30,28 @@ export const tauriBackend: Backend = {
   closeConnection: (id) => invoke<void>("close_connection", { id }),
   runQuery: (connectionId, sql) =>
     invoke<QueryResult>("run_query", { connectionId, sql }),
+  runQuerySilent: (connectionId, sql) =>
+    invoke<QueryResult>("run_query_silent", { connectionId, sql }),
+  cancelQuery: (connectionId) => invoke<boolean>("cancel_query", { connectionId }),
+  connectionDiagnostics: (connectionId) =>
+    invoke<ConnectionDiagnostics>("connection_diagnostics", { connectionId }),
+  listBackups: (connectionId) =>
+    invoke<BackupInfo[]>("list_backups", { connectionId }),
+  createBackup: (connectionId) =>
+    invoke<BackupInfo>("create_backup", { connectionId }),
+  restoreBackup: (connectionId, backupId) =>
+    invoke<void>("restore_backup", { connectionId, backupId }),
+  listSchemas: (connectionId) => invoke<string[]>("list_schemas", { connectionId }),
   listTables: (connectionId) =>
     invoke<TableInfo[]>("list_tables", { connectionId }),
+  listDatabaseObjects: (connectionId) =>
+    invoke<DatabaseObjectInfo[]>("list_database_objects", { connectionId }),
   listColumns: (connectionId, table) =>
     invoke<ColumnInfo[]>("list_columns", { connectionId, table }),
   listForeignKeys: (connectionId) => invoke<ForeignKey[]>("list_foreign_keys", { connectionId }),
+  listIndexes: (connectionId, table) => invoke<IndexInfo[]>("list_indexes", { connectionId, table }),
+  listConstraints: (connectionId, table) =>
+    invoke<ConstraintInfo[]>("list_constraints", { connectionId, table }),
   recentHistory: (limit) => invoke<HistoryEntry[]>("recent_history", { limit }),
   updateCell: (connectionId, table, pkColumn, pkValue, column, value) =>
     invoke<void>("update_cell", { connectionId, table, pkColumn, pkValue, column, value }),

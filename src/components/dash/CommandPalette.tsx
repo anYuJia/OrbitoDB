@@ -15,15 +15,19 @@ import {
 } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { type ComponentType, type KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "../../lib/i18n";
+import { shortcutLabel } from "../../lib/platform";
 import { backdropV, commandV } from "../../lib/motion";
 import { useStore } from "../../state/store";
 
 type Icon = ComponentType<{ size?: number; stroke?: number }>;
-type Cmd = { id: string; group: string; label: string; hint?: string; Icon: Icon; run: () => void };
+type CmdGroup = "actions" | "navigate" | "connections" | "tables" | "scripts" | "starred";
+type Cmd = { id: string; group: CmdGroup; label: string; hint?: string; Icon: Icon; run: () => void };
 
-const GROUPS = ["Actions", "Navigate", "Connections", "Tables", "Scripts", "Favorites"];
+const GROUPS: CmdGroup[] = ["actions", "navigate", "connections", "tables", "scripts", "starred"];
 
 export function CommandPalette({ onAddServer }: { onAddServer: () => void }) {
+  const { locale, t } = useI18n();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
@@ -42,6 +46,7 @@ export function CommandPalette({ onAddServer }: { onAddServer: () => void }) {
   const run = useStore((s) => s.run);
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
   const openTableData = useStore((s) => s.openTableData);
+  const runShortcut = shortcutLabel("Enter");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -82,25 +87,25 @@ export function CommandPalette({ onAddServer }: { onAddServer: () => void }) {
       setView("sql");
     };
     const list: Cmd[] = [
-      { id: "a-query", group: "Actions", label: "New query tab", hint: "SQL", Icon: IconBolt, run: act(newEditor) },
-      { id: "a-conn", group: "Actions", label: "New connection", Icon: IconPlus, run: act(onAddServer) },
+      { id: "a-query", group: "actions", label: t("cmd.newQuery"), hint: "SQL", Icon: IconBolt, run: act(newEditor) },
+      { id: "a-conn", group: "actions", label: t("cmd.newConnection"), Icon: IconPlus, run: act(onAddServer) },
       {
         id: "a-run",
-        group: "Actions",
-        label: "Run current query",
-        hint: "⌘↵",
+        group: "actions",
+        label: t("cmd.runCurrent"),
+        hint: runShortcut,
         Icon: IconCode,
         run: act(() => {
           editor();
           if (activeId) void run();
         }),
       },
-      { id: "a-clear", group: "Actions", label: "Clear editor", Icon: IconEraser, run: act(() => setSql("")) },
-      { id: "n-editor", group: "Navigate", label: "Query editor", Icon: IconTerminal2, run: act(editor) },
+      { id: "a-clear", group: "actions", label: t("cmd.clearEditor"), Icon: IconEraser, run: act(() => setSql("")) },
+      { id: "n-editor", group: "navigate", label: t("cmd.queryEditor"), Icon: IconTerminal2, run: act(editor) },
       {
         id: "n-data",
-        group: "Navigate",
-        label: "Data browser",
+        group: "navigate",
+        label: t("cmd.dataBrowser"),
         Icon: IconTable,
         run: act(() => {
           setTopView("data");
@@ -109,48 +114,70 @@ export function CommandPalette({ onAddServer }: { onAddServer: () => void }) {
       },
       {
         id: "n-history",
-        group: "Navigate",
-        label: "SQL history",
+        group: "navigate",
+        label: t("cmd.history"),
         Icon: IconHistory,
         run: act(() => {
           setTopView("data");
           setView("history");
         }),
       },
-      { id: "n-settings", group: "Navigate", label: "Settings", Icon: IconSettings, run: act(() => setTopView("settings")) },
+      { id: "n-schema", group: "navigate", label: t("cmd.schemaTools"), Icon: IconDatabase, run: act(() => setTopView("design")) },
+      { id: "n-utils", group: "navigate", label: t("cmd.utilities"), Icon: IconBolt, run: act(() => setTopView("automation")) },
+      {
+        id: "a-cross-search",
+        group: "actions",
+        label: t("cmd.crossSearch"),
+        Icon: IconSearch,
+        run: act(() => window.dispatchEvent(new Event("orbitodb:cross-table-search"))),
+      },
+      { id: "n-settings", group: "navigate", label: t("cmd.settings"), Icon: IconSettings, run: act(() => setTopView("settings")) },
     ];
     for (const c of connections) {
       list.push({
         id: `c-${c.id}`,
-        group: "Connections",
-        label: `Connect — ${c.name}`,
+        group: "connections",
+        label: t("cmd.connectTo", { name: c.name }),
         hint: c.engine,
         Icon: IconDatabase,
         run: act(() => void openAndIntrospect(c.id)),
       });
     }
-    for (const t of tables) {
+    for (const table of tables) {
       list.push({
-        id: `t-${t.name}`,
-        group: "Tables",
-        label: `Open ${t.name}`,
+        id: `t-${table.name}`,
+        group: "tables",
+        label: t("cmd.openTable", { name: table.name }),
         Icon: IconTable,
-        run: act(() => void openTableData(t.name)),
+        run: act(() => void openTableData(table.name)),
       });
     }
-    for (const s of scripts) {
-      list.push({ id: `s-${s.id}`, group: "Scripts", label: s.name, Icon: IconFileText, run: act(() => loadSql(s.sql)) });
+    for (const script of scripts) {
+      list.push({ id: `s-${script.id}`, group: "scripts", label: script.name, Icon: IconFileText, run: act(() => loadSql(script.sql)) });
     }
-    for (const f of favorites) {
-      list.push({ id: `fav-${f.id}`, group: "Favorites", label: f.name, Icon: IconStar, run: act(() => loadSql(f.sql)) });
+    for (const favorite of favorites) {
+      list.push({ id: `fav-${favorite.id}`, group: "starred", label: favorite.name, Icon: IconStar, run: act(() => loadSql(favorite.sql)) });
     }
     return list;
+    // Locale intentionally invalidates command labels.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connections, tables, scripts, favorites, activeId]);
+  }, [connections, tables, scripts, favorites, activeId, locale]);
 
-  const ql = q.trim().toLowerCase();
-  const filtered = ql ? cmds.filter((c) => c.label.toLowerCase().includes(ql)) : cmds;
+  const ql = q.trim().toLocaleLowerCase(locale);
+  const filtered = ql ? cmds.filter((c) => c.label.toLocaleLowerCase(locale).includes(ql)) : cmds;
   const clampedSel = Math.min(sel, Math.max(0, filtered.length - 1));
+
+  const groupLabel = (group: CmdGroup) => {
+    const key = {
+      actions: "cmd.actions",
+      navigate: "cmd.navigate",
+      connections: "cmd.connections",
+      tables: "cmd.tables",
+      scripts: "cmd.scripts",
+      starred: "cmd.starred",
+    } as const;
+    return t(key[group]);
+  };
 
   const onKeyDown = (e: ReactKeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -178,6 +205,9 @@ export function CommandPalette({ onAddServer }: { onAddServer: () => void }) {
         >
           <motion.div
             className="cmdk"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("top.commandPalette", { shortcut: shortcutLabel("K") })}
             variants={commandV}
             initial="hidden"
             animate="show"
@@ -185,60 +215,57 @@ export function CommandPalette({ onAddServer }: { onAddServer: () => void }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="cmdk-input">
-          <IconSearch size={16} stroke={1.8} />
-          <input
-            ref={inputRef}
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setSel(0);
-            }}
-            onKeyDown={onKeyDown}
-            placeholder="Search tables, run a query, jump anywhere…"
-            spellCheck={false}
-          />
-        </div>
-        <div className="cmdk-list">
-          {filtered.length === 0 && <div className="cmdk-empty">No matches</div>}
-          {GROUPS.map((group) => {
-            const items = filtered.filter((c) => c.group === group);
-            if (!items.length) return null;
-            return (
-              <div className="cmdk-group" key={group}>
-                <div className="cmdk-group-h">{group}</div>
-                {items.map((c) => {
-                  const idx = filtered.indexOf(c);
-                  return (
-                    <button
-                      key={c.id}
-                      className={`cmdk-item ${idx === clampedSel ? "on" : ""}`}
-                      onMouseEnter={() => setSel(idx)}
-                      onClick={c.run}
-                    >
-                      <c.Icon size={16} stroke={1.7} />
-                      <span className="cmdk-label">{c.label}</span>
-                      {c.hint && <span className="cmdk-hint">{c.hint}</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-        <div className="cmdk-foot">
-          <span>
-            <kbd>↑</kbd>
-            <kbd>↓</kbd> navigate
-          </span>
-          <span>
-            <kbd>
-              <IconCornerDownLeft size={11} stroke={2} />
-            </kbd>{" "}
-            select
-          </span>
-          <span>
-            <kbd>esc</kbd> close
-          </span>
+              <IconSearch size={16} stroke={1.8} />
+              <input
+                ref={inputRef}
+                value={q}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setSel(0);
+                }}
+                onKeyDown={onKeyDown}
+                placeholder={t("cmd.placeholder")}
+                spellCheck={false}
+              />
+            </div>
+            <div className="cmdk-list">
+              {filtered.length === 0 && <div className="cmdk-empty">{t("cmd.noMatches")}</div>}
+              {GROUPS.map((group) => {
+                const items = filtered.filter((c) => c.group === group);
+                if (!items.length) return null;
+                return (
+                  <div className="cmdk-group" key={group}>
+                    <div className="cmdk-group-h">{groupLabel(group)}</div>
+                    {items.map((c) => {
+                      const idx = filtered.indexOf(c);
+                      return (
+                        <button
+                          key={c.id}
+                          className={`cmdk-item ${idx === clampedSel ? "on" : ""}`}
+                          onMouseEnter={() => setSel(idx)}
+                          onClick={c.run}
+                        >
+                          <c.Icon size={16} stroke={1.7} />
+                          <span className="cmdk-label">{c.label}</span>
+                          {c.hint && <span className="cmdk-hint">{c.hint}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="cmdk-foot">
+              <span>
+                <kbd>↑</kbd>
+                <kbd>↓</kbd> {t("cmd.navigateHint")}
+              </span>
+              <span>
+                <kbd><IconCornerDownLeft size={11} stroke={2} /></kbd> {t("cmd.selectHint")}
+              </span>
+              <span>
+                <kbd>esc</kbd> {t("cmd.closeHint")}
+              </span>
             </div>
           </motion.div>
         </motion.div>

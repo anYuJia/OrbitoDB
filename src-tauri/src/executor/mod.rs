@@ -134,6 +134,11 @@ mod tests {
             port: None,
             database: ":memory:".into(),
             username: None,
+            env: None,
+            group: None,
+            schema: None,
+            tls: None,
+            ssh: None,
         };
         let d = SqliteDriver::connect(&cfg).await.unwrap();
         d.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT, score REAL, flag BOOLEAN)")

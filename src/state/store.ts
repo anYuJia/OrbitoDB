@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { getBackend } from "../ipc/backend";
 import { inferColumns } from "../lib/csv";
+import { buildBulkInsertStatements } from "../lib/importSql";
+import { buildDuplicateProjection } from "../lib/duplicateRow";
+import { buildMaintenancePlan, type MaintenanceAction } from "../lib/maintenance";
+import { MAX_SAVED_ITEMS, canOpenEditor, capNewest } from "../lib/retention";
+import { buildTablePageSql } from "../lib/tablePaging";
+import { buildTableDdl, quoteDdlIdentifier } from "../lib/ddl";
+import { buildCreateViewSql, buildDropDatabaseObjectSql } from "../lib/databaseObjects";
 import { resolveParams } from "../lib/params";
 import { confirmDelete, confirmDialog } from "./dialog";
 import { confirmIfDestructive, confirmProdWrite, isWrite } from "./safety";
@@ -20,19 +27,22 @@ import type {
   ColumnDef,
   ColumnInfo,
   ConnectionConfig,
+  ConstraintInfo,
+  DatabaseObjectInfo,
   HistoryEntry,
+  ForeignKey,
+  IndexInfo,
   QueryResult,
   TableInfo,
 } from "../ipc/types";
 
 interface SchemaState {
   tables: TableInfo[];
+  objects: DatabaseObjectInfo[];
   columnsByTable: Record<string, ColumnInfo[]>;
 }
 
 export type TopView = "data" | "design" | "automation" | "settings";
-export type AppScreen = "dashboard" | "workspace";
-export type DashPage = "home" | "connections" | "logs";
 export type FilterOp = "=" | "!=" | "contains" | ">" | "<";
 export interface ViewFilter {
   column: string;
@@ -47,7 +57,14 @@ export interface ViewDef {
   filter: ViewFilter | null;
 }
 
-/** A saved SQL snippet — used for both the Scripts and Favorites panels. */
+export interface DataPageState {
+  page: number;
+  pageSize: number;
+  totalRows: number;
+  search: string;
+}
+
+/** A saved SQL snippet — used for both Scripts and Starred queries. */
 export interface SavedItem {
   id: string;
   name: string;
@@ -61,7 +78,7 @@ const FAVS_KEY = "orbitodb.favorites";
 function loadSaved(key: string): SavedItem[] {
   try {
     const raw = JSON.parse(localStorage.getItem(key) ?? "[]");
-    return Array.isArray(raw) ? (raw as SavedItem[]) : [];
+    return Array.isArray(raw) ? capNewest(raw as SavedItem[], MAX_SAVED_ITEMS) : [];
   } catch {
     return [];
   }
@@ -100,6 +117,8 @@ export interface EditorTab {
   id: string;
   name: string;
   sql: string;
+  /** Saved database context for this SQL tab. Null means not pinned yet. */
+  connectionId: string | null;
 }
 const EDITORS_KEY = "orbitodb.editors";
 const ACTIVE_EDITOR_KEY = "orbitodb.activeEditor";
@@ -112,12 +131,13 @@ function loadEditors(): EditorTab[] {
         id: String(e.id ?? `ed-${i + 1}`),
         name: String(e.name ?? `Query ${i + 1}`),
         sql: String(e.sql ?? ""),
+        connectionId: typeof e.connectionId === "string" && e.connectionId ? e.connectionId : null,
       }));
     }
   } catch {
     /* fall through to the migrated single editor */
   }
-  return [{ id: "ed-1", name: "Query 1", sql: loadInitialSql() }];
+  return [{ id: "ed-1", name: "Query 1", sql: loadInitialSql(), connectionId: null }];
 }
 function persistEditors(editors: EditorTab[], activeId: string): void {
   try {
@@ -127,6 +147,12 @@ function persistEditors(editors: EditorTab[], activeId: string): void {
     /* ignore */
   }
 }
+let editorIdSequence = 0;
+function newEditorId(): string {
+  editorIdSequence += 1;
+  return `ed-${Date.now().toString(36)}-${editorIdSequence.toString(36)}`;
+}
+
 const INITIAL_EDITORS = loadEditors();
 const INITIAL_ACTIVE_EDITOR = (() => {
   try {
@@ -185,8 +211,6 @@ export interface AppStore {
   view: "data" | "sql" | "history";
   inspectorRow: number | null;
   topView: TopView;
-  screen: AppScreen;
-  dashPage: DashPage;
   views: ViewDef[];
   activeViewId: string | null;
   selection: number[];
@@ -194,6 +218,7 @@ export interface AppStore {
   favorites: SavedItem[];
   pendingColFilter: { column: string; value: string } | null;
   readOnlyConns: string[];
+  dataPage: DataPageState;
 
   loadConnections: () => Promise<void>;
   restoreSession: () => Promise<void>;
@@ -201,15 +226,24 @@ export interface AppStore {
   deleteConnection: (id: string) => Promise<void>;
   openAndIntrospect: (id: string) => Promise<void>;
   expandTable: (table: string) => Promise<void>;
+  refreshColumns: (table: string) => Promise<void>;
+  refreshDatabaseObjects: () => Promise<void>;
+  createDatabaseView: (name: string, query: string) => Promise<boolean>;
+  dropDatabaseObject: (object: DatabaseObjectInfo) => Promise<boolean>;
   setSql: (sql: string) => void;
   newEditor: () => void;
+  openSqlTab: (name: string, sql: string) => void;
+  renameEditor: (id: string, name: string) => void;
+  bindEditorConnection: (id: string, connectionId: string | null) => void;
   closeEditor: (id: string) => void;
-  selectEditor: (id: string) => void;
+  selectEditor: (id: string) => Promise<void>;
   setEditorResult: (id: string, result: QueryResult | null, error: AppError | null) => void;
   run: () => Promise<void>;
   loadHistory: () => Promise<void>;
   openTableData: (table: string, opts?: { newTab?: boolean }) => Promise<void>;
   closeTableTab: (table: string) => void;
+  loadTablePage: (page: number) => Promise<void>;
+  setTablePageSize: (pageSize: number) => Promise<void>;
   searchTable: (query: string) => Promise<void>;
   navigateFk: (refTable: string, refColumn: string, value: unknown) => Promise<void>;
   setPendingColFilter: (v: { column: string; value: string } | null) => void;
@@ -237,12 +271,15 @@ export interface AppStore {
   dropColumn: (table: string, column: string) => Promise<void>;
   renameColumn: (table: string, from: string, to: string) => Promise<void>;
   renameTable: (from: string, to: string) => Promise<void>;
-  importCsv: (table: string, headers: string[], rows: string[][], opts?: { create?: boolean }) => Promise<void>;
+  importCsv: (
+    table: string,
+    headers: string[],
+    rows: (string | null)[][],
+    opts?: { create?: boolean },
+  ) => Promise<boolean>;
   openInspector: (rowIndex: number) => void;
   closeInspector: () => void;
   setTopView: (v: TopView) => void;
-  setScreen: (s: AppScreen) => void;
-  setDashPage: (p: DashPage) => void;
   addView: (table: string, name: string, filter: ViewFilter | null) => void;
   deleteView: (id: string) => void;
   openView: (view: ViewDef) => Promise<void>;
@@ -251,6 +288,7 @@ export interface AppStore {
   clearSelection: () => void;
   deleteSelected: () => Promise<void>;
   duplicateSelected: () => Promise<void>;
+  runMaintenance: (action: MaintenanceAction, table?: string | null) => Promise<boolean>;
   loadSql: (sql: string) => void;
   showTableDdl: (table: string) => Promise<void>;
   saveScript: (name: string, sql: string) => void;
@@ -290,7 +328,7 @@ export function isFkError(e: unknown): boolean {
 export const useStore = create<AppStore>((set, get) => ({
   connections: [],
   activeConnectionId: null,
-  schema: { tables: [], columnsByTable: {} },
+  schema: { tables: [], objects: [], columnsByTable: {} },
   sql: INITIAL_EDITORS.find((e) => e.id === INITIAL_ACTIVE_EDITOR)?.sql ?? "",
   editors: INITIAL_EDITORS,
   activeEditorId: INITIAL_ACTIVE_EDITOR,
@@ -308,8 +346,6 @@ export const useStore = create<AppStore>((set, get) => ({
   view: "sql",
   inspectorRow: null,
   topView: "data",
-  screen: "dashboard",
-  dashPage: "home",
   views: [],
   activeViewId: null,
   selection: [],
@@ -317,6 +353,7 @@ export const useStore = create<AppStore>((set, get) => ({
   favorites: loadSaved(FAVS_KEY),
   pendingColFilter: null,
   readOnlyConns: loadReadOnly(),
+  dataPage: { page: 0, pageSize: 100, totalRows: 0, search: "" },
 
   toggleReadOnly: (id) =>
     set((s) => {
@@ -416,7 +453,7 @@ export const useStore = create<AppStore>((set, get) => ({
       activeConnectionId: id,
       loadingTables: true,
       error: null,
-      schema: { tables: [], columnsByTable: {} },
+      schema: { tables: [], objects: [], columnsByTable: {} },
       editTable: null,
       openTables: [],
       result: null,
@@ -424,11 +461,15 @@ export const useStore = create<AppStore>((set, get) => ({
       activeViewId: null,
       selection: [],
       inspectorRow: null,
+      dataPage: { ...get().dataPage, page: 0, totalRows: 0, search: "" },
     });
     try {
       await backend.openConnection(id);
-      const tables = await backend.listTables(id);
-      set({ schema: { tables, columnsByTable: {} }, loadingTables: false });
+      const [tables, objects] = await Promise.all([
+        backend.listTables(id),
+        backend.listDatabaseObjects(id),
+      ]);
+      set({ schema: { tables, objects, columnsByTable: {} }, loadingTables: false });
       // Eagerly cache columns for small schemas so SQL autocomplete has them.
       if (tables.length <= 40) {
         void (async () => {
@@ -466,6 +507,98 @@ export const useStore = create<AppStore>((set, get) => ({
     }));
   },
 
+  refreshColumns: async (table) => {
+    const id = get().activeConnectionId;
+    if (!id) return;
+    const cols = await backend.listColumns(id, table);
+    set((s) => ({
+      schema: {
+        ...s.schema,
+        columnsByTable: { ...s.schema.columnsByTable, [table]: cols },
+      },
+    }));
+  },
+
+  refreshDatabaseObjects: async () => {
+    const id = get().activeConnectionId;
+    if (!id) return;
+    const [tables, objects] = await Promise.all([
+      backend.listTables(id),
+      backend.listDatabaseObjects(id),
+    ]);
+    set((s) => ({
+      schema: {
+        ...s.schema,
+        tables,
+        objects,
+      },
+    }));
+  },
+
+  createDatabaseView: async (name, query) => {
+    const id = get().activeConnectionId;
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
+    const conn = get().connections.find((item) => item.id === id);
+    if (!conn) return false;
+    let sql: string;
+    try {
+      sql = buildCreateViewSql(conn.engine, name, query);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+      return false;
+    }
+    if (!(await confirmProdWrite(conn, sql))) return false;
+    try {
+      await backend.runQuerySilent(id, sql);
+      await get().refreshDatabaseObjects();
+      toast(`Created view “${name.trim()}”`, "success");
+      await get().openTableData(name.trim());
+      return true;
+    } catch (error) {
+      const err = normalizeError(error);
+      set({ error: err });
+      toast(err.message ?? "Create view failed", "error");
+      return false;
+    }
+  },
+
+  dropDatabaseObject: async (object) => {
+    const id = get().activeConnectionId;
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
+    const conn = get().connections.find((item) => item.id === id);
+    if (!conn) return false;
+    let sql: string;
+    try {
+      sql = buildDropDatabaseObjectSql(conn.engine, object);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+      return false;
+    }
+    if (!(await confirmProdWrite(conn, sql))) return false;
+    try {
+      await backend.runQuerySilent(id, sql);
+      await get().refreshDatabaseObjects();
+      if (object.kind === "view" && get().editTable?.table === object.name) {
+        set({ editTable: null, result: null, selection: [] });
+      }
+      toast(`Dropped ${object.kind} “${object.name}”`, "success");
+      return true;
+    } catch (error) {
+      const err = normalizeError(error);
+      set({ error: err });
+      toast(err.message ?? `Drop ${object.kind} failed`, "error");
+      return false;
+    }
+  },
+
   setSql: (sql) =>
     set((s) => {
       const editors = s.editors.map((e) => (e.id === s.activeEditorId ? { ...e, sql } : e));
@@ -475,24 +608,80 @@ export const useStore = create<AppStore>((set, get) => ({
 
   newEditor: () =>
     set((s) => {
-      const id = `ed-${Date.now().toString(36)}`;
-      const editor: EditorTab = { id, name: `Query ${s.editors.length + 1}`, sql: "" };
+      if (!canOpenEditor(s.editors.length)) {
+        toast("SQL tab limit reached — close a tab before opening another.", "error");
+        return {};
+      }
+      const id = newEditorId();
+      const editor: EditorTab = {
+        id,
+        name: `Query ${s.editors.length + 1}`,
+        sql: "",
+        connectionId: s.activeConnectionId,
+      };
       const editors = [...s.editors, editor];
       persistEditors(editors, id);
       return { editors, activeEditorId: id, sql: "", view: "sql", topView: "data" };
     }),
 
-  selectEditor: (id) =>
+  openSqlTab: (name, sql) =>
     set((s) => {
-      const ed = s.editors.find((e) => e.id === id);
-      if (!ed) return {};
-      persistEditors(s.editors, id);
-      return { activeEditorId: id, sql: ed.sql, view: "sql", topView: "data" };
+      if (!canOpenEditor(s.editors.length)) {
+        toast("SQL tab limit reached — close a tab before opening another.", "error");
+        return {};
+      }
+      const id = newEditorId();
+      const editor: EditorTab = {
+        id,
+        name: name.trim() || "Query " + (s.editors.length + 1),
+        sql,
+        connectionId: s.activeConnectionId,
+      };
+      const editors = [...s.editors, editor];
+      persistEditors(editors, id);
+      persistLocal(EDITOR_KEY, sql);
+      return { editors, activeEditorId: id, sql, view: "sql", topView: "data" };
     }),
+
+  renameEditor: (id, name) =>
+    set((s) => {
+      const nextName = name.trim();
+      if (!nextName) return {};
+      const editors = s.editors.map((editor) => (editor.id === id ? { ...editor, name: nextName } : editor));
+      persistEditors(editors, s.activeEditorId);
+      return { editors };
+    }),
+
+  bindEditorConnection: (id, connectionId) =>
+    set((s) => {
+      const editors = s.editors.map((editor) =>
+        editor.id === id ? { ...editor, connectionId } : editor,
+      );
+      persistEditors(editors, s.activeEditorId);
+      return { editors };
+    }),
+
+  selectEditor: async (id) => {
+    const state = get();
+    const editor = state.editors.find((item) => item.id === id);
+    if (!editor) return;
+
+    persistEditors(state.editors, id);
+    set({ activeEditorId: id, sql: editor.sql, view: "sql", topView: "data" });
+
+    if (
+      editor.connectionId &&
+      editor.connectionId !== get().activeConnectionId &&
+      get().connections.some((connection) => connection.id === editor.connectionId)
+    ) {
+      await get().openAndIntrospect(editor.connectionId);
+    }
+  },
 
   showTableDdl: async (table) => {
     const id = get().activeConnectionId;
     if (!id) return;
+
     let cols = get().schema.columnsByTable[table];
     if (!cols) {
       try {
@@ -501,44 +690,78 @@ export const useStore = create<AppStore>((set, get) => ({
         cols = [];
       }
     }
-    const quote = (n: string) => `"${n.replace(/"/g, '""')}"`;
-    const lines = cols.map((c) => {
-      let s = `  ${quote(c.name)} ${c.dataType || "TEXT"}`;
-      if (c.isPrimaryKey) s += " PRIMARY KEY";
-      else if (!c.nullable) s += " NOT NULL";
-      return s;
-    });
-    const ddl = lines.length
-      ? `CREATE TABLE ${quote(table)} (\n${lines.join(",\n")}\n);`
-      : `-- No column information available for ${table}`;
-    get().newEditor();
-    get().setSql(ddl);
+
+    const engine = get().connections.find((connection) => connection.id === id)?.engine ?? "sqlite";
+    let foreignKeys: ForeignKey[] = [];
+    let indexes: IndexInfo[] = [];
+    let constraints: ConstraintInfo[] = [];
+    try {
+      [foreignKeys, indexes, constraints] = await Promise.all([
+        backend.listForeignKeys(id),
+        backend.listIndexes(id, table),
+        backend.listConstraints(id, table),
+      ]);
+    } catch {
+      // Column metadata is still enough to produce a useful partial DDL preview.
+      // buildTableDdl labels the output as metadata-derived and review-first.
+    }
+
+    const ddl = buildTableDdl(engine, table, cols, foreignKeys, indexes, constraints);
+    get().openSqlTab("DDL · " + table, ddl);
   },
 
-  closeEditor: (id) =>
-    set((s) => {
-      const idx = s.editors.findIndex((e) => e.id === id);
-      let editors = s.editors.filter((e) => e.id !== id);
-      const editorResults = { ...s.editorResults };
-      const editorErrors = { ...s.editorErrors };
-      delete editorResults[id];
-      delete editorErrors[id];
-      if (editors.length === 0) {
-        const fresh: EditorTab = { id: `ed-${Date.now().toString(36)}`, name: "Query 1", sql: "" };
-        editors = [fresh];
-        persistEditors(editors, fresh.id);
-        return { editors, activeEditorId: fresh.id, sql: "", editorResults, editorErrors };
-      }
-      let activeEditorId = s.activeEditorId;
-      let sql = s.sql;
-      if (id === s.activeEditorId) {
-        const next = editors[Math.min(idx, editors.length - 1)];
-        activeEditorId = next.id;
-        sql = next.sql;
-      }
-      persistEditors(editors, activeEditorId);
-      return { editors, activeEditorId, sql, editorResults, editorErrors };
-    }),
+  closeEditor: (id) => {
+    const state = get();
+    const index = state.editors.findIndex((editor) => editor.id === id);
+    if (index < 0) return;
+
+    let editors = state.editors.filter((editor) => editor.id !== id);
+    const editorResults = { ...state.editorResults };
+    const editorErrors = { ...state.editorErrors };
+    delete editorResults[id];
+    delete editorErrors[id];
+
+    if (editors.length === 0) {
+      const fresh: EditorTab = {
+        id: newEditorId(),
+        name: "Query 1",
+        sql: "",
+        connectionId: state.activeConnectionId,
+      };
+      editors = [fresh];
+      persistEditors(editors, fresh.id);
+      set({
+        editors,
+        activeEditorId: fresh.id,
+        sql: "",
+        editorResults,
+        editorErrors,
+        view: "sql",
+      });
+      return;
+    }
+
+    let activeEditorId = state.activeEditorId;
+    let sql = state.sql;
+    let nextEditor: EditorTab | undefined;
+
+    if (id === state.activeEditorId) {
+      nextEditor = editors[Math.min(index, editors.length - 1)];
+      activeEditorId = nextEditor.id;
+      sql = nextEditor.sql;
+    }
+
+    persistEditors(editors, activeEditorId);
+    set({ editors, activeEditorId, sql, editorResults, editorErrors });
+
+    if (
+      nextEditor?.connectionId &&
+      nextEditor.connectionId !== get().activeConnectionId &&
+      get().connections.some((connection) => connection.id === nextEditor?.connectionId)
+    ) {
+      void get().openAndIntrospect(nextEditor.connectionId);
+    }
+  },
 
   setEditorResult: (id, result, error) =>
     set((s) => ({
@@ -616,10 +839,7 @@ export const useStore = create<AppStore>((set, get) => ({
   openTableData: async (table, opts) => {
     const id = get().activeConnectionId;
     if (!id) return;
-    // Maintain the open-table tab list. Ctrl/Cmd-click (newTab) appends a tab;
-    // a plain click replaces the active table tab so casual browsing doesn't pile
-    // up tabs. An already-open table is just re-activated.
-    const { openTables, editTable, view } = get();
+    const { openTables, editTable, view, dataPage } = get();
     let nextTabs: string[];
     if (openTables.includes(table)) {
       nextTabs = openTables;
@@ -630,7 +850,7 @@ export const useStore = create<AppStore>((set, get) => ({
     } else {
       nextTabs = [...openTables, table];
     }
-    const sql = `SELECT * FROM ${table} LIMIT 1000;`;
+
     set({
       view: "data",
       topView: "data",
@@ -641,23 +861,41 @@ export const useStore = create<AppStore>((set, get) => ({
       inspectorRow: null,
       activeViewId: null,
       selection: [],
+      dataPage: { ...dataPage, page: 0, totalRows: 0, search: "" },
     });
+
     try {
-      // Column introspection is best-effort — it must never block the data load.
       try {
         await get().expandTable(table);
       } catch {
-        /* fall back to the columns the query itself returns */
+        /* query metadata still provides a usable grid */
       }
       const cols = get().schema.columnsByTable[table] ?? [];
-      const pkColumn = cols.find((c) => c.isPrimaryKey)?.name ?? null;
-      let result = await backend.runQuery(id, sql);
-      // Empty tables yield no columns from the row set — show the schema's columns.
+      const conn = get().connections.find((item) => item.id === id);
+      if (!conn) throw new Error("Active connection metadata is unavailable.");
+      const sql = buildTablePageSql(
+        conn.engine,
+        table,
+        cols.map((column) => column.name),
+        0,
+        dataPage.pageSize,
+      );
+      const [countResult, pageResult] = await Promise.all([
+        backend.runQuerySilent(id, sql.countSql),
+        backend.runQuerySilent(id, sql.dataSql),
+      ]);
+      const totalRows = Number(countResult.rows?.[0]?.[0] ?? 0);
+      let result = pageResult;
       if (result.columns.length === 0 && cols.length > 0) {
-        result = { ...result, columns: cols.map((c) => ({ name: c.name, dataType: c.dataType })) };
+        result = { ...result, columns: cols.map((column) => ({ name: column.name, dataType: column.dataType })) };
       }
-      set({ result, editTable: { table, pkColumn }, loadingResult: false });
-      await get().loadHistory();
+      const pkColumn = cols.find((column) => column.isPrimaryKey)?.name ?? null;
+      set({
+        result,
+        editTable: { table, pkColumn },
+        loadingResult: false,
+        dataPage: { page: 0, pageSize: dataPage.pageSize, totalRows, search: "" },
+      });
     } catch (e) {
       set({ error: normalizeError(e), result: null, loadingResult: false });
     }
@@ -676,30 +914,73 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  // Whole-table search: filters EVERY row of the active table on the server (not
-  // just the rows already loaded into the grid), across all columns. Engine-aware
-  // casting/quoting so it works on SQLite, PostgreSQL and MySQL.
-  searchTable: async (query) => {
-    const { activeConnectionId, editTable, result, connections } = get();
+  loadTablePage: async (requestedPage) => {
+    const { activeConnectionId, editTable, connections, schema, dataPage, result } = get();
     if (!activeConnectionId || !editTable) return;
-    const cols = (result?.columns ?? []).map((c) => c.name);
-    if (!cols.length) return;
-    const engine = connections.find((c) => c.id === activeConnectionId)?.engine;
-    const qid =
-      engine === "mysql"
-        ? (n: string) => "`" + n.replace(/`/g, "``") + "`"
-        : (n: string) => '"' + n.replace(/"/g, '""') + '"';
-    const toText = (e: string) => (engine === "mysql" ? `CAST(${e} AS CHAR)` : `CAST(${e} AS TEXT)`);
-    const lit = `'%${query.replace(/'/g, "''")}%'`;
-    const where = cols.map((c) => `${toText(qid(c))} LIKE ${lit}`).join(" OR ");
-    const from = qid(editTable.table);
-    set({ loadingResult: true, error: null });
+    const conn = connections.find((item) => item.id === activeConnectionId);
+    if (!conn) return;
+
+    const columns =
+      schema.columnsByTable[editTable.table]?.map((column) => column.name) ??
+      result?.columns.map((column) => column.name) ??
+      [];
+    const maxPage = Math.max(0, Math.ceil(dataPage.totalRows / dataPage.pageSize) - 1);
+    const page = Math.min(Math.max(0, Math.floor(requestedPage)), maxPage);
+    const sql = buildTablePageSql(
+      conn.engine,
+      editTable.table,
+      columns,
+      page,
+      dataPage.pageSize,
+      dataPage.search,
+    );
+    set({ loadingResult: true, error: null, selection: [], inspectorRow: null });
     try {
-      const r = await backend.runQuery(activeConnectionId, `SELECT * FROM ${from} WHERE ${where} LIMIT 1000;`);
-      set({ result: r, loadingResult: false });
+      const [countResult, pageResult] = await Promise.all([
+        backend.runQuerySilent(activeConnectionId, sql.countSql),
+        backend.runQuerySilent(activeConnectionId, sql.dataSql),
+      ]);
+      const totalRows = Number(countResult.rows?.[0]?.[0] ?? 0);
+      const actualMax = Math.max(0, Math.ceil(totalRows / dataPage.pageSize) - 1);
+      const actualPage = Math.min(page, actualMax);
+      if (actualPage !== page) {
+        const retry = buildTablePageSql(
+          conn.engine,
+          editTable.table,
+          columns,
+          actualPage,
+          dataPage.pageSize,
+          dataPage.search,
+        );
+        const retryResult = await backend.runQuerySilent(activeConnectionId, retry.dataSql);
+        set({
+          result: retryResult,
+          loadingResult: false,
+          dataPage: { ...dataPage, page: actualPage, totalRows },
+        });
+        return;
+      }
+      set({
+        result: pageResult,
+        loadingResult: false,
+        dataPage: { ...dataPage, page, totalRows },
+      });
     } catch (e) {
       set({ error: normalizeError(e), loadingResult: false });
     }
+  },
+
+  setTablePageSize: async (pageSize) => {
+    const size = Math.min(1000, Math.max(10, Math.floor(pageSize)));
+    set((state) => ({ dataPage: { ...state.dataPage, page: 0, pageSize: size } }));
+    await get().loadTablePage(0);
+  },
+
+  searchTable: async (query) => {
+    set((state) => ({
+      dataPage: { ...state.dataPage, page: 0, search: query.trim() },
+    }));
+    await get().loadTablePage(0);
   },
 
   editCell: async (rowIndex, colIndex, value) => {
@@ -782,12 +1063,18 @@ export const useStore = create<AppStore>((set, get) => ({
   dropTable: async (table) => {
     const id = get().activeConnectionId;
     if (!id) return;
-    if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return;
+    }
     try {
       await backend.dropTable(id, table);
-      const tables = await backend.listTables(id);
+      const [tables, objects] = await Promise.all([
+        backend.listTables(id),
+        backend.listDatabaseObjects(id),
+      ]);
       set((s) => ({
-        schema: { tables, columnsByTable: {} },
+        schema: { tables, objects, columnsByTable: {} },
         editTable: s.editTable?.table === table ? null : s.editTable,
         result: s.editTable?.table === table ? null : s.result,
       }));
@@ -813,9 +1100,12 @@ export const useStore = create<AppStore>((set, get) => ({
       await withFkDisabled(id, conn?.engine, choice.skipFk, async () => {
         for (const n of names) await backend.dropTable(id, n);
       });
-      const tables = await backend.listTables(id);
+      const [tables, objects] = await Promise.all([
+        backend.listTables(id),
+        backend.listDatabaseObjects(id),
+      ]);
       set((s) => ({
-        schema: { tables, columnsByTable: {} },
+        schema: { tables, objects, columnsByTable: {} },
         editTable: s.editTable && names.includes(s.editTable.table) ? null : s.editTable,
         result: s.editTable && names.includes(s.editTable.table) ? null : s.result,
       }));
@@ -863,14 +1153,21 @@ export const useStore = create<AppStore>((set, get) => ({
 
   createTable: async (name, columns) => {
     const id = get().activeConnectionId;
-    if (!id) return;
-    if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
+    if (!id) throw new Error("No active connection");
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      throw new Error("Connection is read-only");
+    }
     try {
       await backend.createTable(id, name, columns);
-      const tables = await backend.listTables(id);
-      set({ schema: { tables, columnsByTable: {} } });
+      const [tables, objects] = await Promise.all([
+        backend.listTables(id),
+        backend.listDatabaseObjects(id),
+      ]);
+      set({ schema: { tables, objects, columnsByTable: {} }, error: null });
     } catch (e) {
       set({ error: normalizeError(e) });
+      throw e;
     }
   },
 
@@ -912,11 +1209,14 @@ export const useStore = create<AppStore>((set, get) => ({
   reload: async (table) => {
     const id = get().activeConnectionId;
     if (!id) return;
-    const tables = await backend.listTables(id);
+    const [tables, objects] = await Promise.all([
+      backend.listTables(id),
+      backend.listDatabaseObjects(id),
+    ]);
     set((s) => {
       const columnsByTable = { ...s.schema.columnsByTable };
       delete columnsByTable[table];
-      return { schema: { tables, columnsByTable } };
+      return { schema: { tables, objects, columnsByTable } };
     });
     await get().openTableData(table);
   },
@@ -963,8 +1263,11 @@ export const useStore = create<AppStore>((set, get) => ({
     if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
     try {
       await backend.renameTable(id, from, to);
-      const tables = await backend.listTables(id);
-      set({ schema: { tables, columnsByTable: {} } });
+      const [tables, objects] = await Promise.all([
+        backend.listTables(id),
+        backend.listDatabaseObjects(id),
+      ]);
+      set({ schema: { tables, objects, columnsByTable: {} } });
       await get().openTableData(to);
     } catch (e) {
       set({ error: normalizeError(e) });
@@ -973,24 +1276,69 @@ export const useStore = create<AppStore>((set, get) => ({
 
   importCsv: async (table, headers, rows, opts) => {
     const id = get().activeConnectionId;
-    if (!id) return;
-    if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
-    const conn = get().connections.find((c) => c.id === id);
-    if (!(await confirmProdWrite(conn, "INSERT"))) return;
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
+    const conn = get().connections.find((item) => item.id === id);
+    if (!conn) return false;
+    if (!headers.length || new Set(headers).size !== headers.length || headers.some((header) => !header.trim())) {
+      toast("Mapped import columns must be non-empty and unique.", "error");
+      return false;
+    }
+    if (!(await confirmProdWrite(conn, "INSERT"))) return false;
+
+    let created = false;
+    let transactionStarted = false;
     try {
-      if (opts?.create) await backend.createTable(id, table, inferColumns(headers, rows));
-      for (const r of rows) await backend.insertRow(id, table, headers, r);
       if (opts?.create) {
-        await get().openAndIntrospect(id); // refresh tree + schema so the new table shows
+        const inferredRows = rows.map((row) => row.map((value) => value ?? ""));
+        await backend.createTable(id, table, inferColumns(headers, inferredRows));
+        created = true;
+      }
+
+      const statements = buildBulkInsertStatements(conn.engine, table, headers, rows, 200);
+      if (statements.length) {
+        await backend.runQuerySilent(id, "BEGIN");
+        transactionStarted = true;
+        for (const statement of statements) {
+          await backend.runQuerySilent(id, statement);
+        }
+        await backend.runQuerySilent(id, "COMMIT");
+        transactionStarted = false;
+      }
+
+      if (opts?.create) {
+        await get().openAndIntrospect(id);
         await get().openTableData(table);
       } else {
         await get().reload(table);
       }
-      toast(`Imported ${rows.length.toLocaleString()} ${rows.length === 1 ? "row" : "rows"} into ${table}`, "success");
+      toast(
+        `Imported ${rows.length.toLocaleString()} ${rows.length === 1 ? "row" : "rows"} into ${table}`,
+        "success",
+      );
+      return true;
     } catch (e) {
+      if (transactionStarted) {
+        try {
+          await backend.runQuerySilent(id, "ROLLBACK");
+        } catch {
+          /* best effort */
+        }
+      }
+      if (created) {
+        try {
+          await backend.dropTable(id, table);
+        } catch {
+          /* MySQL DDL may have auto-committed; leave the original error visible */
+        }
+      }
       const err = normalizeError(e);
       set({ error: err });
       toast(err.message ?? "Import failed", "error");
+      return false;
     }
   },
 
@@ -998,10 +1346,6 @@ export const useStore = create<AppStore>((set, get) => ({
   closeInspector: () => set({ inspectorRow: null }),
 
   setTopView: (v) => set({ topView: v }),
-
-  setScreen: (s) => set({ screen: s }),
-
-  setDashPage: (p) => set({ dashPage: p, screen: "dashboard" }),
 
   addView: (table, name, filter) => {
     const id = get().activeConnectionId;
@@ -1027,7 +1371,9 @@ export const useStore = create<AppStore>((set, get) => ({
   openView: async (view) => {
     const id = get().activeConnectionId;
     if (!id || id !== view.connectionId) return;
-    const sql = `SELECT * FROM ${view.table} LIMIT 200;`;
+    const conn = get().connections.find((item) => item.id === id);
+    const tableRef = conn ? quoteDdlIdentifier(conn.engine, view.table) : view.table;
+    const sql = `SELECT * FROM ${tableRef} LIMIT 200;`;
     set({
       view: "data",
       topView: "data",
@@ -1106,34 +1452,86 @@ export const useStore = create<AppStore>((set, get) => ({
   duplicateSelected: async () => {
     const { activeConnectionId, result, editTable, selection } = get();
     if (!activeConnectionId || !result || !editTable || selection.length === 0) return;
-    if (get().readOnlyConns.includes(activeConnectionId)) return toast("Read-only — writes are blocked.", "error");
-    const pkIdx = editTable.pkColumn ? result.columns.findIndex((c) => c.name === editTable.pkColumn) : -1;
-    // Compute the next integer id when the PK looks like an auto-increment integer.
-    let nextId = 0;
-    let intPk = false;
-    if (pkIdx >= 0) {
-      const nums = result.rows.map((r) => Number(r[pkIdx]));
-      if (nums.length > 0 && nums.every((n) => Number.isInteger(n))) {
-        intPk = true;
-        nextId = Math.max(0, ...nums) + 1;
-      }
+    if (get().readOnlyConns.includes(activeConnectionId)) {
+      toast("Read-only — writes are blocked.", "error");
+      return;
     }
+    const conn = get().connections.find((item) => item.id === activeConnectionId);
+    if (!conn) return;
+    if (!(await confirmProdWrite(conn, "INSERT"))) return;
+
     try {
-      for (const i of [...selection].sort((a, b) => a - b)) {
-        const src = result.rows[i];
-        const columns: string[] = [];
-        const values: unknown[] = [];
-        result.columns.forEach((c, j) => {
-          columns.push(c.name);
-          if (j === pkIdx) values.push(intPk ? nextId++ : `${String(src[j])}-copy`);
-          else values.push(src[j]);
-        });
-        await backend.insertRow(activeConnectionId, editTable.table, columns, values);
+      let metadata = get().schema.columnsByTable[editTable.table] ?? [];
+      if (!metadata.length) {
+        await get().refreshColumns(editTable.table);
+        metadata = get().schema.columnsByTable[editTable.table] ?? [];
       }
+
+      const names = result.columns.map((column) => column.name);
+      for (const i of [...selection].sort((a, b) => a - b)) {
+        const projection = buildDuplicateProjection(
+          conn.engine,
+          metadata,
+          names,
+          result.rows[i],
+        );
+        await backend.insertRow(
+          activeConnectionId,
+          editTable.table,
+          projection.columns,
+          projection.values,
+        );
+      }
+      const count = selection.length;
       set({ selection: [] });
       await get().refresh();
+      toast(`Duplicated ${count} ${count === 1 ? "row" : "rows"}.`, "success");
     } catch (e) {
-      set({ error: normalizeError(e) });
+      const err = normalizeError(e);
+      set({ error: err });
+      toast(err.message ?? "Duplicate failed", "error");
+    }
+  },
+
+  runMaintenance: async (action, table = null) => {
+    const id = get().activeConnectionId;
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — maintenance operations are blocked.", "error");
+      return false;
+    }
+    const conn = get().connections.find((item) => item.id === id);
+    if (!conn) return false;
+
+    let plan;
+    try {
+      plan = buildMaintenancePlan(conn.engine, action, table);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+      return false;
+    }
+
+    if (
+      conn.env === "prod" &&
+      !(await confirmDialog({
+        title: `Run ${plan.label} on PRODUCTION?`,
+        message: `${plan.label} can take locks or consume significant I/O on “${conn.name}”. Continue?`,
+        confirmLabel: "Run on production",
+        danger: true,
+      }))
+    ) {
+      return false;
+    }
+
+    try {
+      await backend.runQuerySilent(id, plan.sql);
+      toast(`${plan.label} completed.`, "success");
+      return true;
+    } catch (e) {
+      const err = normalizeError(e);
+      set({ error: err });
+      toast(err.message ?? `${plan.label} failed`, "error");
+      return false;
     }
   },
 
@@ -1147,7 +1545,7 @@ export const useStore = create<AppStore>((set, get) => ({
   saveScript: (name, sql) =>
     set((s) => {
       const item: SavedItem = { id: `s-${Date.now()}-${s.scripts.length}`, name, sql, savedAt: new Date().toISOString() };
-      const scripts = [item, ...s.scripts];
+      const scripts = capNewest([item, ...s.scripts], MAX_SAVED_ITEMS);
       persistSaved(SCRIPTS_KEY, scripts);
       toast(`Saved script “${name}”`, "success");
       return { scripts };
@@ -1163,9 +1561,9 @@ export const useStore = create<AppStore>((set, get) => ({
   saveFavorite: (name, sql) =>
     set((s) => {
       const item: SavedItem = { id: `f-${Date.now()}-${s.favorites.length}`, name, sql, savedAt: new Date().toISOString() };
-      const favorites = [item, ...s.favorites];
+      const favorites = capNewest([item, ...s.favorites], MAX_SAVED_ITEMS);
       persistSaved(FAVS_KEY, favorites);
-      toast(`Added “${name}” to favorites`, "success");
+      toast(`Added “${name}” to Starred`, "success");
       return { favorites };
     }),
 

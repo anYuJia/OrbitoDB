@@ -1,13 +1,13 @@
 import { confirmDialog } from "./dialog";
 
-const WRITE_RE = /^\s*(insert|update|delete|drop|alter|truncate|create|replace|merge|grant|revoke)\b/i;
+const WRITE_RE = /^\s*(insert|update|delete|drop|alter|truncate|create|replace|merge|grant|revoke|vacuum|analyze|optimize)\b/i;
 const DESTRUCTIVE_RE = /^\s*(drop|truncate)\b/i;
 // DELETE/UPDATE that has no WHERE clause anywhere in the statement.
 const NOWHERE_RE = /^\s*(delete|update)\b(?![\s\S]*\bwhere\b)/i;
 
 /** Does the statement modify data/schema (vs a read-only SELECT/EXPLAIN)? */
 export function isWrite(sql: string): boolean {
-  return WRITE_RE.test(sql);
+  return WRITE_RE.test(sql) || /^\s*pragma\s+optimize\b/i.test(sql);
 }
 
 /**

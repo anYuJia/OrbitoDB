@@ -1,14 +1,16 @@
 use async_trait::async_trait;
-use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions};
+use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode};
 use sqlx::{Column as _, Row, TypeInfo};
+use tokio::sync::Mutex;
 
-use crate::drivers::Driver;
+use crate::drivers::{expand_home_path, Driver};
 use crate::error::AppResult;
 use crate::executor::mysql_row_to_values;
-use crate::types::{Column, ColumnInfo, ConnectionConfig, QueryResult, TableInfo, MAX_ROWS};
+use crate::types::{Column, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, ForeignKey, IndexInfo, QueryResult, TableInfo, TlsMode, MAX_ROWS};
 
 pub struct MySqlDriver {
     pool: sqlx::MySqlPool,
+    active_thread_id: Mutex<Option<u64>>,
 }
 
 fn options(cfg: &ConnectionConfig, password: Option<&str>) -> MySqlConnectOptions {
@@ -21,12 +23,34 @@ fn server_options(cfg: &ConnectionConfig, password: Option<&str>) -> MySqlConnec
     let mut o = MySqlConnectOptions::new()
         .host(cfg.host.as_deref().unwrap_or("localhost"))
         .port(cfg.port.unwrap_or(3306));
+
     if let Some(u) = cfg.username.as_deref() {
         o = o.username(u);
     }
     if let Some(p) = password {
         o = o.password(p);
     }
+
+    let tls_mode = cfg.tls.as_ref().map(|tls| tls.mode).unwrap_or(TlsMode::Disable);
+    o = o.ssl_mode(match tls_mode {
+        TlsMode::Disable => MySqlSslMode::Disabled,
+        TlsMode::Allow => MySqlSslMode::Preferred,
+        TlsMode::Prefer => MySqlSslMode::Preferred,
+        TlsMode::Require => MySqlSslMode::Required,
+        TlsMode::VerifyCa => MySqlSslMode::VerifyCa,
+        TlsMode::VerifyFull => MySqlSslMode::VerifyIdentity,
+    });
+
+    if let Some(ca_path) = cfg
+        .tls
+        .as_ref()
+        .and_then(|tls| tls.ca_path.as_deref())
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        o = o.ssl_ca(expand_home_path(ca_path));
+    }
+
     o
 }
 
@@ -34,6 +58,10 @@ fn server_options(cfg: &ConnectionConfig, password: Option<&str>) -> MySqlConnec
 /// into DDL without injection risk.
 fn sanitize_ident(name: &str) -> String {
     name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect()
+}
+
+fn quote_ident(name: &str) -> String {
+    format!("`{}`", name.replace('`', "``"))
 }
 
 /// information_schema text columns can come back as utf8 strings OR as binary
@@ -49,13 +77,23 @@ fn try_get_text(row: &sqlx::mysql::MySqlRow, col: &str) -> String {
     String::new()
 }
 
+fn try_get_optional_text(row: &sqlx::mysql::MySqlRow, col: &str) -> Option<String> {
+    if let Ok(value) = row.try_get::<Option<String>, _>(col) {
+        return value;
+    }
+    if let Ok(value) = row.try_get::<Option<Vec<u8>>, _>(col) {
+        return value.map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+    }
+    None
+}
+
 impl MySqlDriver {
     pub async fn connect(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<Self> {
         let pool = MySqlPoolOptions::new()
             .max_connections(5)
             .connect_with(options(cfg, password))
             .await?;
-        Ok(Self { pool })
+        Ok(Self { pool, active_thread_id: Mutex::new(None) })
     }
 
     pub async fn test(cfg: &ConnectionConfig, password: Option<&str>) -> AppResult<()> {
@@ -102,50 +140,93 @@ impl MySqlDriver {
 impl Driver for MySqlDriver {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         let started = std::time::Instant::now();
-        let head = sql.trim_start().to_uppercase();
-        let returns_rows = head.starts_with("SELECT")
-            || head.starts_with("WITH")
-            || head.starts_with("SHOW")
-            || head.starts_with("DESCRIBE")
-            || head.starts_with("DESC ")
-            || head.starts_with("EXPLAIN")
-            || head.starts_with("VALUES");
+        let mut conn = self.pool.acquire().await?;
+        let thread_id: u64 = sqlx::query_scalar("SELECT CONNECTION_ID()")
+            .fetch_one(&mut *conn)
+            .await?;
+        *self.active_thread_id.lock().await = Some(thread_id);
 
-        if !returns_rows {
-            let res = sqlx::query(sql).execute(&self.pool).await?;
-            return Ok(QueryResult {
-                columns: vec![],
-                rows: vec![],
-                rows_affected: res.rows_affected(),
+        let result: AppResult<QueryResult> = async {
+            let head = sql.trim_start().to_uppercase();
+            let returns_rows = head.starts_with("SELECT")
+                || head.starts_with("WITH")
+                || head.starts_with("SHOW")
+                || head.starts_with("DESCRIBE")
+                || head.starts_with("DESC ")
+                || head.starts_with("EXPLAIN")
+                || head.starts_with("VALUES");
+
+            if !returns_rows {
+                let res = sqlx::query(sql).execute(&mut *conn).await?;
+                return Ok(QueryResult {
+                    columns: vec![],
+                    rows: vec![],
+                    rows_affected: res.rows_affected(),
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                    truncated: false,
+                });
+            }
+
+            let fetched = sqlx::query(sql).fetch_all(&mut *conn).await?;
+            let columns = match fetched.first() {
+                Some(first) => first
+                    .columns()
+                    .iter()
+                    .map(|c| Column {
+                        name: c.name().to_string(),
+                        data_type: c.type_info().name().to_string(),
+                    })
+                    .collect(),
+                None => vec![],
+            };
+            let truncated = fetched.len() > MAX_ROWS;
+            let mut rows = Vec::with_capacity(fetched.len().min(MAX_ROWS));
+            for row in fetched.iter().take(MAX_ROWS) {
+                rows.push(mysql_row_to_values(row)?);
+            }
+            Ok(QueryResult {
+                columns,
+                rows,
+                rows_affected: 0,
                 elapsed_ms: started.elapsed().as_millis() as u64,
-                truncated: false,
-            });
+                truncated,
+            })
         }
+        .await;
 
-        let fetched = sqlx::query(sql).fetch_all(&self.pool).await?;
-        let columns = match fetched.first() {
-            Some(first) => first
-                .columns()
-                .iter()
-                .map(|c| Column {
-                    name: c.name().to_string(),
-                    data_type: c.type_info().name().to_string(),
-                })
-                .collect(),
-            None => vec![],
+        *self.active_thread_id.lock().await = None;
+        result
+    }
+
+    async fn cancel(&self) -> AppResult<bool> {
+        let Some(thread_id) = *self.active_thread_id.lock().await else {
+            return Ok(false);
         };
-        let truncated = fetched.len() > MAX_ROWS;
-        let mut rows = Vec::with_capacity(fetched.len().min(MAX_ROWS));
-        for row in fetched.iter().take(MAX_ROWS) {
-            rows.push(mysql_row_to_values(row)?);
-        }
-        Ok(QueryResult {
-            columns,
-            rows,
-            rows_affected: 0,
-            elapsed_ms: started.elapsed().as_millis() as u64,
-            truncated,
+        sqlx::query(&format!("KILL QUERY {thread_id}"))
+            .execute(&self.pool)
+            .await?;
+        Ok(true)
+    }
+    async fn diagnostics(&self) -> AppResult<ConnectionDiagnostics> {
+        let started = std::time::Instant::now();
+        let row = sqlx::query("SELECT VERSION() AS server_version, DATABASE() AS database")
+            .fetch_one(&self.pool)
+            .await?;
+        let database = try_get_text(&row, "database");
+        Ok(ConnectionDiagnostics {
+            server_version: try_get_text(&row, "server_version"),
+            database: database.clone(),
+            schema: if database.is_empty() { None } else { Some(database) },
+            latency_ms: started.elapsed().as_millis() as u64,
         })
+    }
+
+    async fn list_schemas(&self) -> AppResult<Vec<String>> {
+        let row = sqlx::query("SELECT database() AS schema_name")
+            .fetch_one(&self.pool)
+            .await?;
+        let name = try_get_text(&row, "schema_name");
+        Ok(if name.is_empty() { vec![] } else { vec![name] })
     }
 
     async fn list_tables(&self) -> AppResult<Vec<TableInfo>> {
@@ -169,9 +250,156 @@ impl Driver for MySqlDriver {
             .collect())
     }
 
+    async fn list_database_objects(&self) -> AppResult<Vec<DatabaseObjectInfo>> {
+        let mut out = Vec::new();
+
+        let views = sqlx::query(
+            "SELECT table_name FROM information_schema.views \
+             WHERE table_schema = DATABASE() ORDER BY table_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        for row in views {
+            let name = try_get_text(&row, "table_name");
+            if name.is_empty() {
+                continue;
+            }
+            let definition = match sqlx::query(&format!("SHOW CREATE VIEW {}", quote_ident(&name)))
+                .fetch_optional(&self.pool)
+                .await
+            {
+                Ok(Some(show)) => {
+                    let value = try_get_text(&show, "Create View");
+                    if value.is_empty() { None } else { Some(value.trim_end_matches(';').to_string() + ";") }
+                }
+                _ => None,
+            };
+            out.push(DatabaseObjectInfo {
+                name,
+                kind: "view".into(),
+                schema: None,
+                table: None,
+                signature: None,
+                definition,
+            });
+        }
+
+        for table in self.list_tables().await?.into_iter().filter(|item| item.kind == "table") {
+            for index in self.list_indexes(&table.name).await? {
+                if index.name == "PRIMARY" {
+                    continue;
+                }
+                let definition = if index.detail == "MySQL index" {
+                    None
+                } else {
+                    let columns = index
+                        .detail
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(quote_ident)
+                        .collect::<Vec<_>>();
+                    if columns.is_empty() {
+                        None
+                    } else {
+                        Some(format!(
+                            "CREATE {}INDEX {} ON {} ({});",
+                            if index.unique { "UNIQUE " } else { "" },
+                            quote_ident(&index.name),
+                            quote_ident(&table.name),
+                            columns.join(", ")
+                        ))
+                    }
+                };
+                out.push(DatabaseObjectInfo {
+                    name: index.name,
+                    kind: "index".into(),
+                    schema: None,
+                    table: Some(table.name.clone()),
+                    signature: None,
+                    definition,
+                });
+            }
+        }
+
+        let routines = sqlx::query(
+            "SELECT routine_name, routine_type FROM information_schema.routines \
+             WHERE routine_schema = DATABASE() ORDER BY routine_type, routine_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        for row in routines {
+            let name = try_get_text(&row, "routine_name");
+            let routine_type = try_get_text(&row, "routine_type");
+            if name.is_empty() {
+                continue;
+            }
+            let is_procedure = routine_type.eq_ignore_ascii_case("PROCEDURE");
+            let show_sql = format!(
+                "SHOW CREATE {} {}",
+                if is_procedure { "PROCEDURE" } else { "FUNCTION" },
+                quote_ident(&name)
+            );
+            let definition = match sqlx::query(&show_sql).fetch_optional(&self.pool).await {
+                Ok(Some(show)) => {
+                    let key = if is_procedure { "Create Procedure" } else { "Create Function" };
+                    let value = try_get_text(&show, key);
+                    if value.is_empty() { None } else { Some(value.trim_end_matches(';').to_string() + ";") }
+                }
+                _ => None,
+            };
+            out.push(DatabaseObjectInfo {
+                name,
+                kind: if is_procedure { "procedure".into() } else { "function".into() },
+                schema: None,
+                table: None,
+                signature: None,
+                definition,
+            });
+        }
+
+        let triggers = sqlx::query(
+            "SELECT trigger_name, event_object_table, action_timing, event_manipulation, action_statement \
+             FROM information_schema.triggers \
+             WHERE trigger_schema = DATABASE() ORDER BY event_object_table, trigger_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        for row in triggers {
+            let name = try_get_text(&row, "trigger_name");
+            let table = try_get_text(&row, "event_object_table");
+            let timing = try_get_text(&row, "action_timing");
+            let event = try_get_text(&row, "event_manipulation");
+            let statement = try_get_text(&row, "action_statement");
+            let definition = if name.is_empty() || table.is_empty() || timing.is_empty() || event.is_empty() || statement.is_empty() {
+                None
+            } else {
+                Some(format!(
+                    "CREATE TRIGGER {} {} {} ON {} FOR EACH ROW {};",
+                    quote_ident(&name),
+                    timing,
+                    event,
+                    quote_ident(&table),
+                    statement.trim_end_matches(';')
+                ))
+            };
+            out.push(DatabaseObjectInfo {
+                name,
+                kind: "trigger".into(),
+                schema: None,
+                table: if table.is_empty() { None } else { Some(table) },
+                signature: None,
+                definition,
+            });
+        }
+
+        Ok(out)
+    }
+
     async fn list_columns(&self, table: &str) -> AppResult<Vec<ColumnInfo>> {
         let rows = sqlx::query(
-            "SELECT column_name, data_type, is_nullable, column_key \
+            "SELECT column_name, column_type, is_nullable, column_key, column_default, \
+                    generation_expression, column_comment, extra \
              FROM information_schema.columns \
              WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ordinal_position",
         )
@@ -185,12 +413,158 @@ impl Driver for MySqlDriver {
                 ColumnInfo {
                     is_primary_key: try_get_text(r, "column_key") == "PRI",
                     nullable: try_get_text(r, "is_nullable") == "YES",
-                    data_type: try_get_text(r, "data_type"),
+                    data_type: try_get_text(r, "column_type"),
+                    default_value: try_get_optional_text(r, "column_default"),
+                    generated: try_get_optional_text(r, "generation_expression")
+                        .filter(|value| !value.trim().is_empty()),
+                    comment: try_get_optional_text(r, "column_comment")
+                        .filter(|value| !value.is_empty()),
+                    extra: try_get_optional_text(r, "extra").filter(|value| !value.is_empty()),
                     name,
                 }
             })
             .collect())
     }
+    async fn list_foreign_keys(&self) -> AppResult<Vec<ForeignKey>> {
+        let rows = sqlx::query(
+            "SELECT constraint_name, table_name, column_name, referenced_table_name, referenced_column_name \
+             FROM information_schema.key_column_usage \
+             WHERE referenced_table_name IS NOT NULL AND table_schema = database() \
+             ORDER BY table_name, ordinal_position",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|row| ForeignKey {
+                name: Some(try_get_text(row, "constraint_name")).filter(|name| !name.is_empty()),
+                table: try_get_text(row, "table_name"),
+                column: try_get_text(row, "column_name"),
+                ref_table: try_get_text(row, "referenced_table_name"),
+                ref_column: try_get_text(row, "referenced_column_name"),
+            })
+            .collect())
+    }
+
+    async fn list_indexes(&self, table: &str) -> AppResult<Vec<IndexInfo>> {
+        use std::collections::BTreeMap;
+
+        let rows = sqlx::query(
+            "SELECT index_name, non_unique, column_name, seq_in_index \
+             FROM information_schema.statistics \
+             WHERE table_schema = database() AND table_name = ? \
+             ORDER BY index_name, seq_in_index",
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut grouped: BTreeMap<String, (bool, Vec<String>)> = BTreeMap::new();
+        for row in rows {
+            let name = try_get_text(&row, "index_name");
+            if name.is_empty() {
+                continue;
+            }
+            let unique = row.try_get::<i64, _>("non_unique").unwrap_or(1) == 0;
+            let column = try_get_text(&row, "column_name");
+            let entry = grouped.entry(name).or_insert((unique, Vec::new()));
+            if !column.is_empty() {
+                entry.1.push(column);
+            }
+        }
+
+        Ok(grouped
+            .into_iter()
+            .map(|(name, (unique, columns))| IndexInfo {
+                name,
+                unique,
+                detail: if columns.is_empty() {
+                    "MySQL index".into()
+                } else {
+                    columns.join(", ")
+                },
+            })
+            .collect())
+    }
+    async fn list_constraints(&self, table: &str) -> AppResult<Vec<ConstraintInfo>> {
+        let rows = sqlx::query(
+            "SELECT tc.constraint_name, tc.constraint_type, \
+                    GROUP_CONCAT(kcu.column_name ORDER BY kcu.ordinal_position SEPARATOR ',') AS columns_csv \
+             FROM information_schema.table_constraints tc \
+             LEFT JOIN information_schema.key_column_usage kcu \
+               ON kcu.constraint_schema = tc.constraint_schema \
+              AND kcu.table_name = tc.table_name \
+              AND kcu.constraint_name = tc.constraint_name \
+             WHERE tc.table_schema = DATABASE() AND tc.table_name = ? \
+               AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE') \
+             GROUP BY tc.constraint_name, tc.constraint_type \
+             ORDER BY CASE tc.constraint_type WHEN 'PRIMARY KEY' THEN 0 ELSE 1 END, tc.constraint_name",
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut out = rows
+            .iter()
+            .map(|row| {
+                let kind = if try_get_text(row, "constraint_type") == "PRIMARY KEY" {
+                    "primary"
+                } else {
+                    "unique"
+                };
+                let columns_csv = try_get_text(row, "columns_csv");
+                let columns = columns_csv
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>();
+                let definition = if kind == "primary" {
+                    format!("PRIMARY KEY ({})", columns.join(", "))
+                } else {
+                    format!("UNIQUE ({})", columns.join(", "))
+                };
+                ConstraintInfo {
+                    name: Some(try_get_text(row, "constraint_name")).filter(|name| !name.is_empty()),
+                    kind: kind.into(),
+                    definition,
+                    columns,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        // CHECK_CONSTRAINTS is available on modern MySQL and MariaDB. Older
+        // servers may not expose it; primary/unique metadata should still work.
+        if let Ok(checks) = sqlx::query(
+            "SELECT tc.constraint_name, cc.check_clause \
+             FROM information_schema.table_constraints tc \
+             JOIN information_schema.check_constraints cc \
+               ON cc.constraint_schema = tc.constraint_schema \
+              AND cc.constraint_name = tc.constraint_name \
+             WHERE tc.table_schema = DATABASE() AND tc.table_name = ? \
+               AND tc.constraint_type = 'CHECK' \
+             ORDER BY tc.constraint_name",
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await
+        {
+            out.extend(checks.iter().map(|row| {
+                let clause = try_get_text(row, "check_clause");
+                ConstraintInfo {
+                    name: Some(try_get_text(row, "constraint_name")).filter(|name| !name.is_empty()),
+                    kind: "check".into(),
+                    definition: if clause.is_empty() { "CHECK".into() } else { format!("CHECK ({clause})") },
+                    columns: vec![],
+                }
+            }));
+        }
+
+        Ok(out)
+    }
+
+
 }
 
 #[cfg(test)]
@@ -213,6 +587,11 @@ mod tests {
             ),
             database: std::env::var("ORBITODB_MYSQL_DB").unwrap_or_else(|_| "orbitodb_test".into()),
             username: Some(std::env::var("ORBITODB_MYSQL_USER").unwrap_or_else(|_| "root".into())),
+            env: None,
+            group: None,
+            schema: None,
+            tls: None,
+            ssh: None,
         };
         Some((cfg, std::env::var("ORBITODB_MYSQL_PASS").ok()))
     }

@@ -10,30 +10,30 @@ import {
   IconStar,
   IconTable,
   IconTrash,
-  IconUpload,
   IconX,
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
-import { type ComponentType, type MouseEvent, useEffect, useRef, useState } from "react";
-import { download, fromCsv, toCsv } from "../../lib/csv";
+import { type ComponentType, type MouseEvent, useEffect, useState } from "react";
+import { download, toCsv } from "../../lib/csv";
 import { viewV } from "../../lib/motion";
+import { promptDialog } from "../../state/dialog";
 import { toast } from "../../state/toast";
 import { useStore } from "../../state/store";
 import { DataGrid } from "./DataGrid";
 import { RowInspector } from "./RowInspector";
 import { SqlPanel } from "./SqlPanel";
+import { TableStructure } from "./TableStructure";
 
 type Icon = ComponentType<{ size?: number; stroke?: number }>;
 const TOOLS: { Icon: Icon; label: string }[] = [
-  { Icon: IconDownload, label: "Import" },
-  { Icon: IconUpload, label: "Export" },
-  { Icon: IconBolt, label: "Row actions" },
+  { Icon: IconBolt, label: "Rows" },
 ];
 
 type MenuState = { kind: "rowactions" | "generate"; x: number; y: number } | null;
 
 export function DataView() {
   const editTable = useStore((s) => s.editTable);
+  const connections = useStore((s) => s.connections);
   const activeId = useStore((s) => s.activeConnectionId);
   const inspectorRow = useStore((s) => s.inspectorRow);
   const result = useStore((s) => s.result);
@@ -45,7 +45,6 @@ export function DataView() {
   const closeTableTab = useStore((s) => s.closeTableTab);
   const setSql = useStore((s) => s.setSql);
   const setTopView = useStore((s) => s.setTopView);
-  const importCsv = useStore((s) => s.importCsv);
   const selection = useStore((s) => s.selection);
   const deleteSelected = useStore((s) => s.deleteSelected);
   const duplicateSelected = useStore((s) => s.duplicateSelected);
@@ -55,8 +54,13 @@ export function DataView() {
   const selectEditor = useStore((s) => s.selectEditor);
   const closeEditor = useStore((s) => s.closeEditor);
   const newEditor = useStore((s) => s.newEditor);
+  const renameEditor = useStore((s) => s.renameEditor);
   const [menu, setMenu] = useState<MenuState>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [tableMode, setTableMode] = useState<"data" | "structure">("data");
+
+  useEffect(() => {
+    setTableMode("data");
+  }, [editTable?.table]);
 
   const table = editTable?.table ?? "export";
   const n = selection.length;
@@ -81,13 +85,7 @@ export function DataView() {
 
   const onTool = (label: string, e: MouseEvent) => {
     switch (label) {
-      case "Import":
-        fileRef.current?.click();
-        break;
-      case "Export":
-        if (result) download(`${table}.csv`, toCsv(result));
-        break;
-      case "Row actions":
+      case "Rows":
         openMenu("rowactions", e);
         break;
       case "Generate":
@@ -104,15 +102,6 @@ export function DataView() {
     }
   };
 
-  const onImportFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const { headers, rows } = fromCsv(String(reader.result));
-      if (editTable && headers.length) void importCsv(editTable.table, headers, rows);
-    };
-    reader.readAsText(file);
-  };
-
   const cols = result?.columns.map((c) => c.name) ?? [];
 
   return (
@@ -122,9 +111,24 @@ export function DataView() {
           <button
             key={ed.id}
             className={`bud-qtab ${view === "sql" && activeEditorId === ed.id ? "on" : ""}`}
-            onClick={() => selectEditor(ed.id)}
+            title={
+              ed.connectionId
+                ? `${ed.name} · ${connections.find((connection) => connection.id === ed.connectionId)?.name ?? "Saved connection"} · Double-click to rename`
+                : `${ed.name} · No pinned connection · Double-click to rename`
+            }
+            onClick={() => void selectEditor(ed.id)}
+            onDoubleClick={async () => {
+              const next = await promptDialog({
+                title: "Rename SQL tab",
+                label: "Tab name",
+                defaultValue: ed.name,
+                placeholder: "e.g. Monthly revenue",
+              });
+              if (next?.trim()) renameEditor(ed.id, next.trim());
+            }}
           >
             <IconCode size={14} stroke={1.7} className="bud-qtab-ic sql" />
+            {ed.connectionId && <span className="odb-qtab-connection-dot" aria-hidden />}
             <span>{ed.name}</span>
             <span
               className="bud-qtab-x"
@@ -176,47 +180,64 @@ export function DataView() {
         )}
       </div>
 
-      <div className="bud-toolbar">
-        {TOOLS.map((t) => (
-          <button
-            key={t.label}
-            className={`bud-tool ${t.label === "Row actions" && n ? "has-sel" : ""}`}
-            onClick={(e) => onTool(t.label, e)}
-          >
-            <t.Icon size={15} stroke={1.6} /> {t.label}
-            {t.label === "Row actions" && n > 0 && <span className="bud-sel-badge">{n}</span>}
-          </button>
-        ))}
-      </div>
+      {view === "data" && editTable && (
+        <div className="bud-toolbar odb-data-toolbar">
+          <span className="odb-data-context">
+            <IconTable size={14} stroke={1.7} />
+            <b>{editTable.table}</b>
+            <span>{tableMode === "data" ? "rows" : "structure"}</span>
+          </span>
+          <div className="odb-table-mode" role="tablist" aria-label="Table workspace">
+            <button
+              className={tableMode === "data" ? "on" : ""}
+              onClick={() => setTableMode("data")}
+              role="tab"
+              aria-selected={tableMode === "data"}
+            >
+              Data
+            </button>
+            <button
+              className={tableMode === "structure" ? "on" : ""}
+              onClick={() => setTableMode("structure")}
+              role="tab"
+              aria-selected={tableMode === "structure"}
+            >
+              Structure
+            </button>
+          </div>
+          <span className="odb-toolbar-spacer" />
+          {tableMode === "data" &&
+            TOOLS.map((t) => (
+              <button
+                key={t.label}
+                className={`bud-tool ${t.label === "Rows" && n ? "has-sel" : ""}`}
+                onClick={(e) => onTool(t.label, e)}
+              >
+                <t.Icon size={14} stroke={1.7} /> {t.label}
+                {t.label === "Rows" && n > 0 && <span className="bud-sel-badge">{n}</span>}
+              </button>
+            ))}
+        </div>
+      )}
 
       {error && <div className="bud-error">⚠ {error.message ?? error.kind}</div>}
 
       {!activeId ? (
-        <div className="bud-empty">Add a server, then pick a source on the left.</div>
+        <div className="bud-empty">Create or select a connection from Database Explorer.</div>
       ) : view === "history" ? (
         <HistoryView />
       ) : view === "sql" ? (
         <SqlPanel key={activeEditorId} />
       ) : !editTable ? (
-        <div className="bud-empty">Pick a table on the left to view and edit its data.</div>
+        <div className="bud-empty">Select a table in Database Explorer to browse its rows.</div>
+      ) : tableMode === "structure" ? (
+        <TableStructure table={editTable.table} />
       ) : (
         <div className="bud-data-row">
           <DataGrid />
           <RowInspector key={inspectorRow ?? "none"} />
         </div>
       )}
-
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".csv,text/csv"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) onImportFile(f);
-          e.target.value = "";
-        }}
-      />
 
       {menu && (
         <>
@@ -289,7 +310,7 @@ function HistoryView() {
   };
   const star = (sql: string) => {
     saveFavorite(norm(sql).slice(0, 48), sql);
-    toast("Added to favorites", "success");
+    toast("Added to Starred", "success");
   };
 
   return (
@@ -319,7 +340,7 @@ function HistoryView() {
                 <button title="Re-run" onClick={() => rerun(h.sql)}>
                   <IconPlayerPlay size={13} stroke={1.8} />
                 </button>
-                <button className={fav ? "on" : ""} title={fav ? "In favorites" : "Add to favorites"} onClick={() => star(h.sql)}>
+                <button className={fav ? "on" : ""} title={fav ? "Starred" : "Add to Starred"} onClick={() => star(h.sql)}>
                   <IconStar size={13} stroke={1.8} />
                 </button>
               </span>

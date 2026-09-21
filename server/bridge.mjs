@@ -5,7 +5,7 @@
 // mysql2). Run it with `npm run bridge` (or `npm run dev:all`) and the web app
 // will route Postgres/MySQL connections here automatically. SQLite stays fully
 // in-browser and does not need this server.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -15,6 +15,15 @@ import mysql from "mysql2/promise";
 import initSqlJs from "sql.js";
 
 const PORT = Number(process.env.BRIDGE_PORT) || 5174;
+const HOST = process.env.BRIDGE_HOST || "127.0.0.1";
+const MAX_BODY_BYTES = Math.max(1024, Number(process.env.BRIDGE_MAX_BODY_BYTES) || 16 * 1024 * 1024);
+const ALLOWED_ORIGINS = new Set(
+  (process.env.BRIDGE_ORIGINS ||
+    "http://localhost:1420,http://127.0.0.1:1420,http://localhost:5001,http://127.0.0.1:5001")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 
 // Where server-side SQLite database files live. Defaults to ./data next to the
 // repo (or /data in the container). Each database name maps to one file, so the
@@ -38,6 +47,30 @@ function sqliteFileKey(name) {
 function sqlitePath(fileKey) {
   return path.join(DATA_DIR, `${fileKey}.sqlite`);
 }
+
+function sqliteBackupDir(fileKey) {
+  const dir = path.join(DATA_DIR, "backups", fileKey);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+function sqliteBackupId(prefix = "") {
+  const stamp = new Date().toISOString().replace(/[-:.]/g, "").replace("Z", "Z");
+  return `${prefix}${stamp}.sqlite`;
+}
+function sqliteBackupInfo(file) {
+  const stat = statSync(file);
+  return {
+    id: path.basename(file),
+    createdAt: stat.mtime.toISOString(),
+    sizeBytes: stat.size,
+    path: file,
+  };
+}
+function checkedBackupPath(fileKey, backupId) {
+  const id = String(backupId || "");
+  if (!/^[A-Za-z0-9._-]+\.sqlite$/.test(id)) throw new Error("Invalid backup id");
+  return path.join(sqliteBackupDir(fileKey), id);
+}
 // One in-memory sql.js database per file, shared by every connection pointing at
 // it (so concurrent browsers see each other's writes via this single process).
 const sqliteDbs = new Map(); // fileKey -> Database
@@ -59,6 +92,48 @@ function persistSqlite(fileKey) {
 }
 function sqliteIdent(id) {
   return `"${String(id).replace(/"/g, '""')}"`;
+}
+
+function sqliteChecks(createSql) {
+  const upper = String(createSql || "").toUpperCase();
+  const source = String(createSql || "");
+  const out = [];
+  let searchFrom = 0;
+  while (searchFrom < source.length) {
+    const at = upper.indexOf("CHECK", searchFrom);
+    if (at < 0) break;
+    const open = source.indexOf("(", at + 5);
+    if (open < 0) break;
+    let depth = 0;
+    let quote = null;
+    let close = -1;
+    for (let i = open; i < source.length; i++) {
+      const ch = source[i];
+      if (quote) {
+        if (ch === quote) {
+          if (source[i + 1] === quote) {
+            i++;
+            continue;
+          }
+          quote = null;
+        }
+        continue;
+      }
+      if (ch === "'" || ch === '"') quote = ch;
+      else if (ch === "(") depth++;
+      else if (ch === ")") {
+        depth--;
+        if (depth === 0) {
+          close = i;
+          break;
+        }
+      }
+    }
+    if (close < 0) break;
+    out.push(source.slice(open + 1, close).trim());
+    searchFrom = close + 1;
+  }
+  return out;
 }
 /** Run one statement with bound params; persist (unless inside a transaction). */
 function sqliteRun(fileKey, sql, params = []) {
@@ -239,6 +314,8 @@ async function connect(cfg, password) {
         connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
       });
       await client.connect();
+      const schema = String(cfg.schema || "public").trim() || "public";
+      await client.query("SELECT set_config('search_path', quote_ident($1), false)", [schema]);
       return client;
     }
     if (cfg.engine === "mysql") {
@@ -344,8 +421,71 @@ const handlers = {
     const existing = pools.get(id);
     if (existing) await closeConn(existing);
     const conn = await connect(cfg, password);
-    pools.set(id, { engine: cfg.engine, conn });
+    const session =
+      cfg.engine === "postgres"
+        ? await rawArrayRows("postgres", conn, "SELECT pg_backend_pid()")
+        : await rawArrayRows("mysql", conn, "SELECT CONNECTION_ID()");
+    const sessionId = Number(session.rows?.[0]?.[0] ?? 0);
+    pools.set(id, { engine: cfg.engine, conn, cfg: { ...cfg }, sessionId });
     return { ok: true };
+  },
+
+  async cancel({ id, password }) {
+    const e = need(id);
+    if (e.engine === "sqlite") return false;
+    if (!e.sessionId || !e.cfg) return false;
+
+    const control = await connect(e.cfg, password ?? null);
+    try {
+      if (e.engine === "postgres") {
+        const raw = await rawArrayRows(
+          "postgres",
+          control,
+          "SELECT pg_cancel_backend($1)",
+          [e.sessionId],
+        );
+        return Boolean(raw.rows?.[0]?.[0]);
+      }
+      await control.query(`KILL QUERY ${Number(e.sessionId)}`);
+      return true;
+    } finally {
+      await closeConn({ engine: e.engine, conn: control });
+    }
+  },
+
+  async diagnostics({ id }) {
+    const e = need(id);
+    const started = performance.now();
+
+    if (e.engine === "sqlite") {
+      const db = sqliteDbs.get(e.fileKey);
+      const version = db.exec("SELECT sqlite_version()");
+      const value = version.length ? String(version[0].values?.[0]?.[0] ?? "") : "";
+      return {
+        serverVersion: value ? `SQLite ${value}` : "SQLite",
+        database: sqlitePath(e.fileKey),
+        schema: "main",
+        latencyMs: Math.max(1, Math.round(performance.now() - started)),
+      };
+    }
+
+    const raw =
+      e.engine === "postgres"
+        ? await rawArrayRows(
+            "postgres",
+            e.conn,
+            "SELECT version(), current_database(), current_schema()",
+          )
+        : await rawArrayRows("mysql", e.conn, "SELECT VERSION(), DATABASE()");
+    return {
+      serverVersion: String(raw.rows?.[0]?.[0] ?? e.engine),
+      database: String(raw.rows?.[0]?.[1] ?? ""),
+      schema:
+        e.engine === "postgres"
+          ? String(raw.rows?.[0]?.[2] ?? "")
+          : String(raw.rows?.[0]?.[1] ?? ""),
+      latencyMs: Math.max(1, Math.round(performance.now() - started)),
+    };
   },
 
   async close({ id }) {
@@ -366,6 +506,76 @@ const handlers = {
     return toResult(raw, started);
   },
 
+  async backups({ id }) {
+    const e = need(id);
+    if (e.engine !== "sqlite") throw new Error("Managed snapshots are available for SQLite connections only");
+    const dir = sqliteBackupDir(e.fileKey);
+    return readdirSync(dir)
+      .filter((name) => /^[A-Za-z0-9._-]+\.sqlite$/.test(name))
+      .map((name) => sqliteBackupInfo(path.join(dir, name)))
+      .sort((a, b) => b.id.localeCompare(a.id));
+  },
+
+  async createBackup({ id }) {
+    const e = need(id);
+    if (e.engine !== "sqlite") throw new Error("Managed snapshots are available for SQLite connections only");
+    if (sqliteTxn.has(e.fileKey)) {
+      throw new Error("Commit or roll back the active SQLite transaction before creating a backup");
+    }
+    const db = sqliteDbs.get(e.fileKey);
+    const file = path.join(sqliteBackupDir(e.fileKey), sqliteBackupId());
+    writeFileSync(file, Buffer.from(db.export()));
+    return sqliteBackupInfo(file);
+  },
+
+  async restoreBackup({ id, backupId }) {
+    const e = need(id);
+    if (e.engine !== "sqlite") throw new Error("Managed restore is available for SQLite connections only");
+    if (sqliteTxn.has(e.fileKey)) {
+      throw new Error("Commit or roll back the active SQLite transaction before restoring a backup");
+    }
+
+    const source = checkedBackupPath(e.fileKey, backupId);
+    if (!existsSync(source)) throw new Error(`Backup not found: ${backupId}`);
+
+    const current = sqliteDbs.get(e.fileKey);
+    const safety = path.join(sqliteBackupDir(e.fileKey), sqliteBackupId("before-restore-"));
+    writeFileSync(safety, Buffer.from(current.export()));
+
+    const SQL = await sqlJs();
+    const replacement = new SQL.Database(readFileSync(source));
+    const integrity = replacement.exec("PRAGMA integrity_check");
+    const status = integrity[0]?.values?.[0]?.[0];
+    if (String(status ?? "").toLowerCase() !== "ok") {
+      replacement.close();
+      throw new Error(`Backup integrity check failed: ${String(status ?? "unknown")}`);
+    }
+
+    try {
+      current.close();
+    } catch {
+      /* ignore */
+    }
+    sqliteDbs.set(e.fileKey, replacement);
+    persistSqlite(e.fileKey);
+    return { ok: true };
+  },
+
+  async schemas({ id }) {
+    const { engine, conn } = need(id);
+    if (engine === "sqlite") return ["main", "temp"];
+    if (engine === "postgres") {
+      const raw = await rawArrayRows(
+        engine,
+        conn,
+        "SELECT schema_name FROM information_schema.schemata WHERE schema_name <> 'information_schema' AND schema_name NOT LIKE 'pg_%' ORDER BY schema_name",
+      );
+      return raw.rows.map((row) => String(row[0]));
+    }
+    const raw = await rawArrayRows(engine, conn, "SELECT database()");
+    return raw.rows.length && raw.rows[0][0] ? [String(raw.rows[0][0])] : [];
+  },
+
   async tables({ id }) {
     const { engine, conn, fileKey } = need(id);
     if (engine === "sqlite") {
@@ -383,48 +593,326 @@ const handlers = {
     return raw.rows.map((r) => ({ name: String(r[0]), kind: /VIEW/i.test(String(r[1])) ? "view" : "table", schema: null }));
   },
 
+  async objects({ id }) {
+    const { engine, conn, fileKey } = need(id);
+
+    if (engine === "sqlite") {
+      const db = sqliteDbs.get(fileKey);
+      const result = db.exec(
+        "SELECT name, type, tbl_name, sql FROM sqlite_master WHERE type IN ('view','index','trigger') AND name NOT LIKE 'sqlite_%' ORDER BY type, name",
+      );
+      const rows = result.length ? result[0].values : [];
+      return rows.map((row) => ({
+        name: String(row[0] ?? ""),
+        kind: String(row[1] ?? ""),
+        schema: "main",
+        table: row[2] == null ? null : String(row[2]),
+        signature: null,
+        definition:
+          row[3] == null || String(row[3]).trim() === ""
+            ? null
+            : String(row[3]).replace(/;?\s*$/, ";"),
+      }));
+    }
+
+    const out = [];
+    if (engine === "postgres") {
+      const views = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT schemaname, viewname,
+                'CREATE OR REPLACE VIEW ' || quote_ident(viewname) || ' AS ' ||
+                pg_get_viewdef((quote_ident(schemaname) || '.' || quote_ident(viewname))::regclass, true) || ';'
+         FROM pg_views WHERE schemaname = current_schema() ORDER BY viewname`,
+      );
+      for (const row of views.rows) {
+        out.push({
+          name: String(row[1] ?? ""),
+          kind: "view",
+          schema: row[0] == null ? null : String(row[0]),
+          table: null,
+          signature: null,
+          definition: row[2] == null ? null : String(row[2]),
+        });
+      }
+
+      const indexes = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT pgi.schemaname, pgi.tablename, pgi.indexname, pgi.indexdef
+         FROM pg_indexes pgi
+         WHERE pgi.schemaname = current_schema()
+           AND NOT EXISTS (
+             SELECT 1 FROM pg_constraint con
+             JOIN pg_class idx ON idx.oid = con.conindid
+             JOIN pg_namespace ns ON ns.oid = idx.relnamespace
+             WHERE con.conindid <> 0
+               AND ns.nspname = pgi.schemaname
+               AND idx.relname = pgi.indexname
+           )
+         ORDER BY pgi.tablename, pgi.indexname`,
+      );
+      for (const row of indexes.rows) {
+        out.push({
+          name: String(row[2] ?? ""),
+          kind: "index",
+          schema: row[0] == null ? null : String(row[0]),
+          table: row[1] == null ? null : String(row[1]),
+          signature: null,
+          definition: row[3] == null ? null : String(row[3]).replace(/;?\s*$/, ";"),
+        });
+      }
+
+      const sequences = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT schemaname, sequencename,
+                format('CREATE SEQUENCE %I INCREMENT BY %s MINVALUE %s MAXVALUE %s START WITH %s CACHE %s %s;',
+                       sequencename, increment_by, min_value, max_value, start_value, cache_size,
+                       CASE WHEN cycle THEN 'CYCLE' ELSE 'NO CYCLE' END)
+         FROM pg_sequences WHERE schemaname = current_schema() ORDER BY sequencename`,
+      );
+      for (const row of sequences.rows) {
+        out.push({
+          name: String(row[1] ?? ""),
+          kind: "sequence",
+          schema: row[0] == null ? null : String(row[0]),
+          table: null,
+          signature: null,
+          definition: row[2] == null ? null : String(row[2]),
+        });
+      }
+
+      const routines = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT p.proname, p.prokind::text, n.nspname,
+                pg_get_function_identity_arguments(p.oid), pg_get_functiondef(p.oid)
+         FROM pg_proc p
+         JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = current_schema() AND p.prokind IN ('f','p')
+         ORDER BY p.prokind, p.proname, pg_get_function_identity_arguments(p.oid)`,
+      );
+      for (const row of routines.rows) {
+        out.push({
+          name: String(row[0] ?? ""),
+          kind: String(row[1]) === "p" ? "procedure" : "function",
+          schema: row[2] == null ? null : String(row[2]),
+          table: null,
+          signature: row[3] == null ? null : String(row[3]),
+          definition: row[4] == null ? null : String(row[4]).replace(/;?\s*$/, ";"),
+        });
+      }
+
+      const triggers = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT tg.tgname, cls.relname, ns.nspname, pg_get_triggerdef(tg.oid, true) || ';'
+         FROM pg_trigger tg
+         JOIN pg_class cls ON cls.oid = tg.tgrelid
+         JOIN pg_namespace ns ON ns.oid = cls.relnamespace
+         WHERE NOT tg.tgisinternal AND ns.nspname = current_schema()
+         ORDER BY cls.relname, tg.tgname`,
+      );
+      for (const row of triggers.rows) {
+        out.push({
+          name: String(row[0] ?? ""),
+          kind: "trigger",
+          schema: row[2] == null ? null : String(row[2]),
+          table: row[1] == null ? null : String(row[1]),
+          signature: null,
+          definition: row[3] == null ? null : String(row[3]),
+        });
+      }
+      return out;
+    }
+
+    const views = await rawArrayRows(
+      engine,
+      conn,
+      "SELECT table_name FROM information_schema.views WHERE table_schema = DATABASE() ORDER BY table_name",
+    );
+    for (const row of views.rows) {
+      const name = String(row[0] ?? "");
+      if (!name) continue;
+      let definition = null;
+      try {
+        const shown = await rawArrayRows(engine, conn, `SHOW CREATE VIEW ${quote.mysql(name)}`);
+        const idx = shown.columns.findIndex((column) => String(column).toLowerCase() === "create view");
+        if (idx >= 0 && shown.rows[0]?.[idx] != null) {
+          definition = String(shown.rows[0][idx]).replace(/;?\s*$/, ";");
+        }
+      } catch {
+        // Keep the object visible even when SHOW CREATE requires more privileges.
+      }
+      out.push({ name, kind: "view", schema: null, table: null, signature: null, definition });
+    }
+
+    const baseTables = await rawArrayRows(
+      engine,
+      conn,
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' ORDER BY table_name",
+    );
+    for (const tableRow of baseTables.rows) {
+      const table = String(tableRow[0] ?? "");
+      if (!table) continue;
+      const raw = await rawArrayRows(engine, conn, `SHOW INDEX FROM ${quote.mysql(table)}`);
+      const grouped = new Map();
+      for (const row of raw.rows) {
+        const name = String(row[2] ?? "");
+        if (!name) continue;
+        const item = grouped.get(name) ?? { unique: Number(row[1] ?? 1) === 0, columns: [] };
+        const column = String(row[4] ?? "");
+        if (column) item.columns.push(column);
+        grouped.set(name, item);
+      }
+      for (const [name, item] of grouped.entries()) {
+        if (name === "PRIMARY") continue;
+        const definition =
+          !item.columns.length
+            ? null
+            : `CREATE ${item.unique ? "UNIQUE " : ""}INDEX ${quote.mysql(name)} ON ${quote.mysql(table)} (${item.columns
+                .map((column) => quote.mysql(column))
+                .join(", ")});`;
+        out.push({ name, kind: "index", schema: null, table, signature: null, definition });
+      }
+    }
+
+    const routines = await rawArrayRows(
+      engine,
+      conn,
+      "SELECT routine_name, routine_type FROM information_schema.routines WHERE routine_schema = DATABASE() ORDER BY routine_type, routine_name",
+    );
+    for (const row of routines.rows) {
+      const name = String(row[0] ?? "");
+      const routineType = String(row[1] ?? "").toUpperCase();
+      if (!name) continue;
+      const kind = routineType === "PROCEDURE" ? "procedure" : "function";
+      let definition = null;
+      try {
+        const shown = await rawArrayRows(
+          engine,
+          conn,
+          `SHOW CREATE ${routineType === "PROCEDURE" ? "PROCEDURE" : "FUNCTION"} ${quote.mysql(name)}`,
+        );
+        const wanted = routineType === "PROCEDURE" ? "create procedure" : "create function";
+        const idx = shown.columns.findIndex((column) => String(column).toLowerCase() === wanted);
+        if (idx >= 0 && shown.rows[0]?.[idx] != null) {
+          definition = String(shown.rows[0][idx]).replace(/;?\s*$/, ";");
+        }
+      } catch {
+        // Keep metadata listing available with limited privileges.
+      }
+      out.push({ name, kind, schema: null, table: null, signature: null, definition });
+    }
+
+    const triggers = await rawArrayRows(
+      engine,
+      conn,
+      `SELECT trigger_name, event_object_table, action_timing, event_manipulation, action_statement
+       FROM information_schema.triggers
+       WHERE trigger_schema = DATABASE()
+       ORDER BY event_object_table, trigger_name`,
+    );
+    for (const row of triggers.rows) {
+      const name = String(row[0] ?? "");
+      const table = String(row[1] ?? "");
+      const timing = String(row[2] ?? "");
+      const event = String(row[3] ?? "");
+      const statement = String(row[4] ?? "");
+      out.push({
+        name,
+        kind: "trigger",
+        schema: null,
+        table: table || null,
+        signature: null,
+        definition:
+          name && table && timing && event && statement
+            ? `CREATE TRIGGER ${quote.mysql(name)} ${timing} ${event} ON ${quote.mysql(table)} FOR EACH ROW ${statement.replace(/;?\s*$/, "")};`
+            : null,
+      });
+    }
+
+    return out;
+  },
+
   async columns({ id, table }) {
     const { engine, conn, fileKey } = need(id);
     if (engine === "sqlite") {
-      const r = sqliteDbs.get(fileKey).exec(`PRAGMA table_info(${sqliteIdent(table)})`);
+      const r = sqliteDbs.get(fileKey).exec(`PRAGMA table_xinfo(${sqliteIdent(table)})`);
       const rows = r.length ? r[0].values : [];
-      return rows.map((row) => ({
-        name: String(row[1]),
-        dataType: row[2] ? String(row[2]) : "",
-        nullable: Number(row[3]) === 0,
-        isPrimaryKey: Number(row[5]) > 0,
-      }));
+      return rows.map((row) => {
+        const hidden = Number(row[6] ?? 0);
+        return {
+          name: String(row[1]),
+          dataType: row[2] ? String(row[2]) : "",
+          nullable: Number(row[3]) === 0,
+          isPrimaryKey: Number(row[5]) > 0,
+          defaultValue: row[4] == null ? null : String(row[4]),
+          generated:
+            hidden === 2
+              ? "VIRTUAL (expression unavailable)"
+              : hidden === 3
+                ? "STORED (expression unavailable)"
+                : null,
+          comment: null,
+          extra:
+            hidden === 2
+              ? "VIRTUAL GENERATED"
+              : hidden === 3
+                ? "STORED GENERATED"
+                : null,
+        };
+      });
     }
     if (engine === "postgres") {
       const sql = `
-        SELECT c.column_name, c.data_type, c.is_nullable,
-               CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END AS is_pk
-        FROM information_schema.columns c
+        SELECT a.attname AS column_name,
+               pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
+               NOT a.attnotnull AS is_nullable,
+               CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END AS is_pk,
+               CASE WHEN a.attgenerated = '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS column_default,
+               CASE WHEN a.attgenerated <> '' THEN pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) END AS generation_expression,
+               pg_catalog.col_description(a.attrelid, a.attnum) AS column_comment,
+               CASE a.attidentity WHEN 'a' THEN 'IDENTITY ALWAYS' WHEN 'd' THEN 'IDENTITY BY DEFAULT' ELSE NULL END AS column_extra
+        FROM pg_catalog.pg_attribute a
+        JOIN pg_catalog.pg_class cls ON cls.oid = a.attrelid
+        JOIN pg_catalog.pg_namespace ns ON ns.oid = cls.relnamespace
+        LEFT JOIN pg_catalog.pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
         LEFT JOIN (
           SELECT kcu.column_name
           FROM information_schema.table_constraints tc
           JOIN information_schema.key_column_usage kcu
             ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
           WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = $1 AND tc.table_schema = current_schema()
-        ) pk ON pk.column_name = c.column_name
-        WHERE c.table_name = $1 AND c.table_schema = current_schema()
-        ORDER BY c.ordinal_position`;
+        ) pk ON pk.column_name = a.attname
+        WHERE ns.nspname = current_schema() AND cls.relname = $1
+          AND a.attnum > 0 AND NOT a.attisdropped
+        ORDER BY a.attnum`;
       const raw = await rawArrayRows(engine, conn, sql, [table]);
       return raw.rows.map((r) => ({
         name: String(r[0]),
         dataType: String(r[1] || ""),
-        nullable: String(r[2]).toUpperCase() === "YES",
+        nullable: Boolean(r[2]),
         isPrimaryKey: Number(r[3]) === 1,
+        defaultValue: r[4] == null ? null : String(r[4]),
+        generated: r[5] == null ? null : String(r[5]),
+        comment: r[6] == null ? null : String(r[6]),
+        extra: r[7] == null ? null : String(r[7]),
       }));
     }
     const sql =
-      "SELECT column_name, data_type, is_nullable, column_key FROM information_schema.columns WHERE table_name = ? AND table_schema = database() ORDER BY ordinal_position";
+      "SELECT column_name, column_type, is_nullable, column_key, column_default, generation_expression, column_comment, extra FROM information_schema.columns WHERE table_name = ? AND table_schema = database() ORDER BY ordinal_position";
     const raw = await rawArrayRows(engine, conn, sql, [table]);
     return raw.rows.map((r) => ({
       name: String(r[0]),
       dataType: String(r[1] || ""),
       nullable: String(r[2]).toUpperCase() === "YES",
       isPrimaryKey: String(r[3]).toUpperCase() === "PRI",
+      defaultValue: r[4] == null ? null : String(r[4]),
+      generated: r[5] == null || String(r[5]).trim() === "" ? null : String(r[5]),
+      comment: r[6] == null || String(r[6]) === "" ? null : String(r[6]),
+      extra: r[7] == null || String(r[7]) === "" ? null : String(r[7]),
     }));
   },
 
@@ -438,30 +926,241 @@ const handlers = {
       for (const t of names) {
         const r = db.exec(`PRAGMA foreign_key_list(${sqliteIdent(t)})`);
         for (const row of r.length ? r[0].values : []) {
-          out.push({ table: t, column: String(row[3]), refTable: String(row[2]), refColumn: row[4] == null ? "" : String(row[4]) });
+          out.push({ name: null, table: t, column: String(row[3]), refTable: String(row[2]), refColumn: row[4] == null ? "" : String(row[4]) });
         }
       }
       return out;
     }
     const sql =
       engine === "postgres"
-        ? `SELECT tc.table_name, kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column
+        ? `SELECT tc.constraint_name, tc.table_name, kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column
            FROM information_schema.table_constraints tc
            JOIN information_schema.key_column_usage kcu
              ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
            JOIN information_schema.constraint_column_usage ccu
              ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = current_schema()`
-        : `SELECT table_name, column_name, referenced_table_name, referenced_column_name
+        : `SELECT constraint_name, table_name, column_name, referenced_table_name, referenced_column_name
            FROM information_schema.key_column_usage
            WHERE referenced_table_name IS NOT NULL AND table_schema = database()`;
     const raw = await rawArrayRows(engine, conn, sql);
     return raw.rows.map((r) => ({
-      table: String(r[0]),
-      column: String(r[1]),
-      refTable: String(r[2]),
-      refColumn: String(r[3]),
+      name: r[0] == null ? null : String(r[0]),
+      table: String(r[1]),
+      column: String(r[2]),
+      refTable: String(r[3]),
+      refColumn: String(r[4]),
     }));
+  },
+
+  async indexes({ id, table }) {
+    const { engine, conn, fileKey } = need(id);
+
+    if (engine === "sqlite") {
+      const db = sqliteDbs.get(fileKey);
+      const r = db.exec(`PRAGMA index_list(${sqliteIdent(table)})`);
+      const rows = r.length ? r[0].values : [];
+      return rows.map((row) => {
+        const name = String(row[1] ?? "");
+        const info = name ? db.exec(`PRAGMA index_info(${sqliteIdent(name)})`) : [];
+        const columns = (info.length ? info[0].values : [])
+          .map((item) => String(item[2] ?? ""))
+          .filter(Boolean);
+        const origin = row[3] == null ? "" : String(row[3]);
+        const detail = columns.length
+          ? origin && origin !== "c"
+            ? `${columns.join(", ")} · origin: ${origin}`
+            : columns.join(", ")
+          : origin
+            ? `origin: ${origin}`
+            : "SQLite index";
+        return {
+          name,
+          unique: Number(row[2] ?? 0) === 1,
+          detail,
+        };
+      });
+    }
+
+    if (engine === "postgres") {
+      const raw = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT indexname, indexdef
+         FROM pg_indexes
+         WHERE schemaname = current_schema() AND tablename = $1
+         ORDER BY indexname`,
+        [table],
+      );
+      return raw.rows.map((row) => {
+        const definition = String(row[1] ?? "");
+        return {
+          name: String(row[0] ?? ""),
+          unique: /CREATE\s+UNIQUE\s+INDEX/i.test(definition),
+          detail: definition,
+        };
+      });
+    }
+
+    const raw = await rawArrayRows(engine, conn, `SHOW INDEX FROM ${quote.mysql(table)}`);
+    const grouped = new Map();
+    for (const row of raw.rows) {
+      const name = String(row[2] ?? "");
+      if (!name) continue;
+      const item = grouped.get(name) ?? { unique: Number(row[1] ?? 1) === 0, columns: [] };
+      const column = String(row[4] ?? "");
+      if (column) item.columns.push(column);
+      grouped.set(name, item);
+    }
+    return [...grouped.entries()].map(([name, item]) => ({
+      name,
+      unique: item.unique,
+      detail: item.columns.join(", ") || "MySQL index",
+    }));
+  },
+
+  async constraints({ id, table }) {
+    const { engine, conn, fileKey } = need(id);
+
+    if (engine === "sqlite") {
+      const db = sqliteDbs.get(fileKey);
+      const out = [];
+      const colsResult = db.exec(`PRAGMA table_xinfo(${sqliteIdent(table)})`);
+      const cols = colsResult.length ? colsResult[0].values : [];
+      const primary = cols
+        .filter((row) => Number(row[5] ?? 0) > 0)
+        .sort((a, b) => Number(a[5] ?? 0) - Number(b[5] ?? 0))
+        .map((row) => String(row[1]));
+      if (primary.length) {
+        out.push({
+          name: null,
+          kind: "primary",
+          definition: `PRIMARY KEY (${primary.join(", ")})`,
+          columns: primary,
+        });
+      }
+
+      const idxResult = db.exec(`PRAGMA index_list(${sqliteIdent(table)})`);
+      for (const row of idxResult.length ? idxResult[0].values : []) {
+        const name = String(row[1] ?? "");
+        const origin = row[3] == null ? "" : String(row[3]);
+        if (!name || origin !== "u") continue;
+        const info = db.exec(`PRAGMA index_info(${sqliteIdent(name)})`);
+        const columns = (info.length ? info[0].values : [])
+          .map((item) => String(item[2] ?? ""))
+          .filter(Boolean);
+        out.push({
+          name: null,
+          kind: "unique",
+          definition: `UNIQUE (${columns.join(", ")})`,
+          columns,
+        });
+      }
+
+      const st = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?");
+      try {
+        st.bind([table]);
+        if (st.step()) {
+          for (const expression of sqliteChecks(String(st.get()[0] ?? ""))) {
+            out.push({
+              name: null,
+              kind: "check",
+              definition: `CHECK (${expression})`,
+              columns: [],
+            });
+          }
+        }
+      } finally {
+        st.free();
+      }
+      return out;
+    }
+
+    if (engine === "postgres") {
+      const raw = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT con.conname, con.contype, pg_catalog.pg_get_constraintdef(con.oid, true),
+                COALESCE(string_agg(att.attname, ',' ORDER BY ord.ordinality), '')
+         FROM pg_catalog.pg_constraint con
+         JOIN pg_catalog.pg_class rel ON rel.oid = con.conrelid
+         JOIN pg_catalog.pg_namespace ns ON ns.oid = rel.relnamespace
+         LEFT JOIN LATERAL unnest(con.conkey) WITH ORDINALITY ord(attnum, ordinality) ON true
+         LEFT JOIN pg_catalog.pg_attribute att ON att.attrelid = rel.oid AND att.attnum = ord.attnum
+         WHERE ns.nspname = current_schema() AND rel.relname = $1
+           AND con.contype IN ('p','u','c')
+         GROUP BY con.oid, con.conname, con.contype
+         ORDER BY CASE con.contype WHEN 'p' THEN 0 WHEN 'u' THEN 1 ELSE 2 END, con.conname`,
+        [table],
+      );
+      return raw.rows.map((row) => ({
+        name: row[0] == null ? null : String(row[0]),
+        kind: String(row[1]) === "p" ? "primary" : String(row[1]) === "u" ? "unique" : "check",
+        definition: String(row[2] ?? ""),
+        columns: String(row[3] ?? "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
+      }));
+    }
+
+    const keys = await rawArrayRows(
+      engine,
+      conn,
+      `SELECT tc.constraint_name, tc.constraint_type,
+              GROUP_CONCAT(kcu.column_name ORDER BY kcu.ordinal_position SEPARATOR ',')
+       FROM information_schema.table_constraints tc
+       LEFT JOIN information_schema.key_column_usage kcu
+         ON kcu.constraint_schema = tc.constraint_schema
+        AND kcu.table_name = tc.table_name
+        AND kcu.constraint_name = tc.constraint_name
+       WHERE tc.table_schema = DATABASE() AND tc.table_name = ?
+         AND tc.constraint_type IN ('PRIMARY KEY','UNIQUE')
+       GROUP BY tc.constraint_name, tc.constraint_type
+       ORDER BY CASE tc.constraint_type WHEN 'PRIMARY KEY' THEN 0 ELSE 1 END, tc.constraint_name`,
+      [table],
+    );
+    const out = keys.rows.map((row) => {
+      const columns = String(row[2] ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const primary = String(row[1]) === "PRIMARY KEY";
+      return {
+        name: row[0] == null ? null : String(row[0]),
+        kind: primary ? "primary" : "unique",
+        definition: `${primary ? "PRIMARY KEY" : "UNIQUE"} (${columns.join(", ")})`,
+        columns,
+      };
+    });
+
+    try {
+      const checks = await rawArrayRows(
+        engine,
+        conn,
+        `SELECT tc.constraint_name, cc.check_clause
+         FROM information_schema.table_constraints tc
+         JOIN information_schema.check_constraints cc
+           ON cc.constraint_schema = tc.constraint_schema
+          AND cc.constraint_name = tc.constraint_name
+         WHERE tc.table_schema = DATABASE() AND tc.table_name = ?
+           AND tc.constraint_type = 'CHECK'
+         ORDER BY tc.constraint_name`,
+        [table],
+      );
+      for (const row of checks.rows) {
+        const clause = String(row[1] ?? "");
+        out.push({
+          name: row[0] == null ? null : String(row[0]),
+          kind: "check",
+          definition: clause ? `CHECK (${clause})` : "CHECK",
+          columns: [],
+        });
+      }
+    } catch {
+      // Older MySQL variants may not expose CHECK_CONSTRAINTS.
+    }
+    return out;
   },
 
   async updateCell({ id, table, pkColumn, pkValue, column, value }) {
@@ -610,9 +1309,18 @@ const handlers = {
 };
 
 /* ---- HTTP plumbing ---- */
-function cors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+function originAllowed(req) {
+  const origin = req.headers.origin;
+  return !origin || ALLOWED_ORIGINS.has("*") || ALLOWED_ORIGINS.has(origin);
+}
+
+function applyCors(req, res) {
+  const origin = req.headers.origin;
+  if (origin && originAllowed(req)) {
+    res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGINS.has("*") ? "*" : origin);
+    res.setHeader("Vary", "Origin");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 function sendJson(res, status, obj) {
@@ -634,7 +1342,6 @@ function sendJson(res, status, obj) {
     }
     return;
   }
-  cors(res);
   res.setHeader("Content-Type", "application/json");
   res.writeHead(code);
   res.end(body);
@@ -652,26 +1359,47 @@ function isConnLost(e) {
 }
 
 const server = createServer((req, res) => {
+  applyCors(req, res);
+
+  if (!originAllowed(req)) {
+    return sendJson(res, 403, appError("forbiddenOrigin", "Request origin is not allowed by the OrbitoDB bridge"));
+  }
+
   if (req.method === "OPTIONS") {
-    cors(res);
     res.writeHead(204);
     res.end();
     return;
   }
+
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST, OPTIONS");
+    return sendJson(res, 405, appError("methodNotAllowed", "Only POST requests are accepted"));
+  }
+
+  const contentType = String(req.headers["content-type"] || "").toLowerCase();
+  if (!contentType.startsWith("application/json")) {
+    return sendJson(res, 415, appError("unsupportedMediaType", "Bridge requests must use application/json"));
+  }
+
   const path = (req.url || "").replace(/^\/api\//, "").replace(/\?.*$/, "").replace(/^\//, "");
   const handler = handlers[path];
   if (!handler) return sendJson(res, 404, appError("notFound", `Unknown endpoint: ${path}`));
 
-  if (req.method === "GET") {
-    Promise.resolve(handler({}))
-      .then((out) => sendJson(res, 200, out))
-      .catch((e) => sendJson(res, 400, appError(e.kind || "internal", errMessage(e))));
-    return;
-  }
-
   const chunks = [];
-  req.on("data", (c) => chunks.push(c));
+  let bodyBytes = 0;
+  let bodyTooLarge = false;
+  req.on("data", (chunk) => {
+    if (bodyTooLarge) return;
+    bodyBytes += chunk.length;
+    if (bodyBytes > MAX_BODY_BYTES) {
+      bodyTooLarge = true;
+      sendJson(res, 413, appError("payloadTooLarge", `Request body exceeds ${MAX_BODY_BYTES} bytes`));
+      return;
+    }
+    chunks.push(chunk);
+  });
   req.on("end", async () => {
+    if (bodyTooLarge) return;
     let body = {};
     try {
       body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
@@ -705,6 +1433,6 @@ const server = createServer((req, res) => {
 process.on("uncaughtException", (e) => console.error("[bridge] uncaughtException:", e));
 process.on("unhandledRejection", (e) => console.error("[bridge] unhandledRejection:", e));
 
-server.listen(PORT, () => {
-  console.log(`OrbitoDB engine bridge listening on http://localhost:${PORT}  (PostgreSQL + MySQL)`);
+server.listen(PORT, HOST, () => {
+  console.log(`OrbitoDB engine bridge listening on http://${HOST}:${PORT}  (PostgreSQL + MySQL)`);
 });

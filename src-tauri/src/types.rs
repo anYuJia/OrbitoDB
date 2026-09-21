@@ -26,8 +26,52 @@ impl FromStr for Engine {
     }
 }
 
-/// A saved connection profile. Note: NO password field — secrets live only in
-/// the OS keychain, keyed by `id`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SshAuth {
+    Agent,
+    Key,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TlsMode {
+    Disable,
+    Allow,
+    Prefer,
+    Require,
+    VerifyCa,
+    VerifyFull,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TlsConfig {
+    pub mode: TlsMode,
+    #[serde(default)]
+    pub ca_path: Option<String>,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshTunnelConfig {
+    pub enabled: bool,
+    pub host: String,
+    #[serde(default = "default_ssh_port")]
+    pub port: u16,
+    pub username: String,
+    pub auth: SshAuth,
+    #[serde(default)]
+    pub private_key_path: Option<String>,
+}
+
+fn default_ssh_port() -> u16 {
+    22
+}
+
+/// A saved connection profile. Note: NO database or SSH secret fields —
+/// passwords remain outside the profile and live in the OS keychain.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionConfig {
@@ -41,6 +85,40 @@ pub struct ConnectionConfig {
     pub database: String,
     #[serde(default)]
     pub username: Option<String>,
+    /// Optional safety/environment label used by the desktop UI (dev/staging/prod).
+    #[serde(default)]
+    pub env: Option<String>,
+    /// Optional user-defined group shown in connection navigation.
+    #[serde(default)]
+    pub group: Option<String>,
+    /// Active schema. PostgreSQL defaults to public; ignored by other engines.
+    #[serde(default)]
+    pub schema: Option<String>,
+    /// Optional TLS policy for PostgreSQL/MySQL.
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
+    /// Optional desktop SSH local-forward configuration.
+    #[serde(default)]
+    pub ssh: Option<SshTunnelConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionDiagnostics {
+    pub server_version: String,
+    pub database: String,
+    pub schema: Option<String>,
+    pub latency_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupInfo {
+    pub id: String,
+    pub created_at: String,
+    pub size_bytes: u64,
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,14 +148,67 @@ pub struct TableInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DatabaseObjectInfo {
+    pub name: String,
+    pub kind: String,
+    #[serde(default)]
+    pub schema: Option<String>,
+    #[serde(default)]
+    pub table: Option<String>,
+    #[serde(default)]
+    pub signature: Option<String>,
+    #[serde(default)]
+    pub definition: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ColumnInfo {
     pub name: String,
     pub data_type: String,
     pub nullable: bool,
     pub is_primary_key: bool,
+    #[serde(default)]
+    pub default_value: Option<String>,
+    #[serde(default)]
+    pub generated: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
+    #[serde(default)]
+    pub extra: Option<String>,
 }
 
 /// A column definition for the visual create-table designer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignKey {
+    #[serde(default)]
+    pub name: Option<String>,
+    pub table: String,
+    pub column: String,
+    pub ref_table: String,
+    pub ref_column: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexInfo {
+    pub name: String,
+    pub unique: bool,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConstraintInfo {
+    #[serde(default)]
+    pub name: Option<String>,
+    pub kind: String,
+    pub definition: String,
+    #[serde(default)]
+    pub columns: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ColumnDef {
@@ -110,5 +241,6 @@ mod tests {
         assert_eq!(cfg.engine, Engine::Sqlite);
         assert!(cfg.host.is_none());
         assert_eq!(cfg.database, "/tmp/x.db");
+        assert!(cfg.env.is_none());
     }
 }

@@ -7,12 +7,17 @@
 import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 import type { Backend } from "./backend";
+import { MAX_QUERY_HISTORY } from "../lib/retention";
 import type {
   AppError,
+  BackupInfo,
   ColumnDef,
   ColumnInfo,
   ConnectionConfig,
+  ConstraintInfo,
+  DatabaseObjectInfo,
   ForeignKey,
+  IndexInfo,
   HistoryEntry,
   QueryResult,
   TableInfo,
@@ -20,6 +25,26 @@ import type {
 
 const CONNS_KEY = "orbitodb.connections";
 const HIST_KEY = "orbitodb.history";
+
+function recordHistory(connectionId: string, sql: string): void {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HIST_KEY) ?? "[]");
+    const current = Array.isArray(raw) ? (raw as HistoryEntry[]) : [];
+    const previousId = current[0]?.id ?? 0;
+    const entry: HistoryEntry = {
+      id: Math.max(Date.now(), previousId + 1),
+      connectionId,
+      sql,
+      ranAt: new Date().toISOString(),
+    };
+    localStorage.setItem(
+      HIST_KEY,
+      JSON.stringify([entry, ...current].slice(0, MAX_QUERY_HISTORY)),
+    );
+  } catch {
+    // History must never make a successful query fail.
+  }
+}
 
 function loadConns(): ConnectionConfig[] {
   try {
@@ -40,6 +65,49 @@ function saveConns(list: ConnectionConfig[]): void {
 /** Double-quote a SQL identifier (table/column name). */
 function q(id: string): string {
   return `"${String(id).replace(/"/g, '""')}"`;
+}
+
+function sqliteChecks(createSql: string): string[] {
+  const upper = createSql.toUpperCase();
+  const out: string[] = [];
+  let searchFrom = 0;
+  while (searchFrom < createSql.length) {
+    const rel = upper.indexOf("CHECK", searchFrom);
+    if (rel < 0) break;
+    const open = createSql.indexOf("(", rel + 5);
+    if (open < 0) break;
+    let depth = 0;
+    let quote: "'" | '"' | null = null;
+    let close = -1;
+    for (let i = open; i < createSql.length; i++) {
+      const ch = createSql[i];
+      if (quote) {
+        if (ch === quote) {
+          if (createSql[i + 1] === quote) {
+            i++;
+            continue;
+          }
+          quote = null;
+        }
+        continue;
+      }
+      if (ch === "'" || ch === '"') {
+        quote = ch;
+      } else if (ch === "(") {
+        depth++;
+      } else if (ch === ")") {
+        depth--;
+        if (depth === 0) {
+          close = i;
+          break;
+        }
+      }
+    }
+    if (close < 0) break;
+    out.push(createSql.slice(open + 1, close).trim());
+    searchFrom = close + 1;
+  }
+  return out;
 }
 
 function remoteErr(): AppError {
@@ -174,7 +242,11 @@ class LocalBackend implements Backend {
   }
 
   /* ---- queries ---- */
-  async runQuery(connectionId: string, sql: string): Promise<QueryResult> {
+  private async executeQuery(
+    connectionId: string,
+    sql: string,
+    record: boolean,
+  ): Promise<QueryResult> {
     const db = await this.ensureDb(connectionId);
     const started = performance.now();
     let columns: { name: string; dataType: string }[] = [];
@@ -204,7 +276,52 @@ class LocalBackend implements Backend {
     else if (/^(commit|end|rollback)\b/.test(s)) this.txn.delete(connectionId);
     const isWrite = !/^\s*(select|with|pragma|explain)\b/i.test(sql);
     if (isWrite && !this.txn.has(connectionId)) await this.persist(connectionId);
+    if (record) recordHistory(connectionId, sql);
     return { columns, rows, rowsAffected: db.getRowsModified(), elapsedMs, truncated: false };
+  }
+
+  async runQuery(connectionId: string, sql: string): Promise<QueryResult> {
+    return this.executeQuery(connectionId, sql, true);
+  }
+
+  async runQuerySilent(connectionId: string, sql: string): Promise<QueryResult> {
+    return this.executeQuery(connectionId, sql, false);
+  }
+
+  async cancelQuery(_connectionId: string): Promise<boolean> {
+    // sql.js executes synchronously on the browser thread and cannot be
+    // interrupted safely once execution has started.
+    return false;
+  }
+
+  async connectionDiagnostics(connectionId: string) {
+    const started = performance.now();
+    const db = await this.ensureDb(connectionId);
+    const versionResult = db.exec("SELECT sqlite_version()");
+    const version = versionResult.length ? String(versionResult[0].values[0]?.[0] ?? "") : "";
+    const cfg = (await this.listConnections()).find((item) => item.id === connectionId);
+    return {
+      serverVersion: version ? `SQLite ${version}` : "SQLite",
+      database: cfg?.database ?? "main",
+      schema: "main",
+      latencyMs: Math.max(1, Math.round(performance.now() - started)),
+    };
+  }
+
+  async listBackups(_connectionId: string): Promise<BackupInfo[]> {
+    throw { kind: "notSupported", message: "Managed backups are provided by the OrbitoDB engine bridge in web mode." } as AppError;
+  }
+
+  async createBackup(_connectionId: string): Promise<BackupInfo> {
+    throw { kind: "notSupported", message: "Managed backups are provided by the OrbitoDB engine bridge in web mode." } as AppError;
+  }
+
+  async restoreBackup(_connectionId: string, _backupId: string): Promise<void> {
+    throw { kind: "notSupported", message: "Managed backups are provided by the OrbitoDB engine bridge in web mode." } as AppError;
+  }
+
+  async listSchemas(_connectionId: string): Promise<string[]> {
+    return ["main", "temp"];
   }
 
   async listTables(connectionId: string): Promise<TableInfo[]> {
@@ -215,17 +332,53 @@ class LocalBackend implements Backend {
     const rows = res.length ? res[0].values : [];
     return rows.map((r) => ({ name: String(r[0]), kind: String(r[1]), schema: null }));
   }
+  async listDatabaseObjects(connectionId: string): Promise<DatabaseObjectInfo[]> {
+    const db = await this.ensureDb(connectionId);
+    const res = db.exec(
+      "SELECT name, type, tbl_name, sql FROM sqlite_master WHERE type IN ('view','index','trigger') AND name NOT LIKE 'sqlite_%' ORDER BY type, name",
+    );
+    const rows = res.length ? res[0].values : [];
+    return rows.map((row) => ({
+      name: String(row[0] ?? ""),
+      kind: String(row[1] ?? "") as DatabaseObjectInfo["kind"],
+      schema: "main",
+      table: row[2] == null ? null : String(row[2]),
+      signature: null,
+      definition:
+        row[3] == null || String(row[3]).trim() === ""
+          ? null
+          : String(row[3]).replace(/;?\s*$/, ";"),
+    }));
+  }
+
   async listColumns(connectionId: string, table: string): Promise<ColumnInfo[]> {
     const db = await this.ensureDb(connectionId);
-    const res = db.exec(`PRAGMA table_info(${q(table)})`);
+    const res = db.exec(`PRAGMA table_xinfo(${q(table)})`);
     const rows = res.length ? res[0].values : [];
-    // cid, name, type, notnull, dflt_value, pk
-    return rows.map((r) => ({
-      name: String(r[1]),
-      dataType: r[2] ? String(r[2]) : "",
-      nullable: Number(r[3]) === 0,
-      isPrimaryKey: Number(r[5]) > 0,
-    }));
+    // cid, name, type, notnull, dflt_value, pk, hidden
+    return rows.map((r) => {
+      const hidden = Number(r[6] ?? 0);
+      return {
+        name: String(r[1]),
+        dataType: r[2] ? String(r[2]) : "",
+        nullable: Number(r[3]) === 0,
+        isPrimaryKey: Number(r[5]) > 0,
+        defaultValue: r[4] == null ? null : String(r[4]),
+        generated:
+          hidden === 2
+            ? "VIRTUAL (expression unavailable)"
+            : hidden === 3
+              ? "STORED (expression unavailable)"
+              : null,
+        comment: null,
+        extra:
+          hidden === 2
+            ? "VIRTUAL GENERATED"
+            : hidden === 3
+              ? "STORED GENERATED"
+              : null,
+      };
+    });
   }
   async listForeignKeys(connectionId: string): Promise<ForeignKey[]> {
     const db = await this.ensureDb(connectionId);
@@ -241,6 +394,89 @@ class LocalBackend implements Backend {
       for (const r of rows) {
         out.push({ table: t, column: String(r[3]), refTable: String(r[2]), refColumn: r[4] == null ? "" : String(r[4]) });
       }
+    }
+    return out;
+  }
+
+  async listIndexes(connectionId: string, table: string): Promise<IndexInfo[]> {
+    const db = await this.ensureDb(connectionId);
+    const res = db.exec(`PRAGMA index_list(${q(table)})`);
+    const rows = res.length ? res[0].values : [];
+    return rows
+      .map((row) => {
+        const name = String(row[1] ?? "");
+        if (!name) return null;
+        const info = db.exec(`PRAGMA index_info(${q(name)})`);
+        const columns = (info.length ? info[0].values : [])
+          .map((item) => String(item[2] ?? ""))
+          .filter(Boolean);
+        const origin = row[3] == null ? "" : String(row[3]);
+        const detail = columns.length
+          ? origin && origin !== "c"
+            ? `${columns.join(", ")} · origin: ${origin}`
+            : columns.join(", ")
+          : origin
+            ? `origin: ${origin}`
+            : "SQLite index";
+        return {
+          name,
+          unique: Number(row[2] ?? 0) === 1,
+          detail,
+        } satisfies IndexInfo;
+      })
+      .filter((index): index is IndexInfo => index !== null);
+  }
+
+  async listConstraints(connectionId: string, table: string): Promise<ConstraintInfo[]> {
+    const db = await this.ensureDb(connectionId);
+    const out: ConstraintInfo[] = [];
+    const pkResult = db.exec(`PRAGMA table_xinfo(${q(table)})`);
+    const primary = (pkResult.length ? pkResult[0].values : [])
+      .filter((row) => Number(row[5] ?? 0) > 0)
+      .sort((a, b) => Number(a[5] ?? 0) - Number(b[5] ?? 0))
+      .map((row) => String(row[1]));
+    if (primary.length) {
+      out.push({
+        name: null,
+        kind: "primary",
+        definition: `PRIMARY KEY (${primary.join(", ")})`,
+        columns: primary,
+      });
+    }
+
+    const indexes = db.exec(`PRAGMA index_list(${q(table)})`);
+    for (const row of indexes.length ? indexes[0].values : []) {
+      const name = String(row[1] ?? "");
+      const origin = row[3] == null ? "" : String(row[3]);
+      if (!name || origin !== "u") continue;
+      const info = db.exec(`PRAGMA index_info(${q(name)})`);
+      const cols = (info.length ? info[0].values : [])
+        .map((item) => String(item[2] ?? ""))
+        .filter(Boolean);
+      out.push({
+        name: null,
+        kind: "unique",
+        definition: `UNIQUE (${cols.join(", ")})`,
+        columns: cols,
+      });
+    }
+
+    const statement = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?");
+    try {
+      statement.bind([table]);
+      if (statement.step()) {
+        const createSql = String(statement.get()[0] ?? "");
+        for (const expression of sqliteChecks(createSql)) {
+          out.push({
+            name: null,
+            kind: "check",
+            definition: `CHECK (${expression})`,
+            columns: [],
+          });
+        }
+      }
+    } finally {
+      statement.free();
     }
     return out;
   }
