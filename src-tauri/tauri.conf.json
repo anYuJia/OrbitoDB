@@ -18,7 +18,31 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self' customprotocol: asset:",
+        "connect-src": "ipc: http://ipc.localhost",
+        "img-src": "'self' asset: http://asset.localhost blob: data:",
+        "font-src": "'self' data:",
+        "style-src": "'self' 'unsafe-inline'",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "frame-ancestors": "'none'"
+      },
+      "devCsp": {
+        "default-src": "'self' http://localhost:1420 customprotocol: asset:",
+        "connect-src": "ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1421",
+        "img-src": "'self' asset: http://asset.localhost blob: data:",
+        "font-src": "'self' data:",
+        "style-src": "'self' 'unsafe-inline'",
+        "script-src": "'self' 'unsafe-eval'",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "frame-ancestors": "'none'"
+      },
+      "headers": {
+        "X-Content-Type-Options": "nosniff",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
+      }
     }
   },
   "bundle": {
