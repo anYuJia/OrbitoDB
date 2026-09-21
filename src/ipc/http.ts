@@ -13,6 +13,15 @@ import type { AppError, BackupInfo, ConnectionConfig, ConnectionDiagnostics, Con
 const DEFAULT_BRIDGE = "";
 const CONNS_KEY = "orbitodb.connections";
 const SECRETS_KEY = "orbitodb.secrets";
+
+function bridgeUrl(): string {
+  try {
+    const override = localStorage.getItem("orbitodb.bridge")?.trim();
+    return override ? override.replace(/\/+$/, "") : DEFAULT_BRIDGE;
+  } catch {
+    return DEFAULT_BRIDGE;
+  }
+}
 function loadConns(): ConnectionConfig[] {
   try {
     const raw = JSON.parse(localStorage.getItem(CONNS_KEY) ?? "[]");
