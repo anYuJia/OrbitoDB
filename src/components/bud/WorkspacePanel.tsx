@@ -17,6 +17,7 @@ import {
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { viewV } from "../../lib/motion";
+import { useI18n } from "../../lib/i18n";
 import { buildNativeBackupCommands } from "../../lib/backup";
 import { getBackend } from "../../ipc/backend";
 import type { BackupInfo, ConnectionDiagnostics } from "../../ipc/types";
@@ -91,32 +92,33 @@ function ToolRow({
 }
 
 function SchemaToolsPanel() {
+  const { t } = useI18n();
   return (
     <PanelShell
-      eyebrow="Database"
-      title="Schema tools"
-      subtitle="Inspect and compare database structure without leaving the desktop client."
+      eyebrow={t("workspace.database")}
+      title={t("workspace.schemaTools")}
+      subtitle={t("workspace.schemaSubtitle")}
     >
       <div className="odb-section">
         <ToolRow
           icon={<IconSchema size={18} stroke={1.6} />}
-          title="ER diagram"
-          description="Visualize tables, columns and foreign-key relationships."
-          action="Open"
+          title={t("workspace.erDiagram")}
+          description={t("workspace.erDescription")}
+          action={t("common.open")}
           onClick={() => window.dispatchEvent(new Event("orbitodb:erd"))}
         />
         <ToolRow
           icon={<IconGitCompare size={18} stroke={1.6} />}
-          title="Schema diff"
-          description="Compare tables and column types across two saved connections."
-          action="Compare"
+          title={t("workspace.schemaDiff")}
+          description={t("workspace.diffDescription")}
+          action={t("common.compare")}
           onClick={() => window.dispatchEvent(new Event("orbitodb:schema-diff"))}
         />
         <ToolRow
           icon={<IconArrowsDiff size={18} stroke={1.6} />}
-          title="Migration preview"
-          description="Compare two connections and generate a review-first migration script."
-          action="Generate"
+          title={t("workspace.migrationPreview")}
+          description={t("workspace.migrationDescription")}
+          action={t("common.generate")}
           onClick={() => window.dispatchEvent(new Event("orbitodb:schema-diff"))}
         />
       </div>
@@ -125,6 +127,7 @@ function SchemaToolsPanel() {
 }
 
 function UtilitiesPanel() {
+  const { locale, t } = useI18n();
   const newEditor = useStore((s) => s.newEditor);
   const activeId = useStore((s) => s.activeConnectionId);
   const activeConnection = useStore((s) => s.connections.find((connection) => connection.id === s.activeConnectionId));
@@ -242,31 +245,31 @@ function UtilitiesPanel() {
 
   return (
     <PanelShell
-      eyebrow="Workspace"
-      title="Utilities"
-      subtitle="Database-focused tools that run locally with the current OrbitoDB workspace."
+      eyebrow={t("workspace.workspace")}
+      title={t("workspace.utilities")}
+      subtitle={t("workspace.utilitiesSubtitle")}
     >
       <div className="odb-section">
         <ToolRow
           icon={<IconTerminal2 size={18} stroke={1.6} />}
-          title="New SQL console"
-          description="Open another isolated SQL editor tab."
-          action="Open"
+          title={t("workspace.newSqlConsole")}
+          description={t("workspace.newSqlDescription")}
+          action={t("common.open")}
           onClick={newEditor}
         />
         <ToolRow
           icon={<IconKey size={18} stroke={1.6} />}
-          title="Reconnect active connection"
-          description={activeConnection ? `Reconnect and refresh schema metadata for ${activeConnection.name}.` : "Select a connection first."}
-          action={activeId ? "Reconnect" : "Unavailable"}
+          title={t("workspace.reconnectActive")}
+          description={activeConnection ? t("workspace.reconnectDescription", { name: activeConnection.name }) : t("workspace.selectConnectionFirst")}
+          action={activeId ? t("common.reconnect") : t("common.unavailable")}
           disabled={!activeId}
           onClick={() => activeId && void openAndIntrospect(activeId)}
         />
         <ToolRow
           icon={<IconDatabaseSearch size={18} stroke={1.6} />}
-          title="Cross-table data search"
-          description="Search visible values across tables and jump directly to a matching row."
-          action={activeId ? "Search" : "Unavailable"}
+          title={t("workspace.crossTableSearch")}
+          description={t("workspace.crossTableSearchDescription")}
+          action={activeId ? t("common.search") : t("common.unavailable")}
           disabled={!activeId}
           onClick={() => window.dispatchEvent(new Event("orbitodb:cross-table-search"))}
         />
@@ -275,19 +278,19 @@ function UtilitiesPanel() {
       <div className="odb-section">
         <div className="odb-utility-section-head">
           <div>
-            <span className="odb-page-eyebrow">Maintenance</span>
-            <b>{activeTable ? activeTable : "No table selected"}</b>
+            <span className="odb-page-eyebrow">{t("workspace.maintenance")}</span>
+            <b>{activeTable ? activeTable : t("workspace.noTableSelected")}</b>
           </div>
         </div>
         <ToolRow
           icon={<IconDatabaseSearch size={18} stroke={1.6} />}
-          title="Analyze table"
+          title={t("workspace.analyzeTable")}
           description={
             activeTable
-              ? "Refresh planner statistics for the active table."
-              : "Open a table first to analyze its planner statistics."
+              ? t("workspace.analyzeDescription")
+              : t("workspace.analyzeOpenTable")
           }
-          action={activeTable ? "Analyze" : "Unavailable"}
+          action={activeTable ? "Analyze" : t("common.unavailable")}
           disabled={!activeId || !activeTable || readOnly}
           onClick={() => activeTable && void runMaintenance("analyze", activeTable)}
         />
@@ -295,24 +298,24 @@ function UtilitiesPanel() {
           icon={<IconRefresh size={18} stroke={1.6} />}
           title={
             activeConnection?.engine === "sqlite"
-              ? "Optimize SQLite database"
+              ? t("workspace.optimizeSqlite")
               : activeConnection?.engine === "postgres"
-                ? "Vacuum + analyze table"
-                : "Optimize table"
+                ? t("workspace.vacuumAnalyze")
+                 : t("workspace.optimizeTable")
           }
           description={
             activeConnection?.engine === "sqlite"
-              ? "Run PRAGMA optimize for the active SQLite database."
+              ? t("workspace.optimizeSqliteDescription")
               : activeTable
-                ? "Run the engine-native maintenance operation for the active table."
-                : "Open a table first to run table maintenance."
+                ? t("workspace.optimizeDescription")
+                 : t("workspace.optimizeOpenTable")
           }
           action={
             activeConnection?.engine === "sqlite"
               ? "Optimize"
               : activeTable
-                ? "Run"
-                : "Unavailable"
+                ? t("common.run")
+                : t("common.unavailable")
           }
           disabled={
             !activeId ||
@@ -329,8 +332,8 @@ function UtilitiesPanel() {
         {activeConnection?.engine === "sqlite" && (
           <ToolRow
             icon={<IconRefresh size={18} stroke={1.6} />}
-            title="Vacuum SQLite database"
-            description="Rewrite the database file to reclaim free pages. This can be I/O intensive."
+            title={t("workspace.vacuumSqlite")}
+            description={t("workspace.vacuumDescription")}
             action="Vacuum"
             disabled={!activeId || readOnly}
             onClick={() => void runMaintenance("vacuum")}
@@ -341,46 +344,46 @@ function UtilitiesPanel() {
       <div className="odb-section">
         <div className="odb-utility-section-head">
           <div>
-            <span className="odb-page-eyebrow">Backup & restore</span>
-            <b>{activeConnection ? activeConnection.name : "No active connection"}</b>
+            <span className="odb-page-eyebrow">{t("workspace.backupRestore")}</span>
+            <b>{activeConnection ? activeConnection.name : t("workspace.noActive")}</b>
           </div>
         </div>
 
         {!activeConnection ? (
           <div className="odb-empty-state compact">
             <IconDatabaseSearch size={22} stroke={1.5} />
-            <b>Select a connection</b>
-            <span>Backup tools are scoped to the active database.</span>
+            <b>{t("workspace.selectConnection")}</b>
+            <span>{t("workspace.backupScoped")}</span>
           </div>
         ) : activeConnection.engine === "sqlite" ? (
           <>
             <ToolRow
               icon={<IconDatabaseSearch size={18} stroke={1.6} />}
-              title="Create SQLite snapshot"
-              description="Create a consistent managed backup without adding filesystem permissions."
-              action={backupBusy ? "Working…" : "Create"}
+              title={t("workspace.createSnapshot")}
+              description={t("workspace.createSnapshotDescription")}
+              action={backupBusy ? t("common.working") : t("common.create")}
               disabled={backupBusy}
               onClick={() => void createSnapshot()}
             />
             {backupError && <div className="odb-structure-meta-error">{backupError}</div>}
             <div className="odb-backup-list">
               {backups.length === 0 ? (
-                <div className="odb-backup-empty">No managed snapshots yet.</div>
+                <div className="odb-backup-empty">{t("workspace.noSnapshots")}</div>
               ) : (
                 backups.map((backup) => (
                   <div className="odb-backup-row" key={backup.id}>
                     <div>
-                      <b>{new Date(backup.createdAt).toLocaleString()}</b>
+                      <b>{new Date(backup.createdAt).toLocaleString(locale)}</b>
                       <span>{formatBytes(backup.sizeBytes)} · {backup.id}</span>
                       {backup.path && <code title={backup.path}>{backup.path}</code>}
                     </div>
                     <button
                       onClick={() => void restoreSnapshot(backup)}
                       disabled={backupBusy || readOnly}
-                      title={readOnly ? "Restore is blocked by Read-only mode" : "Restore this snapshot"}
+                      title={readOnly ? t("workspace.restoreBlocked") : t("workspace.restoreSnapshot")}
                     >
                       <IconRefresh size={13} stroke={1.8} />
-                      Restore
+                      {t("common.restore")}
                     </button>
                   </div>
                 ))
@@ -392,15 +395,15 @@ function UtilitiesPanel() {
             <ToolRow
               icon={<IconTerminal2 size={18} stroke={1.6} />}
               title={activeConnection.engine === "postgres" ? "pg_dump backup command" : "mysqldump backup command"}
-              description="Copy a native logical backup command. Passwords are never embedded."
-              action="Copy"
+              description={t("workspace.nativeBackupDescription")}
+              action={t("common.copy")}
               onClick={() => copyCommand(nativeCommands.backup, "backup command")}
             />
             <ToolRow
               icon={<IconCopy size={18} stroke={1.6} />}
               title={activeConnection.engine === "postgres" ? "pg_restore command" : "mysql restore command"}
-              description="Copy the matching native restore command for this connection."
-              action="Copy"
+              description={t("workspace.nativeRestoreDescription")}
+              action={t("common.copy")}
               onClick={() => copyCommand(nativeCommands.restore, "restore command")}
             />
             <div className="odb-utility-note">{nativeCommands.note}</div>
@@ -418,6 +421,7 @@ function SettingsPanel({
   onEditConnection: (conn: import("../../ipc/types").ConnectionConfig) => void;
   onAddConnection: () => void;
 }) {
+  const { locale, setLocale, t } = useI18n();
   const connections = useStore((s) => s.connections);
   const activeId = useStore((s) => s.activeConnectionId);
   const conn = connections.find((connection) => connection.id === activeId) ?? null;
@@ -457,14 +461,14 @@ function SettingsPanel({
   const groupedConnections = useMemo(() => {
     const groups = new Map<string, typeof connections>();
     for (const connection of connections) {
-      const key = connection.group?.trim() || "Ungrouped";
+      const key = connection.group?.trim() || t("workspace.ungrouped");
       const items = groups.get(key) ?? [];
       items.push(connection);
       groups.set(key, items);
     }
     return [...groups.entries()].sort(([a], [b]) => {
-      if (a === "Ungrouped") return 1;
-      if (b === "Ungrouped") return -1;
+      if (a === t("workspace.ungrouped")) return 1;
+      if (b === t("workspace.ungrouped")) return -1;
       return a.localeCompare(b);
     });
   }, [connections]);
@@ -474,18 +478,34 @@ function SettingsPanel({
 
   return (
     <PanelShell
-      eyebrow="Workspace"
+      eyebrow={t("workspace.workspace")}
       title="Connections"
       subtitle="Manage local database profiles, safety settings and the active workspace connection."
     >
+      <div className="odb-preference-row">
+        <div>
+          <span className="odb-page-eyebrow">{t("workspace.preferences")}</span>
+          <b>{t("workspace.language")}</b>
+          <p>{t("workspace.languageDescription")}</p>
+        </div>
+        <div className="odb-segmented" role="group" aria-label={t("workspace.language")}>
+          <button className={locale === "en-US" ? "on" : ""} onClick={() => setLocale("en-US")}>
+            {t("workspace.english")}
+          </button>
+          <button className={locale === "zh-CN" ? "on" : ""} onClick={() => setLocale("zh-CN")}>
+            {t("workspace.chinese")}
+          </button>
+        </div>
+      </div>
+
       <div className="odb-connection-manager-head">
         <div>
-          <b>Saved connections</b>
-          <span>{connections.length} {connections.length === 1 ? "profile" : "profiles"} stored locally</span>
+          <b>{t("workspace.savedConnections")}</b>
+          <span>{t("workspace.storedLocally", { count: connections.length, label: t(connections.length === 1 ? "common.profile" : "common.profiles") })}</span>
         </div>
         <button className="primary" onClick={onAddConnection}>
           <IconPlus size={14} stroke={2} />
-          New connection
+          {t("top.newConnection")}
         </button>
       </div>
 
@@ -493,8 +513,8 @@ function SettingsPanel({
         {connections.length === 0 ? (
           <button className="odb-connection-manager-empty" onClick={onAddConnection}>
             <IconPlugConnected size={22} stroke={1.5} />
-            <b>Create your first connection</b>
-            <span>Profiles and credentials stay on this device.</span>
+            <b>{t("workspace.createFirst")}</b>
+            <span>{t("workspace.localOnly")}</span>
           </button>
         ) : (
           groupedConnections.map(([groupName, items]) => (
@@ -513,14 +533,14 @@ function SettingsPanel({
                       <span className="odb-connection-manager-copy">
                         <span className="odb-connection-manager-name">
                           <b>{item.name}</b>
-                          {active && <em>Active</em>}
+                          {active && <em>{t("common.active")}</em>}
                           {item.env && <em className={`env ${item.env}`}>{item.env.toUpperCase()}</em>}
-                          {ro && <em className="readonly">Read-only</em>}
+                          {ro && <em className="readonly">{t("common.readOnly")}</em>}
                         </span>
                         <span>
                           {engineName(item.engine)}
                           <i>·</i>
-                          {item.host ?? "Local"}
+                          {item.host ?? t("common.local")}
                           {item.port ? `:${item.port}` : ""}
                           <i>·</i>
                           {item.database}
@@ -528,7 +548,7 @@ function SettingsPanel({
                         </span>
                       </span>
                     </button>
-                    <button className="odb-connection-manager-edit" title="Edit connection" onClick={() => onEditConnection(item)}>
+                    <button className="odb-connection-manager-edit" title={t("workspace.editConnection")} aria-label={t("workspace.editConnection")} onClick={() => onEditConnection(item)}>
                       <IconPencil size={13} stroke={1.8} />
                     </button>
                   </div>
@@ -544,54 +564,54 @@ function SettingsPanel({
       {!conn ? (
         <div className="odb-empty-state compact">
           <IconPlugConnected size={24} stroke={1.4} />
-          <b>No active connection</b>
-          <span>Select a saved profile above or create a new one.</span>
+          <b>{t("workspace.noActive")}</b>
+          <span>{t("workspace.noActiveHint")}</span>
         </div>
       ) : (
         <>
           <div className="odb-connection-detail-head">
             <div>
-              <span className="odb-page-eyebrow">Active connection</span>
+              <span className="odb-page-eyebrow">{t("workspace.activeConnection")}</span>
               <h2>{conn.name}</h2>
               <p>{engineName(conn.engine)} · {conn.database}</p>
             </div>
             <div className="odb-connection-settings-actions">
               <button onClick={() => onEditConnection(conn)}>
                 <IconPencil size={14} stroke={1.8} />
-                Edit
+                {t("common.edit")}
               </button>
               <button onClick={() => void openAndIntrospect(conn.id)}>
                 <IconRefresh size={14} stroke={1.8} />
-                Reconnect
+                {t("common.reconnect")}
               </button>
               <button onClick={() => void runDiagnostics()} disabled={diagnosticsLoading}>
                 <IconDatabaseSearch size={14} stroke={1.8} />
-                {diagnosticsLoading ? "Checking…" : "Diagnostics"}
+                {diagnosticsLoading ? t("common.checking") : t("workspace.diagnostics")}
               </button>
             </div>
           </div>
 
           <div className="odb-settings-list">
             {([
-              ["Engine", engineName(conn.engine)],
-              ["Host", conn.host ?? "Local"],
-              ["Port", conn.port != null ? String(conn.port) : "—"],
-              ["Database", conn.database],
-              ...(conn.engine === "postgres" ? [["Schema", conn.schema?.trim() || "public"] as [string, string]] : []),
-              ["Username", conn.username ?? "—"],
-              ["Group", conn.group?.trim() || "Ungrouped"],
-              ["Environment", conn.env ? conn.env.toUpperCase() : "None"],
+              [t("workspace.engine"), engineName(conn.engine)],
+              [t("workspace.host"), conn.host ?? t("common.local")],
+              [t("workspace.port"), conn.port != null ? String(conn.port) : "—"],
+              [t("workspace.databaseLabel"), conn.database],
+              ...(conn.engine === "postgres" ? [[t("workspace.schema"), conn.schema?.trim() || "public"] as [string, string]] : []),
+              [t("workspace.username"), conn.username ?? "—"],
+              [t("workspace.group"), conn.group?.trim() || t("workspace.ungrouped")],
+              [t("workspace.environment"), conn.env ? conn.env.toUpperCase() : t("common.none")],
               [
-                "TLS / SSL",
+                t("workspace.tls"),
                 conn.tls
-                  ? `${conn.tls.mode}${conn.tls.caPath ? " · custom CA" : " · system roots"}`
-                  : "Disabled",
+                  ? `${conn.tls.mode}${conn.tls.caPath ? ` · ${t("workspace.customCA")}` : ` · ${t("workspace.systemRoots")}`}`
+                  : t("common.disabled"),
               ],
               [
-                "SSH tunnel",
+                t("workspace.ssh"),
                 conn.ssh?.enabled
-                  ? `${conn.ssh.username}@${conn.ssh.host}:${conn.ssh.port} · ${conn.ssh.auth === "agent" ? "Agent" : "Private key"}`
-                  : "Disabled",
+                  ? `${conn.ssh.username}@${conn.ssh.host}:${conn.ssh.port} · ${conn.ssh.auth === "agent" ? t("workspace.agent") : t("workspace.privateKey")}`
+                  : t("common.disabled"),
               ],
             ] as [string, string][]).map(([label, value]) => (
               <div key={label} className="odb-setting-line">
@@ -605,9 +625,9 @@ function SettingsPanel({
 
           <div className="odb-connection-detail-head compact">
             <div>
-              <span className="odb-page-eyebrow">Diagnostics</span>
-              <h2>Live connection</h2>
-              <p>Probe the active session instead of relying on saved profile metadata.</p>
+              <span className="odb-page-eyebrow">{t("workspace.diagnostics")}</span>
+              <h2>{t("workspace.liveConnection")}</h2>
+              <p>{t("workspace.liveDescription")}</p>
             </div>
           </div>
 
@@ -617,10 +637,10 @@ function SettingsPanel({
           {diagnostics?.connectionId === conn.id ? (
             <div className="odb-settings-list">
               {([
-                ["Server version", diagnostics.data.serverVersion || "—"],
-                ["Database", diagnostics.data.database || "—"],
-                ["Schema", diagnostics.data.schema || "—"],
-                ["Round-trip", `${diagnostics.data.latencyMs} ms`],
+                [t("workspace.serverVersion"), diagnostics.data.serverVersion || "—"],
+                [t("workspace.databaseLabel"), diagnostics.data.database || "—"],
+                [t("workspace.schema"), diagnostics.data.schema || "—"],
+                [t("workspace.roundTrip"), `${diagnostics.data.latencyMs} ms`],
               ] as [string, string][]).map(([label, value]) => (
                 <div key={label} className="odb-setting-line">
                   <span>{label}</span>
@@ -631,35 +651,35 @@ function SettingsPanel({
           ) : (
             <div className="odb-empty-state compact">
               <IconDatabaseSearch size={22} stroke={1.5} />
-              <b>{diagnosticsLoading ? "Running diagnostics…" : "No live diagnostics yet"}</b>
-              <span>Use Diagnostics above to query the active database session.</span>
+              <b>{diagnosticsLoading ? t("workspace.runningDiagnostics") : t("workspace.noDiagnostics")}</b>
+              <span>{t("workspace.noDiagnosticsHint")}</span>
             </div>
           )}
 
           <div className="odb-safety-section">
             <div>
-              <span className="odb-page-eyebrow">Safety</span>
-              <b>Read-only mode</b>
-              <p>Block INSERT, UPDATE, DELETE and other write statements for this connection.</p>
+              <span className="odb-page-eyebrow">{t("workspace.safety")}</span>
+              <b>{t("workspace.readOnlyMode")}</b>
+              <p>{t("workspace.readOnlyDescription")}</p>
             </div>
             <button className={readOnly ? "on" : ""} onClick={() => toggleReadOnly(conn.id)}>
               {readOnly ? <IconLock size={14} stroke={2} /> : <IconLockOpen size={14} stroke={1.8} />}
-              {readOnly ? "Enabled" : "Disabled"}
+              {readOnly ? t("common.enabled") : t("common.disabled")}
             </button>
           </div>
 
           <div className="odb-danger-zone">
             <div>
-              <b>Remove saved connection</b>
-              <span>This only removes the local OrbitoDB profile. It does not change the database server.</span>
+              <b>{t("workspace.removeConnection")}</b>
+              <span>{t("workspace.removeDescription")}</span>
             </div>
             <button
               onClick={async () => {
                 if (
                   await confirmDialog({
-                    title: "Delete connection",
-                    message: `Delete "${conn.name}"? This removes the saved local connection only.`,
-                    confirmLabel: "Delete",
+                    title: t("workspace.deleteConnection"),
+                    message: t("workspace.deleteConnectionMessage", { name: conn.name }),
+                    confirmLabel: t("common.delete"),
                     danger: true,
                   })
                 ) {
@@ -668,7 +688,7 @@ function SettingsPanel({
               }}
             >
               <IconTrash size={14} stroke={1.8} />
-              Delete
+              {t("common.delete")}
             </button>
           </div>
         </>
