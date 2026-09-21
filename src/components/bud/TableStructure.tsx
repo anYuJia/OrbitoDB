@@ -5,6 +5,7 @@ import type { ColumnInfo, ConstraintInfo, Engine, ForeignKey, IndexInfo } from "
 import { confirmDialog, promptDialog } from "../../state/dialog";
 import { buildColumnAlterPlan, buildConstraintAddSql, buildConstraintDropSql, buildSqliteRebuildSql } from "../../lib/schemaChanges";
 import { confirmProdWrite } from "../../state/safety";
+import { useI18n } from "../../lib/i18n";
 import { toast } from "../../state/toast";
 import { useStore } from "../../state/store";
 
@@ -16,6 +17,7 @@ function quoteIdentifier(engine: Engine, value: string): string {
 }
 
 export function TableStructure({ table }: { table: string }) {
+  const { t } = useI18n();
   const columns = useStore((s) => s.schema.columnsByTable[table] ?? []);
   const tables = useStore((s) => s.schema.tables);
   const activeId = useStore((s) => s.activeConnectionId);
@@ -554,17 +556,17 @@ export function TableStructure({ table }: { table: string }) {
 
   const primaryAction =
     mode === "columns"
-      ? { label: "Add column", run: add, disabled: readOnly || metaLoading }
+      ? { label: t("structure.addColumn"), run: add, disabled: readOnly || metaLoading }
       : mode === "indexes"
-        ? { label: "New index", run: createIndexTemplate, disabled: readOnly || metaLoading }
+        ? { label: t("structure.newIndex"), run: createIndexTemplate, disabled: readOnly || metaLoading }
         : mode === "constraints"
           ? {
-              label: engine === "sqlite" ? "Rebuild required" : "New constraint",
+              label: engine === "sqlite" ? t("structure.rebuildRequired") : t("structure.newConstraint"),
               run: createConstraintTemplate,
               disabled: readOnly || metaLoading || engine === "sqlite",
             }
           : {
-              label: engine === "sqlite" ? "Rebuild required" : "New foreign key",
+              label: engine === "sqlite" ? t("structure.rebuildRequired") : t("structure.newForeignKey"),
               run: createForeignKeyTemplate,
               disabled: readOnly || metaLoading || engine === "sqlite",
             };
@@ -573,23 +575,23 @@ export function TableStructure({ table }: { table: string }) {
     <div className="odb-structure">
       <div className="odb-structure-head">
         <div>
-          <span className="odb-structure-eyebrow">Table structure</span>
+          <span className="odb-structure-eyebrow">{t("structure.tableStructure")}</span>
           <strong>{table}</strong>
           <span>
             {count}{" "}
             {mode === "columns"
-              ? count === 1 ? "column" : "columns"
+              ? t(count === 1 ? "structure.columnSingular" : "structure.columnPlural")
               : mode === "foreignKeys"
-                ? count === 1 ? "foreign key" : "foreign keys"
+                ? t(count === 1 ? "structure.foreignKeySingular" : "structure.foreignKeyPlural")
                 : mode === "constraints"
-                  ? count === 1 ? "constraint" : "constraints"
-                  : count === 1 ? "index" : "indexes"}
+                  ? t(count === 1 ? "structure.constraintSingular" : "structure.constraintPlural")
+                   : t(count === 1 ? "structure.indexSingular" : "structure.indexPlural")}
           </span>
         </div>
         <div className="odb-structure-actions">
           <button onClick={() => void showTableDdl(table)}>
             <IconCode size={14} stroke={1.8} />
-            Open DDL
+            {t("structure.openDdl")}
           </button>
           <button className="primary" onClick={() => void primaryAction.run()} disabled={primaryAction.disabled}>
             <IconPlus size={14} stroke={2} />
@@ -598,11 +600,11 @@ export function TableStructure({ table }: { table: string }) {
         </div>
       </div>
 
-      <div className="odb-structure-tabs" role="tablist" aria-label="Table metadata">
-        <button className={mode === "columns" ? "on" : ""} onClick={() => setMode("columns")}>Columns <span>{columns.length}</span></button>
-        <button className={mode === "indexes" ? "on" : ""} onClick={() => setMode("indexes")}>Indexes <span>{indexes.length}</span></button>
-        <button className={mode === "constraints" ? "on" : ""} onClick={() => setMode("constraints")}>Constraints <span>{constraints.length}</span></button>
-        <button className={mode === "foreignKeys" ? "on" : ""} onClick={() => setMode("foreignKeys")}>Foreign Keys <span>{foreignKeys.length}</span></button>
+      <div className="odb-structure-tabs" role="tablist" aria-label={t("structure.tableMetadata")}>
+        <button className={mode === "columns" ? "on" : ""} onClick={() => setMode("columns")}>{t("structure.columns")} <span>{columns.length}</span></button>
+        <button className={mode === "indexes" ? "on" : ""} onClick={() => setMode("indexes")}>{t("structure.indexes")} <span>{indexes.length}</span></button>
+        <button className={mode === "constraints" ? "on" : ""} onClick={() => setMode("constraints")}>{t("structure.constraints")} <span>{constraints.length}</span></button>
+        <button className={mode === "foreignKeys" ? "on" : ""} onClick={() => setMode("foreignKeys")}>{t("structure.foreignKeys")} <span>{foreignKeys.length}</span></button>
       </div>
 
       {metaError && <div className="odb-structure-meta-error">{metaError}</div>}
@@ -611,16 +613,16 @@ export function TableStructure({ table }: { table: string }) {
         <div className="odb-structure-table">
           <div className="odb-structure-row header">
             <span>#</span>
-            <span>Name</span>
-            <span>Type</span>
-            <span>Default</span>
-            <span>Nullable</span>
-            <span>Key</span>
-            <span>Comment</span>
+            <span>{t("structure.name")}</span>
+            <span>{t("structure.type")}</span>
+            <span>{t("structure.default")}</span>
+            <span>{t("structure.nullable")}</span>
+            <span>{t("structure.key")}</span>
+            <span>{t("structure.comment")}</span>
             <span />
           </div>
           {columns.length === 0 ? (
-            <div className="odb-structure-empty">No column metadata available.</div>
+            <div className="odb-structure-empty">{t("structure.noColumns")}</div>
           ) : (
             columns.map((column, index) => (
               <div className="odb-structure-row" key={column.name}>
@@ -648,12 +650,12 @@ export function TableStructure({ table }: { table: string }) {
                   {column.comment || "—"}
                 </span>
                 <span className="actions">
-                  <button title="Edit column properties" onClick={() => void editColumn(column)} disabled={readOnly || metaLoading}>
+                  <button title={t("structure.editColumn")} aria-label={t("structure.editColumn")} onClick={() => void editColumn(column)} disabled={readOnly || metaLoading}>
                     <IconPencil size={13} stroke={1.8} />
                   </button>
                   <button
                     className="danger"
-                    title={column.isPrimaryKey ? "Primary-key columns cannot be dropped here" : "Drop column"}
+                    title={column.isPrimaryKey ? t("structure.primaryNoDrop") : t("structure.dropColumn")} aria-label={column.isPrimaryKey ? t("structure.primaryNoDrop") : t("structure.dropColumn")}
                     onClick={() => void remove(column.name, column.isPrimaryKey)}
                     disabled={readOnly || column.isPrimaryKey}
                   >
@@ -667,7 +669,7 @@ export function TableStructure({ table }: { table: string }) {
       ) : mode === "constraints" ? (
         <div className="odb-structure-meta-table constraints">
           <div className="odb-meta-row header">
-            <span>Type</span><span>Name</span><span>Definition</span><span />
+            <span>{t("structure.type")}</span><span>{t("structure.name")}</span><span>Definition</span><span />
           </div>
           {metaLoading ? (
             <div className="odb-structure-empty">Loading constraints…</div>
@@ -739,7 +741,7 @@ export function TableStructure({ table }: { table: string }) {
       ) : (
         <div className="odb-structure-meta-table indexes">
           <div className="odb-meta-row header">
-            <span>Name</span><span>Type</span><span>Definition / columns</span><span />
+            <span>{t("structure.name")}</span><span>{t("structure.type")}</span><span>Definition / columns</span><span />
           </div>
           {metaLoading ? (
             <div className="odb-structure-empty">Loading indexes…</div>
