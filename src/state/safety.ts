@@ -7,7 +7,7 @@ const NOWHERE_RE = /^\s*(delete|update)\b(?![\s\S]*\bwhere\b)/i;
 
 /** Does the statement modify data/schema (vs a read-only SELECT/EXPLAIN)? */
 export function isWrite(sql: string): boolean {
-  return WRITE_RE.test(sql);
+  return WRITE_RE.test(sql) || /^\s*pragma\s+optimize\b/i.test(sql);
 }
 
 /**
