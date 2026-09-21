@@ -1,0 +1,444 @@
+import { useSyncExternalStore } from "react";
+
+export type Locale = "en-US" | "zh-CN";
+export type TranslationVars = Record<string, string | number>;
+
+const STORAGE_KEY = "orbitodb.locale";
+
+const en = {
+  "common.open": "Open",
+  "common.compare": "Compare",
+  "common.generate": "Generate",
+  "common.search": "Search",
+  "common.run": "Run",
+  "common.create": "Create",
+  "common.restore": "Restore",
+  "common.copy": "Copy",
+  "common.edit": "Edit",
+  "common.delete": "Delete",
+  "common.reconnect": "Reconnect",
+  "common.diagnostics": "Diagnostics",
+  "common.cancel": "Cancel",
+  "common.close": "Close",
+  "common.clear": "Clear",
+  "common.active": "Active",
+  "common.local": "Local",
+  "common.none": "None",
+  "common.disabled": "Disabled",
+  "common.enabled": "Enabled",
+  "common.unavailable": "Unavailable",
+  "common.working": "Working…",
+  "common.checking": "Checking…",
+  "common.profile": "profile",
+  "common.profiles": "profiles",
+  "common.connection": "connection",
+  "common.connections": "connections",
+  "common.readOnly": "Read-only",
+
+  "top.showExplorer": "Show database explorer",
+  "top.hideExplorer": "Hide database explorer",
+  "top.noConnection": "No connection",
+  "top.newQuery": "New SQL tab",
+  "top.openSql": "Open SQL file",
+  "top.saveQuery": "Save query",
+  "top.newConnection": "New connection",
+  "top.reconnect": "Reconnect",
+  "top.history": "Query history",
+  "top.settings": "Settings",
+  "top.commandPalette": "Command palette ({shortcut})",
+  "top.search": "Search",
+  "top.execute": "Execute query ({shortcut})",
+  "top.language": "Language",
+  "top.switchChinese": "切换到简体中文",
+  "top.switchEnglish": "Switch to English",
+  "top.saveScript": "Save SQL script",
+  "top.name": "Name",
+  "top.scriptPlaceholder": "e.g. monthly-report",
+
+  "sources.explorer": "Database Explorer",
+  "sources.objects": "Objects",
+  "sources.scripts": "Scripts",
+  "sources.starred": "Starred",
+  "sources.newConnection": "New connection",
+  "sources.refresh": "Refresh",
+  "sources.refreshAll": "Refresh all",
+  "sources.filter": "Filter objects",
+  "sources.filterPlaceholder": "Filter objects…",
+  "sources.clear": "Clear",
+  "sources.erDiagram": "Schema diagram (ER)",
+  "sources.importCsv": "Import CSV",
+  "sources.schemaDiff": "Schema diff (compare connections)",
+  "sources.compact": "Compact spacing",
+  "sources.comfortable": "Comfortable spacing",
+  "sources.savedConnections": "Saved connections",
+  "sources.noConnections": "No connections yet",
+  "sources.connectionsCount": "{count} {label}",
+
+  "cmd.actions": "Actions",
+  "cmd.navigate": "Navigate",
+  "cmd.connections": "Connections",
+  "cmd.tables": "Tables",
+  "cmd.scripts": "Scripts",
+  "cmd.starred": "Starred",
+  "cmd.newQuery": "New query tab",
+  "cmd.newConnection": "New connection",
+  "cmd.runCurrent": "Run current query",
+  "cmd.clearEditor": "Clear editor",
+  "cmd.queryEditor": "Query editor",
+  "cmd.dataBrowser": "Data browser",
+  "cmd.history": "SQL history",
+  "cmd.schemaTools": "Schema tools",
+  "cmd.utilities": "Database utilities",
+  "cmd.crossSearch": "Cross-table search",
+  "cmd.settings": "Connection settings",
+  "cmd.connectTo": "Connect — {name}",
+  "cmd.openTable": "Open {name}",
+  "cmd.placeholder": "Search tables, run a query, jump anywhere…",
+  "cmd.noMatches": "No matches",
+  "cmd.navigateHint": "navigate",
+  "cmd.selectHint": "select",
+  "cmd.closeHint": "close",
+
+  "workspace.database": "Database",
+  "workspace.schemaTools": "Schema tools",
+  "workspace.schemaSubtitle": "Inspect and compare database structure without leaving the desktop client.",
+  "workspace.erDiagram": "ER diagram",
+  "workspace.erDescription": "Visualize tables, columns and foreign-key relationships.",
+  "workspace.schemaDiff": "Schema diff",
+  "workspace.diffDescription": "Compare tables and column types across two saved connections.",
+  "workspace.migrationPreview": "Migration preview",
+  "workspace.migrationDescription": "Compare two connections and generate a review-first migration script.",
+  "workspace.workspace": "Workspace",
+  "workspace.utilities": "Utilities",
+  "workspace.utilitiesSubtitle": "Run maintenance, search data, manage backups and open database tools.",
+  "workspace.connections": "Connections",
+  "workspace.connectionsSubtitle": "Manage local database profiles, safety settings and the active workspace connection.",
+  "workspace.savedConnections": "Saved connections",
+  "workspace.storedLocally": "{count} {label} stored locally",
+  "workspace.createFirst": "Create your first connection",
+  "workspace.localOnly": "Profiles and credentials stay on this device.",
+  "workspace.ungrouped": "Ungrouped",
+  "workspace.noActive": "No active connection",
+  "workspace.noActiveHint": "Select a saved profile above or create a new one.",
+  "workspace.activeConnection": "Active connection",
+  "workspace.engine": "Engine",
+  "workspace.host": "Host",
+  "workspace.port": "Port",
+  "workspace.databaseLabel": "Database",
+  "workspace.schema": "Schema",
+  "workspace.username": "Username",
+  "workspace.group": "Group",
+  "workspace.environment": "Environment",
+  "workspace.tls": "TLS / SSL",
+  "workspace.ssh": "SSH tunnel",
+  "workspace.liveConnection": "Live connection",
+  "workspace.liveDescription": "Probe the active session instead of relying on saved profile metadata.",
+  "workspace.serverVersion": "Server version",
+  "workspace.roundTrip": "Round-trip",
+  "workspace.runningDiagnostics": "Running diagnostics…",
+  "workspace.noDiagnostics": "No live diagnostics yet",
+  "workspace.noDiagnosticsHint": "Use Diagnostics above to query the active database session.",
+  "workspace.safety": "Safety",
+  "workspace.readOnlyMode": "Read-only mode",
+  "workspace.readOnlyDescription": "Block INSERT, UPDATE, DELETE and other write statements for this connection.",
+  "workspace.removeConnection": "Remove saved connection",
+  "workspace.removeDescription": "This only removes the local OrbitoDB profile. It does not change the database server.",
+  "workspace.preferences": "Preferences",
+  "workspace.language": "Language",
+  "workspace.languageDescription": "Choose the interface language. Changes apply immediately and are saved on this device.",
+  "workspace.english": "English",
+  "workspace.chinese": "简体中文",
+
+  "status.ready": "Ready",
+  "status.disconnected": "Disconnected",
+  "status.connected": "Connected",
+  "status.transaction": "Transaction",
+  "status.readOnly": "Read-only",
+
+  "dialog.cancel": "Cancel",
+  "toast.dismiss": "Dismiss",
+  "app.resizeSidebar": "Drag to resize sidebar",
+
+  "structure.columns": "Columns",
+  "structure.constraints": "Constraints",
+  "structure.foreignKeys": "Foreign Keys",
+  "structure.indexes": "Indexes",
+  "structure.addColumn": "Add column",
+  "structure.newConstraint": "New constraint",
+  "structure.newForeignKey": "New foreign key",
+  "structure.newIndex": "New index",
+  "structure.rebuildRequired": "Rebuild required",
+  "structure.tableMetadata": "Table metadata",
+
+  "sql.execute": "Execute",
+  "sql.executeScript": "Execute as script",
+  "sql.stop": "Stop",
+  "sql.auto": "Auto",
+  "sql.manual": "Manual",
+  "sql.format": "Format SQL ({shortcut})",
+  "sql.rerun": "Re-run",
+  "sql.explain": "Explain plan",
+  "sql.analyzeUnavailable": "Analyze is unavailable for SQLite — use Explain plan",
+  "sql.saveScript": "Save as script",
+  "sql.clearEditor": "Clear editor",
+  "sql.running": "Running…",
+  "sql.rowLimit": "Displayed query result row limit",
+  "sql.uncommitted": "Uncommitted changes — Commit or Rollback",
+  "sql.toggleAutocommit": "Toggle auto-commit",
+  "sql.resize": "Drag to resize",
+} as const;
+
+type TranslationKey = keyof typeof en;
+
+const zh: Record<TranslationKey, string> = {
+  "common.open": "打开",
+  "common.compare": "比较",
+  "common.generate": "生成",
+  "common.search": "搜索",
+  "common.run": "运行",
+  "common.create": "创建",
+  "common.restore": "恢复",
+  "common.copy": "复制",
+  "common.edit": "编辑",
+  "common.delete": "删除",
+  "common.reconnect": "重新连接",
+  "common.diagnostics": "连接诊断",
+  "common.cancel": "取消",
+  "common.close": "关闭",
+  "common.clear": "清除",
+  "common.active": "当前",
+  "common.local": "本地",
+  "common.none": "无",
+  "common.disabled": "已关闭",
+  "common.enabled": "已启用",
+  "common.unavailable": "不可用",
+  "common.working": "处理中…",
+  "common.checking": "检查中…",
+  "common.profile": "个配置",
+  "common.profiles": "个配置",
+  "common.connection": "个连接",
+  "common.connections": "个连接",
+  "common.readOnly": "只读",
+
+  "top.showExplorer": "显示数据库资源管理器",
+  "top.hideExplorer": "隐藏数据库资源管理器",
+  "top.noConnection": "未连接",
+  "top.newQuery": "新建 SQL 标签页",
+  "top.openSql": "打开 SQL 文件",
+  "top.saveQuery": "保存查询",
+  "top.newConnection": "新建连接",
+  "top.reconnect": "重新连接",
+  "top.history": "查询历史",
+  "top.settings": "设置",
+  "top.commandPalette": "命令面板（{shortcut}）",
+  "top.search": "搜索",
+  "top.execute": "执行查询（{shortcut}）",
+  "top.language": "语言",
+  "top.switchChinese": "切换到简体中文",
+  "top.switchEnglish": "Switch to English",
+  "top.saveScript": "保存 SQL 脚本",
+  "top.name": "名称",
+  "top.scriptPlaceholder": "例如：月度报表",
+
+  "sources.explorer": "数据库资源管理器",
+  "sources.objects": "对象",
+  "sources.scripts": "脚本",
+  "sources.starred": "收藏",
+  "sources.newConnection": "新建连接",
+  "sources.refresh": "刷新",
+  "sources.refreshAll": "全部刷新",
+  "sources.filter": "筛选对象",
+  "sources.filterPlaceholder": "筛选数据库对象…",
+  "sources.clear": "清除",
+  "sources.erDiagram": "ER 关系图",
+  "sources.importCsv": "导入 CSV",
+  "sources.schemaDiff": "结构差异（比较连接）",
+  "sources.compact": "紧凑间距",
+  "sources.comfortable": "舒适间距",
+  "sources.savedConnections": "已保存连接",
+  "sources.noConnections": "还没有连接",
+  "sources.connectionsCount": "{count} {label}",
+
+  "cmd.actions": "操作",
+  "cmd.navigate": "导航",
+  "cmd.connections": "连接",
+  "cmd.tables": "数据表",
+  "cmd.scripts": "脚本",
+  "cmd.starred": "收藏",
+  "cmd.newQuery": "新建查询标签",
+  "cmd.newConnection": "新建连接",
+  "cmd.runCurrent": "执行当前查询",
+  "cmd.clearEditor": "清空编辑器",
+  "cmd.queryEditor": "SQL 编辑器",
+  "cmd.dataBrowser": "数据浏览",
+  "cmd.history": "SQL 历史",
+  "cmd.schemaTools": "结构工具",
+  "cmd.utilities": "数据库工具",
+  "cmd.crossSearch": "跨表搜索",
+  "cmd.settings": "连接设置",
+  "cmd.connectTo": "连接 — {name}",
+  "cmd.openTable": "打开 {name}",
+  "cmd.placeholder": "搜索数据表、执行命令或快速跳转…",
+  "cmd.noMatches": "没有匹配结果",
+  "cmd.navigateHint": "移动",
+  "cmd.selectHint": "选择",
+  "cmd.closeHint": "关闭",
+
+  "workspace.database": "数据库",
+  "workspace.schemaTools": "结构工具",
+  "workspace.schemaSubtitle": "在桌面客户端内检查、比较并维护数据库结构。",
+  "workspace.erDiagram": "ER 关系图",
+  "workspace.erDescription": "可视化数据表、字段和外键关系。",
+  "workspace.schemaDiff": "结构差异",
+  "workspace.diffDescription": "比较两个已保存连接的数据表与字段类型。",
+  "workspace.migrationPreview": "迁移预览",
+  "workspace.migrationDescription": "比较两个连接并生成可审阅的迁移脚本。",
+  "workspace.workspace": "工作区",
+  "workspace.utilities": "工具",
+  "workspace.utilitiesSubtitle": "执行维护、搜索数据、管理备份并使用数据库工具。",
+  "workspace.connections": "连接",
+  "workspace.connectionsSubtitle": "管理本地连接配置、安全设置和当前工作区连接。",
+  "workspace.savedConnections": "已保存连接",
+  "workspace.storedLocally": "本机已保存 {count} {label}",
+  "workspace.createFirst": "创建第一个连接",
+  "workspace.localOnly": "连接配置和凭据仅保存在此设备。",
+  "workspace.ungrouped": "未分组",
+  "workspace.noActive": "没有活动连接",
+  "workspace.noActiveHint": "从上方选择已保存连接，或创建一个新连接。",
+  "workspace.activeConnection": "当前连接",
+  "workspace.engine": "数据库引擎",
+  "workspace.host": "主机",
+  "workspace.port": "端口",
+  "workspace.databaseLabel": "数据库",
+  "workspace.schema": "Schema",
+  "workspace.username": "用户名",
+  "workspace.group": "分组",
+  "workspace.environment": "环境",
+  "workspace.tls": "TLS / SSL",
+  "workspace.ssh": "SSH 隧道",
+  "workspace.liveConnection": "实时连接状态",
+  "workspace.liveDescription": "直接探测当前会话，而不是只显示保存的连接配置。",
+  "workspace.serverVersion": "服务器版本",
+  "workspace.roundTrip": "往返延迟",
+  "workspace.runningDiagnostics": "正在诊断…",
+  "workspace.noDiagnostics": "还没有实时诊断结果",
+  "workspace.noDiagnosticsHint": "点击上方“连接诊断”读取当前数据库会话状态。",
+  "workspace.safety": "安全",
+  "workspace.readOnlyMode": "只读模式",
+  "workspace.readOnlyDescription": "阻止此连接执行 INSERT、UPDATE、DELETE 及其他写入语句。",
+  "workspace.removeConnection": "删除已保存连接",
+  "workspace.removeDescription": "仅删除 OrbitoDB 本地连接配置，不会修改数据库服务器。",
+  "workspace.preferences": "偏好设置",
+  "workspace.language": "界面语言",
+  "workspace.languageDescription": "选择界面语言。修改会立即生效，并保存在此设备。",
+  "workspace.english": "English",
+  "workspace.chinese": "简体中文",
+
+  "status.ready": "就绪",
+  "status.disconnected": "未连接",
+  "status.connected": "已连接",
+  "status.transaction": "事务",
+  "status.readOnly": "只读",
+
+  "dialog.cancel": "取消",
+  "toast.dismiss": "关闭",
+  "app.resizeSidebar": "拖动调整侧边栏宽度",
+
+  "structure.columns": "字段",
+  "structure.constraints": "约束",
+  "structure.foreignKeys": "外键",
+  "structure.indexes": "索引",
+  "structure.addColumn": "添加字段",
+  "structure.newConstraint": "新建约束",
+  "structure.newForeignKey": "新建外键",
+  "structure.newIndex": "新建索引",
+  "structure.rebuildRequired": "需要重建数据表",
+  "structure.tableMetadata": "数据表元数据",
+
+  "sql.execute": "执行",
+  "sql.executeScript": "按脚本执行",
+  "sql.stop": "停止",
+  "sql.auto": "自动",
+  "sql.manual": "手动",
+  "sql.format": "格式化 SQL（{shortcut}）",
+  "sql.rerun": "重新执行",
+  "sql.explain": "执行计划",
+  "sql.analyzeUnavailable": "SQLite 不支持 Analyze，请使用执行计划",
+  "sql.saveScript": "保存为脚本",
+  "sql.clearEditor": "清空编辑器",
+  "sql.running": "执行中…",
+  "sql.rowLimit": "查询结果最大显示行数",
+  "sql.uncommitted": "存在未提交更改 — 请提交或回滚",
+  "sql.toggleAutocommit": "切换自动提交",
+  "sql.resize": "拖动调整大小",
+};
+
+let currentLocale: Locale = detectLocale();
+const listeners = new Set<() => void>();
+
+function detectLocale(): Locale {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "en-US" || saved === "zh-CN") return saved;
+  } catch {
+    // Storage can be unavailable in hardened browser contexts.
+  }
+  if (typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("zh")) {
+    return "zh-CN";
+  }
+  return "en-US";
+}
+
+function applyDocumentLocale(locale: Locale) {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = locale;
+  document.documentElement.dataset.locale = locale;
+}
+
+applyDocumentLocale(currentLocale);
+
+export function getLocale(): Locale {
+  return currentLocale;
+}
+
+export function setLocale(locale: Locale) {
+  if (locale === currentLocale) return;
+  currentLocale = locale;
+  try {
+    localStorage.setItem(STORAGE_KEY, locale);
+  } catch {
+    // Locale remains active for this session.
+  }
+  applyDocumentLocale(locale);
+  for (const listener of listeners) listener();
+}
+
+export function toggleLocale() {
+  setLocale(currentLocale === "zh-CN" ? "en-US" : "zh-CN");
+}
+
+export function translate(key: TranslationKey, vars?: TranslationVars, locale: Locale = currentLocale): string {
+  const table = locale === "zh-CN" ? zh : en;
+  let value = table[key] ?? en[key];
+  if (!vars) return value;
+  for (const [name, replacement] of Object.entries(vars)) {
+    value = value.replaceAll(`{${name}}`, String(replacement));
+  }
+  return value;
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function useI18n() {
+  const locale = useSyncExternalStore(subscribe, getLocale, getLocale);
+  return {
+    locale,
+    isZh: locale === "zh-CN",
+    setLocale,
+    toggleLocale,
+    t: (key: TranslationKey, vars?: TranslationVars) => translate(key, vars, locale),
+  };
+}
