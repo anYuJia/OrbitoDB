@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { translate } from "../lib/i18n";
 
 interface Props {
   children: ReactNode;
@@ -40,16 +41,13 @@ export class AppErrorBoundary extends Component<Props, State> {
     return (
       <main className="odb-crash-screen" role="alert">
         <div className="odb-crash-panel">
-          <span className="odb-page-eyebrow">Recovery</span>
-          <h1>OrbitoDB hit a UI error</h1>
-          <p>
-            Your databases and saved connection profiles were not deleted. Reload the app first;
-            if the crash was caused by a persisted editor session, reset only the SQL workspace.
-          </p>
+          <span className="odb-page-eyebrow">{translate("crash.recovery")}</span>
+          <h1>{translate("crash.title")}</h1>
+          <p>{translate("crash.description")}</p>
           <code>{this.state.error.message || this.state.error.name}</code>
           <div className="odb-crash-actions">
-            <button className="primary" onClick={this.reload}>Reload OrbitoDB</button>
-            <button onClick={this.resetWorkspace}>Reset SQL workspace</button>
+            <button className="primary" onClick={this.reload}>{translate("crash.reload")}</button>
+            <button onClick={this.resetWorkspace}>{translate("crash.reset")}</button>
           </div>
         </div>
       </main>
