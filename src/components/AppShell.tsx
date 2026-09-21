@@ -27,11 +27,19 @@ function initialWidth(): number {
   }
 }
 
+function initialHidden(): boolean {
+  try {
+    return localStorage.getItem("orbitodb.sidebarHidden") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function AppShell() {
   const { t } = useI18n();
   const [serverModal, setServerModal] = useState<ConnectionConfig | "new" | null>(null);
   const [createTableOpen, setCreateTableOpen] = useState(false);
-  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(initialHidden);
   const [sidebarWidth, setSidebarWidth] = useState(initialWidth);
   const topView = useStore((s) => s.topView);
   const restoreSession = useStore((s) => s.restoreSession);
@@ -46,6 +54,32 @@ export function AppShell() {
 
   const openAdd = () => setServerModal("new");
   const openEdit = (c: ConnectionConfig) => setServerModal(c);
+  const toggleSidebar = () =>
+    setSidebarHidden((hidden) => {
+      const next = !hidden;
+      try {
+        localStorage.setItem("orbitodb.sidebarHidden", next ? "1" : "0");
+      } catch {
+        /* keep session-only state */
+      }
+      return next;
+    });
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const editing =
+        target?.isContentEditable ||
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT";
+      if (editing || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "b") return;
+      event.preventDefault();
+      toggleSidebar();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const onResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -72,7 +106,7 @@ export function AppShell() {
       className={`bud-app ${sidebarHidden ? "sidebar-hidden" : ""}`}
       style={{ ["--sidebar-w" as string]: `${sidebarWidth}px` }}
     >
-      <TopNav onAddServer={openAdd} onToggleSidebar={() => setSidebarHidden((v) => !v)} sidebarHidden={sidebarHidden} />
+      <TopNav onAddServer={openAdd} onToggleSidebar={toggleSidebar} sidebarHidden={sidebarHidden} />
       <div className="bud-body">
         <Sources onAddServer={openAdd} onEditServer={openEdit} onCreateTable={() => setCreateTableOpen(true)} />
         <AnimatePresence mode="wait" initial={false}>

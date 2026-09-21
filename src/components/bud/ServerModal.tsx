@@ -179,6 +179,16 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
   const [testing, setTesting] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   const defaultPort = defaultPortFor(engine);
 
   const chooseEngine = (next: Engine) => {

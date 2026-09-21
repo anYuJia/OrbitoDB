@@ -40,6 +40,14 @@ import { ContextMenu, type CtxAnchor, type MenuItem } from "./ContextMenu";
 
 const PANELS = ["Objects", "Scripts", "Starred"] as const;
 
+function initialExplorerCompact(): boolean {
+  try {
+    return localStorage.getItem("orbitodb.explorerCompact") === "1";
+  } catch {
+    return false;
+  }
+}
+
 function EngineIcon({ engine }: { engine: Engine }) {
   if (engine === "mysql") return <IconBrandMysql size={15} stroke={1.7} />;
   return <IconDatabase size={14} stroke={1.7} />;
@@ -139,7 +147,7 @@ export function Sources({
       groups: [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)),
     };
   }, [connections]);
-  const [compact, setCompact] = useState(false);
+  const [compact, setCompact] = useState(initialExplorerCompact);
 
   const rootMenu: MenuItem[] = [
     { label: t("sources.newConnection"), icon: (<IconPlus size={15} stroke={1.7} />), onClick: onAddServer },
@@ -198,7 +206,17 @@ export function Sources({
         <button
           className={compact ? "on" : ""}
           title={compact ? t("sources.comfortable") : t("sources.compact")} aria-label={compact ? t("sources.comfortable") : t("sources.compact")}
-          onClick={() => setCompact((v) => !v)}
+          onClick={() =>
+            setCompact((value) => {
+              const next = !value;
+              try {
+                localStorage.setItem("orbitodb.explorerCompact", next ? "1" : "0");
+              } catch {
+                /* keep session-only state */
+              }
+              return next;
+            })
+          }
         >
           <IconLayoutSidebar size={15} stroke={1.7} />
         </button>

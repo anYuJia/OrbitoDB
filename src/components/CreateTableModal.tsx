@@ -1,6 +1,6 @@
 import { IconKey, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef, Engine } from "../ipc/types";
 import { backdropV, centeredModalV, MotionButton } from "../lib/motion";
 import { useI18n } from "../lib/i18n";
@@ -24,6 +24,16 @@ export function CreateTableModal({ onClose }: { onClose: () => void }) {
   ]);
 
   const types = useMemo(() => TYPES[conn?.engine ?? "sqlite"], [conn?.engine]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
 
   const update = (i: number, patch: Partial<ColumnDef>) => {
     setCols((current) =>
