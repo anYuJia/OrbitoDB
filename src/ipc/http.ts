@@ -46,11 +46,12 @@ function writeSecrets(s: Record<string, string>): void {
   }
 }
 
-// Passwords are encrypted with AES-GCM. The key is a non-extractable CryptoKey
-// kept in IndexedDB — it never touches localStorage, so it can't be read out
-// the way the stored ciphertext could. (SubtleCrypto needs a secure context;
-// over plain http on a LAN IP we fall back to base64.)
+// Passwords are persisted only when Web Crypto is available in a secure
+// context. On plain-LAN HTTP or when IndexedDB/Web Crypto fails, credentials
+// remain memory-only for the current page session; OrbitoDB never falls back
+// to reversible base64/plaintext storage.
 const KEY_DB = "orbitodb-keys";
+const sessionSecrets = new Map<string, string>();
 let _keyPromise: Promise<CryptoKey> | null = null;
 function keyDb(): Promise<IDBDatabase> {
   return new Promise((res, rej) => {
@@ -86,50 +87,74 @@ const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 export async function saveSecret(id: string, password: string | null): Promise<void> {
   const s = secrets();
   if (!password) {
+    sessionSecrets.delete(id);
     delete s[id];
     writeSecrets(s);
     return;
   }
+
+  sessionSecrets.set(id, password);
+  delete s[id];
+
+  if (!globalThis.isSecureContext || !globalThis.crypto?.subtle) {
+    writeSecrets(s);
+    return;
+  }
+
   try {
     const key = await getKey();
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(password));
+    const ct = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      new TextEncoder().encode(password),
+    );
     s[id] = `enc:${b64(iv.buffer)}:${b64(ct)}`;
   } catch {
-    s[id] = `b64:${btoa(unescape(encodeURIComponent(password)))}`;
+    // Keep the credential for this page session only.
   }
   writeSecrets(s);
 }
 
 export async function loadSecret(id: string): Promise<string | null> {
-  const v = secrets()[id];
+  const inMemory = sessionSecrets.get(id);
+  if (inMemory) return inMemory;
+
+  const s = secrets();
+  const v = s[id];
   if (!v) return null;
-  if (v.startsWith("b64:")) {
-    try {
-      return decodeURIComponent(escape(atob(v.slice(4))));
-    } catch {
-      return null;
-    }
+
+  // Remove legacy reversible encodings instead of continuing to trust them.
+  if (!v.startsWith("enc:")) {
+    delete s[id];
+    writeSecrets(s);
+    return null;
   }
-  if (v.startsWith("enc:")) {
-    const [, ivb, ctb] = v.split(":");
-    try {
-      const key = await getKey();
-      const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(ivb) }, key, unb64(ctb).buffer);
-      return new TextDecoder().decode(pt);
-    } catch {
-      return null;
-    }
+
+  const [, ivb, ctb] = v.split(":");
+  if (!ivb || !ctb || !globalThis.isSecureContext || !globalThis.crypto?.subtle) {
+    return null;
   }
-  // legacy plain base64 (pre-encryption)
+
   try {
-    return decodeURIComponent(escape(atob(v)));
+    const key = await getKey();
+    const pt = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: unb64(ivb) },
+      key,
+      unb64(ctb).buffer,
+    );
+    const password = new TextDecoder().decode(pt);
+    sessionSecrets.set(id, password);
+    return password;
   } catch {
+    delete s[id];
+    writeSecrets(s);
     return null;
   }
 }
 
 export function deleteSecret(id: string): void {
+  sessionSecrets.delete(id);
   const s = secrets();
   delete s[id];
   writeSecrets(s);
