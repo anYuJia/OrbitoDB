@@ -1,4 +1,5 @@
 use crate::connections::ConnectionRegistry;
+use crate::drivers::Driver;
 use crate::error::{AppError, AppResult};
 use crate::schema;
 use crate::secrets;
@@ -219,6 +220,30 @@ async fn saved_connection(state: &State<'_, AppState>, id: &str) -> AppResult<Co
         .ok_or_else(|| AppError::NotFound(format!("no saved connection: {id}")))
 }
 
+async fn validate_sqlite_backup(
+    cfg: &ConnectionConfig,
+    source: &std::path::Path,
+) -> AppResult<()> {
+    let mut check_cfg = cfg.clone();
+    check_cfg.id = format!("{}-backup-check", cfg.id);
+    check_cfg.database = source.to_string_lossy().into_owned();
+    let driver = crate::drivers::sqlite::SqliteDriver::connect(&check_cfg).await?;
+    let result = driver.execute("PRAGMA integrity_check").await?;
+    let status = result
+        .rows
+        .first()
+        .and_then(|row| row.first())
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    if !status.eq_ignore_ascii_case("ok") {
+        return Err(AppError::Internal(format!(
+            "backup integrity check failed: {}",
+            if status.is_empty() { "unknown result" } else { status }
+        )));
+    }
+    Ok(())
+}
+
 async fn vacuum_backup(
     state: &State<'_, AppState>,
     cfg: &ConnectionConfig,
@@ -301,6 +326,7 @@ pub async fn restore_backup(
     if !source.is_file() {
         return Err(AppError::NotFound(format!("backup not found: {backup_id}")));
     }
+    validate_sqlite_backup(&cfg, &source).await?;
 
     let safety = dir.join(format!(
         "before-restore-{}.sqlite",
