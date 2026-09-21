@@ -4231,3 +4231,294 @@ html[data-locale="zh-CN"] .odb-connection-manager-group-head {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* Phase 17 — desktop polish, locale-aware typography and interaction consistency */
+
+:root {
+  --odb-hover: rgba(255, 255, 255, 0.035);
+  --odb-active: rgba(76, 111, 255, 0.14);
+  --odb-focus: rgba(76, 111, 255, 0.62);
+  --odb-danger-soft: rgba(240, 107, 120, 0.10);
+  --odb-control-h: 28px;
+  --odb-shadow-popover: 0 18px 48px rgba(0, 0, 0, 0.40);
+}
+
+html[data-locale="zh-CN"] body {
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+html[data-locale="zh-CN"] .odb-sidebar-kicker,
+html[data-locale="zh-CN"] .odb-page-eyebrow,
+html[data-locale="zh-CN"] .odb-column-editor-head span {
+  letter-spacing: 0.035em;
+}
+
+::selection {
+  background: rgba(76, 111, 255, 0.30);
+  color: #fff;
+}
+
+button,
+[role="button"],
+input,
+select,
+textarea {
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease,
+    opacity 120ms ease;
+}
+
+button:not(:disabled) {
+  cursor: default;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #5f6874;
+  opacity: 1;
+}
+
+.bud-titlebar.odb-titlebar,
+.bud-sources,
+.bud-qtabs,
+.bud-toolbar.odb-data-toolbar,
+.bud-ide-toolbar,
+.bud-res-toolbar,
+.bud-statusbar.odb-statusbar {
+  border-color: #232a32;
+}
+
+.odb-icon-btn,
+.bud-tool,
+.bud-tree-toolbar button,
+.bud-ide-toolbar button {
+  min-height: var(--odb-control-h);
+}
+
+.odb-icon-btn:hover:not(:disabled),
+.bud-tool:hover:not(:disabled),
+.bud-tree-toolbar button:hover:not(:disabled),
+.bud-ide-toolbar button:hover:not(:disabled) {
+  background: var(--odb-hover) !important;
+  border-color: var(--odb-border-strong) !important;
+}
+
+.odb-icon-btn.on,
+.bud-tree-toolbar button.on {
+  background: var(--odb-active) !important;
+  border-color: rgba(76, 111, 255, 0.22) !important;
+  color: #dfe5ff !important;
+}
+
+.odb-run-btn {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+.odb-run-btn:hover:not(:disabled) {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.10) inset,
+    0 0 0 1px rgba(122, 112, 255, 0.18);
+}
+
+.bud-src-search,
+.odb-search-btn,
+.odb-connection-pill {
+  background: #0f1216;
+}
+
+.bud-src-search:focus-within,
+.bud-grid-search:focus-within,
+.bud-res-filter:focus-within,
+.bud-logs-search:focus-within {
+  border-color: rgba(76, 111, 255, 0.55) !important;
+  box-shadow: 0 0 0 2px rgba(76, 111, 255, 0.10);
+}
+
+.bud-tnode,
+.bud-src,
+.bud-table,
+.bud-objgroup-head,
+.bud-saved-row {
+  transition: background-color 100ms ease, color 100ms ease;
+}
+
+.bud-table.active,
+.bud-src.active,
+.bud-tnode.active {
+  box-shadow: inset 2px 0 0 var(--odb-primary);
+}
+
+.bud-qtab {
+  position: relative;
+}
+
+.bud-qtab.on {
+  background: #171b21;
+  box-shadow: none;
+}
+
+.bud-qtab.on::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--odb-primary);
+}
+
+.bud-grid th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  box-shadow: 0 1px 0 var(--odb-border);
+}
+
+.bud-grid td,
+.bud-grid th {
+  line-height: 1.35;
+}
+
+.bud-grid tbody tr:hover td {
+  background: #17202b !important;
+}
+
+.bud-grid input[type="checkbox"],
+.bud-sources input[type="checkbox"] {
+  accent-color: var(--odb-primary);
+}
+
+.odb-structure-note {
+  border: 0;
+  border-left: 2px solid rgba(122, 112, 255, 0.42);
+  border-radius: 0;
+  background: transparent;
+  color: var(--odb-text-2);
+  line-height: 1.55;
+}
+
+.bud-empty {
+  line-height: 1.55;
+}
+
+.bud-error {
+  border-left: 2px solid rgba(240, 107, 120, 0.60);
+  border-bottom-color: rgba(240, 107, 120, 0.18);
+}
+
+.danger:hover:not(:disabled),
+button.danger:hover:not(:disabled) {
+  border-color: rgba(240, 107, 120, 0.34) !important;
+  background: var(--odb-danger-soft) !important;
+  color: #ff9ba5 !important;
+}
+
+.odb-column-editor {
+  box-shadow: var(--odb-shadow-popover);
+}
+
+@media (max-width: 1180px) {
+  .bud-titlebar.odb-titlebar {
+    grid-template-columns: minmax(180px, 0.8fr) minmax(150px, 300px) minmax(330px, 1.2fr);
+    gap: 8px;
+  }
+
+  .odb-title-actions {
+    gap: 1px;
+  }
+
+  .odb-title-separator {
+    margin-inline: 2px;
+  }
+
+  .odb-search-btn span {
+    display: none;
+  }
+}
+
+@media (max-width: 920px) {
+  .bud-titlebar.odb-titlebar {
+    grid-template-columns: minmax(140px, 1fr) minmax(140px, 220px) auto;
+    padding-inline: 8px;
+  }
+
+  .odb-brand span,
+  .odb-connection-meta,
+  .odb-search-btn,
+  .odb-language-btn span {
+    display: none;
+  }
+
+  .odb-title-actions .odb-icon-btn:nth-of-type(2),
+  .odb-title-actions .odb-icon-btn:nth-of-type(3) {
+    display: none;
+  }
+
+  .odb-run-btn span {
+    display: none;
+  }
+
+  .odb-run-btn {
+    width: 30px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 720px) {
+  .bud-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bud-sources {
+    display: none;
+  }
+
+  .bud-titlebar.odb-titlebar {
+    grid-template-columns: auto minmax(120px, 1fr) auto;
+  }
+
+  .odb-title-left {
+    gap: 4px;
+  }
+
+  .odb-title-actions > .odb-icon-btn:not(.odb-language-btn):not(:last-of-type) {
+    display: none;
+  }
+
+  .odb-page {
+    padding: 22px 16px;
+  }
+
+  .odb-page-head h1 {
+    font-size: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
