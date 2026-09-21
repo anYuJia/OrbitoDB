@@ -1,4 +1,5 @@
 import {
+  IconActivity,
   IconAlignLeft,
   IconArrowBackUp,
   IconChartBar,
@@ -19,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getBackend } from "../../ipc/backend";
 import { resolveParams } from "../../lib/params";
 import { formatSql } from "../../lib/sqlformat";
+import { buildExplainSql } from "../../lib/explain";
 import { CellViewer } from "./CellViewer";
 import { ExportMenu } from "./ExportMenu";
 import { confirmDialog, promptDialog } from "../../state/dialog";
@@ -190,8 +192,6 @@ export function SqlPanel() {
       toast(normalized.message ?? "Could not switch schema", "error");
     }
   };
-  const explainPrefix = conn?.engine === "sqlite" ? "EXPLAIN QUERY PLAN " : "EXPLAIN ";
-
   const exec = async (text = sql) => {
     if (!connId || running) return;
     const editor = editors.find((item) => item.id === activeEditorId);
@@ -247,6 +247,26 @@ export function SqlPanel() {
       setTab("log");
     } finally {
       if (runId.current === id) setRunning(false);
+    }
+  };
+
+  const explain = async (mode: "plan" | "analyze") => {
+    if (!connId || !conn || running) return;
+    try {
+      let serverVersion: string | null = null;
+      if (mode === "analyze" && conn.engine === "mysql") {
+        try {
+          serverVersion = (await getBackend().connectionDiagnostics(connId)).serverVersion;
+        } catch {
+          // Fall back to MySQL EXPLAIN ANALYZE syntax; a server-side syntax
+          // error remains visible if an old/limited server does not support it.
+        }
+      }
+      const statement = buildExplainSql(conn.engine, selectedOrAll(), mode, serverVersion);
+      await exec(statement);
+    } catch (error) {
+      const normalized = normalize(error);
+      toast(normalized.message ?? "Could not build query plan", "error");
     }
   };
 
@@ -568,8 +588,23 @@ export function SqlPanel() {
         <button title="Re-run" onClick={() => void exec(selectedOrAll())} disabled={running || !connId}>
           <IconRefresh size={15} stroke={1.8} />
         </button>
-        <button title="Explain plan" onClick={() => void exec(explainPrefix + selectedOrAll())} disabled={!sql.trim() || !connId}>
+        <button
+          title="Explain plan"
+          onClick={() => void explain("plan")}
+          disabled={running || !sql.trim() || !connId}
+        >
           <IconFileCode size={15} stroke={1.8} />
+        </button>
+        <button
+          title={
+            conn?.engine === "sqlite"
+              ? "Analyze is unavailable for SQLite — use Explain plan"
+              : "Explain Analyze — executes the selected SELECT/WITH query"
+          }
+          onClick={() => void explain("analyze")}
+          disabled={running || !sql.trim() || !connId || conn?.engine === "sqlite"}
+        >
+          <IconActivity size={15} stroke={1.8} />
         </button>
         <span className="bud-tb-sep" />
         <button title="Save as script" onClick={() => void saveAs("script")} disabled={!sql.trim()}>
