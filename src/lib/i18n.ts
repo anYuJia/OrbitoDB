@@ -327,6 +327,31 @@ const en = {
   "connection.connect": "Connect",
   "connection.keepExistingPassword": "Saving keeps the existing password when the password field is blank.",
   "connection.noAccount": "No OrbitoDB account required.",
+
+  "shortcuts.title": "Keyboard shortcuts",
+  "shortcuts.commandPalette": "Command palette",
+  "shortcuts.execute": "Execute query (or selection)",
+  "shortcuts.comment": "Toggle line comment",
+  "shortcuts.format": "Format SQL",
+  "shortcuts.duplicate": "Duplicate line / selection",
+  "shortcuts.moveLine": "Move line up / down",
+  "shortcuts.indent": "Indent / outdent",
+  "shortcuts.wrap": "Wrap selection in brackets / quotes",
+  "shortcuts.switchTab": "Switch editor tab",
+  "shortcuts.autocomplete": "Trigger autocomplete",
+  "shortcuts.navigate": "Navigate suggestions / palette",
+  "shortcuts.copyCell": "Copy selected cell (data grid)",
+  "shortcuts.closePopup": "Close popups & menus",
+  "shortcuts.showHelp": "Show this help",
+  "shortcuts.contextMenu": "Context menu on tree / tables",
+  "shortcuts.editCell": "Select cell / edit cell (data grid)",
+  "shortcuts.closeHint": "Press Esc to close",
+
+  "crash.recovery": "Recovery",
+  "crash.title": "OrbitoDB hit a UI error",
+  "crash.description": "Your databases and saved connection profiles were not deleted. Reload the app first; if the crash was caused by a persisted editor session, reset only the SQL workspace.",
+  "crash.reload": "Reload OrbitoDB",
+  "crash.reset": "Reset SQL workspace",
 } as const;
 
 type TranslationKey = keyof typeof en;
@@ -653,6 +678,31 @@ const zh: Record<TranslationKey, string> = {
   "connection.connect": "连接",
   "connection.keepExistingPassword": "密码留空时，保存会继续使用现有密码。",
   "connection.noAccount": "无需 OrbitoDB 账号。",
+
+  "shortcuts.title": "键盘快捷键",
+  "shortcuts.commandPalette": "命令面板",
+  "shortcuts.execute": "执行查询（或选中内容）",
+  "shortcuts.comment": "切换行注释",
+  "shortcuts.format": "格式化 SQL",
+  "shortcuts.duplicate": "复制当前行 / 选中内容",
+  "shortcuts.moveLine": "上移 / 下移当前行",
+  "shortcuts.indent": "缩进 / 取消缩进",
+  "shortcuts.wrap": "用括号 / 引号包裹选中内容",
+  "shortcuts.switchTab": "切换编辑器标签页",
+  "shortcuts.autocomplete": "触发自动补全",
+  "shortcuts.navigate": "浏览补全项 / 命令面板",
+  "shortcuts.copyCell": "复制数据网格中的选中单元格",
+  "shortcuts.closePopup": "关闭弹窗和菜单",
+  "shortcuts.showHelp": "显示此帮助",
+  "shortcuts.contextMenu": "打开树 / 数据表右键菜单",
+  "shortcuts.editCell": "选择 / 编辑数据网格单元格",
+  "shortcuts.closeHint": "按 Esc 关闭",
+
+  "crash.recovery": "恢复",
+  "crash.title": "OrbitoDB 界面发生错误",
+  "crash.description": "数据库文件和已保存连接不会被删除。请先重新加载；如果问题来自持久化的编辑器会话，可仅重置 SQL 工作区。",
+  "crash.reload": "重新加载 OrbitoDB",
+  "crash.reset": "重置 SQL 工作区",
 };
 
 let currentLocale: Locale = detectLocale();
