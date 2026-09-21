@@ -19,7 +19,8 @@
   --odb-red: #f06b78;
   --odb-yellow: #d6a84b;
   --odb-radius: 6px;
-  --odb-mono: "SFMono-Regular", "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --odb-ui-font: Inter, "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", sans-serif;
+  --odb-mono: "SFMono-Regular", "SF Mono", "Cascadia Code", "JetBrains Mono", "Microsoft YaHei UI", Consolas, monospace;
 }
 
 html,
@@ -30,7 +31,7 @@ body,
 
 body {
   color: var(--odb-text);
-  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--odb-ui-font);
   font-size: 13px;
 }
 
@@ -4521,4 +4522,46 @@ button.danger:hover:not(:disabled) {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+
+/* Locale-aware desktop polish */
+html[data-locale="zh-CN"] body {
+  font-family: var(--odb-ui-font);
+  text-rendering: optimizeLegibility;
+}
+
+html[data-locale="zh-CN"] .odb-sidebar-kicker,
+html[data-locale="zh-CN"] .bud-cb-label,
+html[data-locale="zh-CN"] .odb-page-eyebrow {
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+html[data-locale="zh-CN"] .bud-panel-tab,
+html[data-locale="zh-CN"] .bud-tool,
+html[data-locale="zh-CN"] .odb-tool-action,
+html[data-locale="zh-CN"] .odb-statusbar,
+html[data-locale="zh-CN"] .bud-dialog {
+  font-feature-settings: "kern" 1;
+}
+
+html[data-locale="zh-CN"] .bud-dialog {
+  line-height: 1.6;
+}
+
+html[data-locale="zh-CN"] .bud-dialog-actions button {
+  min-width: 72px;
+}
+
+html[data-locale="zh-CN"] .odb-language-btn {
+  min-width: 46px;
+  width: auto;
+  padding-inline: 7px;
+}
+
+html[data-locale="zh-CN"] .odb-tool-copy span,
+html[data-locale="zh-CN"] .odb-setting-line,
+html[data-locale="zh-CN"] .odb-utility-note {
+  line-height: 1.6;
 }

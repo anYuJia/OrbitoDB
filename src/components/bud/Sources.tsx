@@ -286,16 +286,17 @@ function ConnectionGroup({
   items: ConnectionConfig[];
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(true);
   const [ctx, setCtx] = useState<CtxAnchor | null>(null);
   const saveConnection = useStore((s) => s.saveConnection);
 
   const renameGroup = async () => {
     const next = await promptDialog({
-      title: "Rename connection group",
-      label: "Group name",
+      title: t("sources.renameGroup"),
+      label: t("sources.groupName"),
       defaultValue: name,
-      placeholder: "e.g. Production",
+      placeholder: t("sources.groupPlaceholder"),
     });
     const value = next?.trim();
     if (!value || value === name) return;
@@ -307,9 +308,9 @@ function ConnectionGroup({
   const ungroup = async () => {
     if (
       !(await confirmDialog({
-        title: "Remove group?",
-        message: `Move all ${items.length} connection${items.length === 1 ? "" : "s"} out of “${name}”? The connections themselves are not deleted.`,
-        confirmLabel: "Remove group",
+        title: t("sources.removeGroupTitle"),
+        message: t("sources.removeGroupMessage", { count: items.length, name }),
+        confirmLabel: t("sources.removeGroup"),
       }))
     ) {
       return;
@@ -320,8 +321,8 @@ function ConnectionGroup({
   };
 
   const menu: MenuItem[] = [
-    { label: "Rename group…", icon: (<IconPencil size={15} stroke={1.7} />), onClick: () => void renameGroup() },
-    { label: "Ungroup all", icon: (<IconFolderOpen size={15} stroke={1.7} />), onClick: () => void ungroup() },
+    { label: t("sources.renameGroup"), icon: (<IconPencil size={15} stroke={1.7} />), onClick: () => void renameGroup() },
+    { label: t("sources.ungroupAll"), icon: (<IconFolderOpen size={15} stroke={1.7} />), onClick: () => void ungroup() },
   ];
 
   return (
@@ -347,6 +348,7 @@ function ConnectionGroup({
 
 /** Saved SQL snippets and starred queries. */
 function SavedList({ kind }: { kind: "Scripts" | "Starred" }) {
+  const { t } = useI18n();
   const scripts = useStore((s) => s.scripts);
   const favorites = useStore((s) => s.favorites);
   const loadSql = useStore((s) => s.loadSql);
@@ -359,9 +361,7 @@ function SavedList({ kind }: { kind: "Scripts" | "Starred" }) {
   if (items.length === 0) {
     return (
       <div className="bud-ds-empty">
-        {kind === "Scripts"
-          ? "No saved scripts. Use the Save icon in the editor toolbar."
-          : "No starred queries yet. Use the ★ icon in the SQL toolbar."}
+        {kind === "Scripts" ? t("sources.noSavedScripts") : t("sources.noStarredQueries")}
       </div>
     );
   }
@@ -401,6 +401,7 @@ function Datasource({
   onCreateTable: () => void;
   filter: string;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(true);
   const [ctx, setCtx] = useState<CtxAnchor | null>(null);
   const activeId = useStore((s) => s.activeConnectionId);
@@ -476,16 +477,16 @@ function Datasource({
     onCreateTable();
   };
   const rename = async () => {
-    const name = await promptDialog({ title: "Rename data source", label: "Name", defaultValue: conn.name });
+    const name = await promptDialog({ title: t("sources.renameConnection"), label: t("top.name"), defaultValue: conn.name });
     if (!name?.trim() || name.trim() === conn.name) return;
     await saveConnection({ ...conn, name: name.trim() }, null);
   };
   const moveToGroup = async () => {
     const next = await promptDialog({
-      title: "Move connection to group",
-      label: "Group name",
+      title: t("sources.moveConnection"),
+      label: t("sources.groupName"),
       defaultValue: conn.group ?? "",
-      placeholder: "Leave blank for no group",
+      placeholder: t("sources.noGroupPlaceholder"),
     });
     if (next == null) return;
     const group = next.trim() || null;
@@ -496,9 +497,9 @@ function Datasource({
   const remove = async () => {
     if (
       await confirmDialog({
-        title: "Delete data source",
-        message: `Delete "${conn.name}"? This removes the saved connection.`,
-        confirmLabel: "Delete",
+        title: t("sources.deleteConnectionTitle"),
+        message: t("sources.deleteConnectionMessage", { name: conn.name }),
+        confirmLabel: t("common.delete"),
         danger: true,
       })
     ) {
@@ -508,19 +509,19 @@ function Datasource({
 
   const items: MenuItem[] = [
     {
-      label: isActive ? "Open (selected)" : "Connect",
+      label: isActive ? t("sources.openSelected") : t("sources.connect"),
       icon: (<IconFolderOpen size={15} stroke={1.7} />),
       disabled: isActive,
       onClick: () => void openAndIntrospect(conn.id),
     },
-    { label: "Refresh", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: () => void openAndIntrospect(conn.id) },
-    { label: "New table", icon: (<IconTablePlus size={15} stroke={1.7} />), onClick: () => void newTable() },
+    { label: t("sources.refresh"), icon: (<IconRefresh size={15} stroke={1.7} />), onClick: () => void openAndIntrospect(conn.id) },
+    { label: t("sources.newTable"), icon: (<IconTablePlus size={15} stroke={1.7} />), onClick: () => void newTable() },
     { divider: true },
-    { label: "Rename", icon: (<IconPencil size={15} stroke={1.7} />), onClick: () => void rename() },
-    { label: conn.group ? "Move to another group…" : "Move to group…", icon: (<IconFolderOpen size={15} stroke={1.7} />), onClick: () => void moveToGroup() },
-    { label: "Edit connection…", icon: (<IconDatabaseCog size={15} stroke={1.7} />), onClick: () => onEditServer(conn) },
+    { label: t("sources.rename"), icon: (<IconPencil size={15} stroke={1.7} />), onClick: () => void rename() },
+    { label: conn.group ? t("sources.moveAnotherGroup") : t("sources.moveGroup"), icon: (<IconFolderOpen size={15} stroke={1.7} />), onClick: () => void moveToGroup() },
+    { label: t("sources.editConnection"), icon: (<IconDatabaseCog size={15} stroke={1.7} />), onClick: () => onEditServer(conn) },
     {
-      label: "Properties",
+      label: t("sources.properties"),
       icon: (<IconSettings size={15} stroke={1.7} />),
       onClick: () => {
         void openAndIntrospect(conn.id);
@@ -528,13 +529,13 @@ function Datasource({
       },
     },
     {
-      label: isReadOnly ? "Read-only mode (on)" : "Read-only mode",
+      label: isReadOnly ? t("sources.readOnlyOn") : t("sources.readOnlyMode"),
       icon: isReadOnly ? (<IconLock size={15} stroke={1.7} />) : (<IconLockOpen size={15} stroke={1.7} />),
       onClick: () => toggleReadOnly(conn.id),
     },
-    { label: "Copy connection string", icon: (<IconCopy size={15} stroke={1.7} />), onClick: copyString },
+    { label: t("sources.copyConnectionString"), icon: (<IconCopy size={15} stroke={1.7} />), onClick: copyString },
     { divider: true },
-    { label: "Remove data source", icon: (<IconTrash size={15} stroke={1.7} />), danger: true, onClick: remove },
+    { label: t("sources.removeConnection"), icon: (<IconTrash size={15} stroke={1.7} />), danger: true, onClick: remove },
   ];
 
   const refresh = () => void openAndIntrospect(conn.id);
@@ -543,14 +544,14 @@ function Datasource({
     if (!isActive) await openAndIntrospect(conn.id);
     if (isReadOnly) return;
     const name = await promptDialog({
-      title: "New database view",
-      label: "View name",
+      title: t("sources.newView"),
+      label: t("sources.viewName"),
       placeholder: "active_users",
     });
     if (!name?.trim()) return;
     const query = await promptDialog({
-      title: "New database view",
-      label: "SELECT / WITH query",
+      title: t("sources.newView"),
+      label: t("sources.selectQuery"),
       defaultValue: baseTables[0] ? `SELECT * FROM ${baseTables[0].name}` : "SELECT 1 AS value",
       placeholder: "SELECT * FROM users WHERE active = true",
     });
@@ -616,7 +617,7 @@ function Datasource({
   const allNames = baseTables.map((t) => t.name);
   const tablesMenu: MenuItem[] = [
     { label: "New table…", icon: (<IconTablePlus size={15} stroke={1.7} />), onClick: () => void newTable() },
-    { label: "Refresh", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: refresh },
+    { label: t("sources.refresh"), icon: (<IconRefresh size={15} stroke={1.7} />), onClick: refresh },
     { divider: true },
     {
       label: `Clear all tables (delete rows)${allNames.length ? ` · ${allNames.length}` : ""}`,
@@ -738,6 +739,7 @@ function DatabaseObjectRow({
   object: DatabaseObjectInfo;
   conn: ConnectionConfig;
 }) {
+  const { t } = useI18n();
   const [ctx, setCtx] = useState<CtxAnchor | null>(null);
   const openSqlTab = useStore((s) => s.openSqlTab);
   const openTableData = useStore((s) => s.openTableData);
@@ -771,9 +773,12 @@ function DatabaseObjectRow({
     if (isReadOnly) return;
     if (
       !(await confirmDialog({
-        title: `Drop ${object.kind}?`,
-        message: `Drop “${object.name}”?${object.table ? ` It belongs to “${object.table}”.` : ""} This changes the database schema immediately.`,
-        confirmLabel: "Drop",
+        title: t("sources.dropObjectTitle"),
+        message: t("sources.dropObjectMessage", {
+          name: object.name,
+          parent: object.table ? ` ${t("sources.tables")}: “${object.table}”.` : "",
+        }),
+        confirmLabel: t("common.delete"),
         danger: true,
       }))
     ) {
@@ -790,25 +795,25 @@ function DatabaseObjectRow({
 
   const items: MenuItem[] = [
     {
-      label: "Open",
+      label: t("common.open"),
       icon: (<IconFolderOpen size={15} stroke={1.7} />),
       disabled: !canOpen,
       onClick: openObject,
     },
     {
-      label: "Show DDL",
+      label: t("sources.showDdl"),
       icon: (<IconSchema size={15} stroke={1.7} />),
       disabled: !object.definition?.trim(),
       onClick: showDdl,
     },
     {
-      label: "Copy name",
+      label: t("sources.copyName"),
       icon: (<IconCopy size={15} stroke={1.7} />),
       onClick: copyName,
     },
     { divider: true },
     {
-      label: `Drop ${object.kind}`,
+      label: t("sources.dropObject"),
       icon: (<IconTrash size={15} stroke={1.7} />),
       danger: true,
       disabled: isReadOnly,
@@ -870,6 +875,7 @@ function TableRow({
   selectedNames?: string[];
   onActivate?: (name: string, e: React.MouseEvent) => boolean;
 }) {
+  const { t } = useI18n();
   const [ctx, setCtx] = useState<CtxAnchor | null>(null);
   const openTableData = useStore((s) => s.openTableData);
   const openView = useStore((s) => s.openView);
@@ -891,16 +897,16 @@ function TableRow({
   const tableActive = editTable?.table === table && activeViewId === null;
 
   const rename = async () => {
-    const name = await promptDialog({ title: "Rename table", label: "Name", defaultValue: table });
+    const name = await promptDialog({ title: t("sources.renameTable"), label: t("top.name"), defaultValue: table });
     if (!name?.trim() || name.trim() === table) return;
     await renameTable(table, name.trim());
   };
   const drop = async () => {
     if (
       await confirmDialog({
-        title: "Drop table",
-        message: `Drop "${table}"? This permanently deletes the table and all its rows.`,
-        confirmLabel: "Drop",
+        title: t("sources.dropTable"),
+        message: t("sources.dropTableMessage", { name: table }),
+        confirmLabel: t("common.delete"),
         danger: true,
       })
     ) {
@@ -909,43 +915,43 @@ function TableRow({
   };
 
   const addColumnTo = async () => {
-    const name = await promptDialog({ title: "New column", label: "Column name", placeholder: "e.g. created_at" });
+    const name = await promptDialog({ title: t("sources.newColumn"), label: t("sources.columnName"), placeholder: t("sources.columnNamePlaceholder") });
     if (!name?.trim()) return;
     const dataType =
-      (await promptDialog({ title: "Column type", label: "Type (TEXT, INTEGER, REAL, DATE, …)", defaultValue: "TEXT" }))?.trim() ||
+      (await promptDialog({ title: t("sources.columnType"), label: t("sources.columnTypeLabel"), defaultValue: "TEXT" }))?.trim() ||
       "TEXT";
     void addColumn(table, { name: name.trim(), dataType, nullable: true, primaryKey: false });
   };
   const copyName = () => void navigator.clipboard?.writeText(table).catch(() => {});
 
   const items: MenuItem[] = [
-    { label: "Open", icon: (<IconFolderOpen size={15} stroke={1.7} />), onClick: () => void openTableData(table) },
-    { label: "Open in new tab", icon: (<IconPlus size={15} stroke={1.7} />), onClick: () => void openTableData(table, { newTab: true }) },
-    { label: "View data", icon: (<IconEye size={15} stroke={1.7} />), onClick: () => void openTableData(table) },
+    { label: t("common.open"), icon: (<IconFolderOpen size={15} stroke={1.7} />), onClick: () => void openTableData(table) },
+    { label: t("sources.openNewTab"), icon: (<IconPlus size={15} stroke={1.7} />), onClick: () => void openTableData(table, { newTab: true }) },
+    { label: t("sources.viewData"), icon: (<IconEye size={15} stroke={1.7} />), onClick: () => void openTableData(table) },
     { label: "Refresh", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: () => void reload(table) },
     { divider: true },
-    { label: "Generate SELECT", icon: (<IconCode size={15} stroke={1.7} />), onClick: () => loadSql(`SELECT * FROM ${table} LIMIT 100;`) },
-    { label: "Show CREATE (DDL)", icon: (<IconSchema size={15} stroke={1.7} />), onClick: () => void showTableDdl(table) },
-    { label: "Count rows", icon: (<IconHash size={15} stroke={1.7} />), onClick: () => loadSql(`SELECT count(*) FROM ${table};`) },
-    { label: "Add column…", icon: (<IconColumnInsertRight size={15} stroke={1.7} />), onClick: () => void addColumnTo() },
-    { label: "Copy name", icon: (<IconCopy size={15} stroke={1.7} />), onClick: copyName },
+    { label: t("sources.generateSelect"), icon: (<IconCode size={15} stroke={1.7} />), onClick: () => loadSql(`SELECT * FROM ${table} LIMIT 100;`) },
+    { label: t("sources.showCreateDdl"), icon: (<IconSchema size={15} stroke={1.7} />), onClick: () => void showTableDdl(table) },
+    { label: t("sources.countRows"), icon: (<IconHash size={15} stroke={1.7} />), onClick: () => loadSql(`SELECT count(*) FROM ${table};`) },
+    { label: t("sources.addColumn"), icon: (<IconColumnInsertRight size={15} stroke={1.7} />), onClick: () => void addColumnTo() },
+    { label: t("sources.copyName"), icon: (<IconCopy size={15} stroke={1.7} />), onClick: copyName },
     { divider: true },
-    { label: "Rename table", icon: (<IconPencil size={15} stroke={1.7} />), onClick: () => void rename() },
-    { label: "Drop table", icon: (<IconTrash size={15} stroke={1.7} />), danger: true, onClick: () => void drop() },
+    { label: t("sources.renameTable"), icon: (<IconPencil size={15} stroke={1.7} />), onClick: () => void rename() },
+    { label: t("sources.dropTable"), icon: (<IconTrash size={15} stroke={1.7} />), danger: true, onClick: () => void drop() },
   ];
 
   // When several tables are multi-selected, right-clicking one shows bulk actions.
   const multi = selectedNames.length > 1 && selectedNames.includes(table);
   const bulkItems: MenuItem[] = [
-    { label: `${selectedNames.length} tables selected`, disabled: true },
+    { label: t("sources.selectedTables", { count: selectedNames.length }), disabled: true },
     { divider: true },
     {
-      label: `Clear ${selectedNames.length} tables (delete rows)`,
+      label: t("sources.clearSelectedTables", { count: selectedNames.length }),
       icon: (<IconEraser size={15} stroke={1.7} />),
       onClick: () => void clearTables(selectedNames),
     },
     {
-      label: `Drop ${selectedNames.length} tables`,
+      label: t("sources.dropSelectedTables", { count: selectedNames.length }),
       icon: (<IconTrash size={15} stroke={1.7} />),
       danger: true,
       onClick: () => void dropTables(selectedNames),
