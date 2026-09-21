@@ -4057,3 +4057,177 @@ textarea:focus-visible {
   background: var(--odb-primary);
   color: #fff;
 }
+
+
+/* ---------------------------------------------------------- Phase 17: i18n + interaction polish */
+
+body {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(76, 111, 255, 0.34);
+  color: #fff;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+.odb-language-btn {
+  width: auto;
+  min-width: 40px;
+  padding: 0 7px;
+  gap: 4px;
+  grid-auto-flow: column;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+}
+
+.odb-language-btn span {
+  transform: translateY(0.25px);
+}
+
+.odb-preference-row {
+  min-height: 76px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  padding: 13px 4px;
+  border-top: 1px solid var(--odb-border);
+  border-bottom: 1px solid var(--odb-border);
+}
+
+.odb-preference-row > div:first-child {
+  min-width: 0;
+}
+
+.odb-preference-row .odb-page-eyebrow {
+  margin-bottom: 5px;
+}
+
+.odb-preference-row b {
+  display: block;
+  color: var(--odb-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.odb-preference-row p {
+  max-width: 590px;
+  margin: 4px 0 0;
+  color: var(--odb-text-3);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.odb-segmented {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--odb-border);
+  border-radius: 6px;
+  background: #0e1115;
+}
+
+.odb-segmented button {
+  min-width: 74px;
+  height: 27px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--odb-text-3);
+  font-size: 10.5px;
+  font-weight: 550;
+}
+
+.odb-segmented button:hover {
+  color: var(--odb-text-2);
+}
+
+.odb-segmented button.on {
+  background: var(--odb-surface-3);
+  color: var(--odb-text);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+}
+
+html[data-locale="zh-CN"] .odb-sidebar-kicker,
+html[data-locale="zh-CN"] .odb-page-eyebrow,
+html[data-locale="zh-CN"] .odb-cb-label,
+html[data-locale="zh-CN"] .odb-connection-manager-group-head {
+  letter-spacing: 0.035em;
+}
+
+@media (max-width: 1180px) {
+  .bud-titlebar.odb-titlebar {
+    grid-template-columns: minmax(190px, 1fr) minmax(150px, 280px) auto;
+    gap: 8px;
+    padding-inline: 9px;
+  }
+
+  .odb-title-actions {
+    gap: 1px;
+  }
+
+  .odb-search-btn {
+    width: 31px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .odb-search-btn > span,
+  .odb-search-btn kbd {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .bud-titlebar.odb-titlebar {
+    grid-template-columns: minmax(150px, 1fr) minmax(120px, 220px) auto;
+  }
+
+  .odb-brand span,
+  .odb-connection-meta {
+    display: none;
+  }
+
+  .odb-title-separator {
+    margin-inline: 2px;
+  }
+}
+
+@media (max-width: 680px) {
+  .odb-title-center {
+    display: none;
+  }
+
+  .bud-titlebar.odb-titlebar {
+    grid-template-columns: minmax(130px, 1fr) auto;
+  }
+
+  .odb-preference-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .odb-segmented {
+    justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
