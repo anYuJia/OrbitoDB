@@ -8,7 +8,6 @@ import { DataView } from "./bud/DataView";
 import { CrossTableSearch } from "./bud/CrossTableSearch";
 import { DialogHost } from "./bud/DialogHost";
 import { ErDiagram } from "./bud/ErDiagram";
-import { ImportCsvModal } from "./bud/ImportCsvModal";
 import { SchemaDiff } from "./bud/SchemaDiff";
 import { ServerModal } from "./bud/ServerModal";
 import { ShortcutsOverlay } from "./bud/ShortcutsOverlay";
@@ -99,7 +98,6 @@ export function AppShell() {
       <CommandPalette onAddServer={openAdd} />
       <ShortcutsOverlay />
       <ErDiagram />
-      <ImportCsvModal />
       <SchemaDiff />
       <CrossTableSearch />
       <ToastHost />
