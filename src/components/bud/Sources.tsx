@@ -376,7 +376,7 @@ function SavedList({ kind }: { kind: "Scripts" | "Starred" }) {
           <span className="bud-saved-name">{it.name}</span>
           <button
             className="bud-saved-del"
-            title="Delete"
+            title={translate("sources.deleteSaved")}
             onClick={(e) => {
               e.stopPropagation();
               del(it.id);
@@ -657,13 +657,13 @@ function Datasource({
             {engineLabel(conn.engine)} · {dbName}{conn.engine === "postgres" ? ` / ${schemaName}` : ""}{conn.ssh?.enabled ? " · SSH" : ""}
           </span>
         </span>
-        {conn.env && <span className={`bud-ds-env ${conn.env}`} title={`${conn.env} environment`} />}
+        {conn.env && <span className={`bud-ds-env ${conn.env}`} title={translate("sources.environmentTitle", { env: conn.env.toUpperCase() })} />}
         {isReadOnly && <IconLock size={12} stroke={1.9} className="bud-ds-ro" />}
       </div>
       {isActive && (open || !!filter) && (
         <div className="bud-ds-tables">
           {loadingTables ? (
-            <div className="bud-ds-empty">Loading…</div>
+            <div className="bud-ds-empty">{translate("sources.loading")}</div>
           ) : (
             <>
               <div className="odb-ds-context">
@@ -1001,7 +1001,7 @@ function TableRow({
           <span className="bud-src-name">{v.name}</span>
           <button
             className="bud-view-del"
-            title="Delete view"
+            title={translate("sources.deleteView")}
             onClick={(e) => {
               e.stopPropagation();
               deleteView(v.id);
