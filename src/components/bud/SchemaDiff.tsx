@@ -65,8 +65,8 @@ function computeDiff(a: Schema, b: Schema): Diff {
 }
 
 /** Compare the schemas of two connections. Opened via `orbitodb:schema-diff`. */
-export function SchemaDiff() {
-  const [open, setOpen] = useState(false);
+export function SchemaDiff({ initialOpen = false }: { initialOpen?: boolean }) {
+  const [open, setOpen] = useState(initialOpen);
   const connections = useStore((s) => s.connections);
   const activeId = useStore((s) => s.activeConnectionId);
   const [aId, setAId] = useState("");
@@ -74,6 +74,12 @@ export function SchemaDiff() {
   const [diff, setDiff] = useState<Diff | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!initialOpen) return;
+    setAId(activeId ?? connections[0]?.id ?? "");
+    setBId(connections.find((c) => c.id !== (activeId ?? connections[0]?.id))?.id ?? "");
+  }, [initialOpen, activeId, connections]);
 
   useEffect(() => {
     const onEvt = () => {

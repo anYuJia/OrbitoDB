@@ -24,8 +24,8 @@ const esc = (s: unknown) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;
 
 /** Schema diagram: a box per table (with columns) and a curved line per FK.
  *  Pan the canvas, drag boxes, zoom, and export the whole thing as a PNG. */
-export function ErDiagram() {
-  const [open, setOpen] = useState(false);
+export function ErDiagram({ initialOpen = false }: { initialOpen?: boolean }) {
+  const [open, setOpen] = useState(initialOpen);
   const [cols, setCols] = useState<Record<string, ColumnInfo[]>>({});
   const [fks, setFks] = useState<{ table: string; column: string; refTable: string; refColumn: string }[]>([]);
   const [pos, setPos] = useState<Record<string, Pos>>({});

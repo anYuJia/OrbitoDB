@@ -13,18 +13,25 @@ interface Parsed {
 }
 
 /** Import a CSV into a new or existing table. Opened via the `orbitodb:import-csv` event. */
-export function ImportCsvModal() {
-  const [open, setOpen] = useState(false);
+export function ImportCsvModal({ initialOpen = false }: { initialOpen?: boolean }) {
+  const [open, setOpen] = useState(() => initialOpen && !!useStore.getState().activeConnectionId);
   const [parsed, setParsed] = useState<Parsed | null>(null);
   const [mode, setMode] = useState<"create" | "append">("create");
   const [tableName, setTableName] = useState("");
   const [target, setTarget] = useState("");
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const initialOpenHandled = useRef(false);
 
   const tables = useStore((s) => s.schema.tables);
   const activeId = useStore((s) => s.activeConnectionId);
   const importCsv = useStore((s) => s.importCsv);
+
+  useEffect(() => {
+    if (initialOpenHandled.current) return;
+    initialOpenHandled.current = true;
+    if (initialOpen && !useStore.getState().activeConnectionId) toast("Open a connection first.", "error");
+  }, [initialOpen]);
 
   useEffect(() => {
     const onOpen = () => {

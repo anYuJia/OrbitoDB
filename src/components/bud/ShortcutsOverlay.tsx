@@ -21,8 +21,8 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ["Click / Dbl-click"], label: "Select cell / edit cell (data grid)" },
 ];
 
-export function ShortcutsOverlay() {
-  const [open, setOpen] = useState(false);
+export function ShortcutsOverlay({ initialOpen = false }: { initialOpen?: boolean }) {
+  const [open, setOpen] = useState(initialOpen);
 
   useEffect(() => {
     const onEvt = () => setOpen(true);

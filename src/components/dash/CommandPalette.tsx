@@ -23,8 +23,8 @@ type Cmd = { id: string; group: string; label: string; hint?: string; Icon: Icon
 
 const GROUPS = ["Actions", "Navigate", "Connections", "Tables", "Scripts", "Favorites"];
 
-export function CommandPalette({ onAddServer }: { onAddServer: () => void }) {
-  const [open, setOpen] = useState(false);
+export function CommandPalette({ onAddServer, initialOpen = false }: { onAddServer: () => void; initialOpen?: boolean }) {
+  const [open, setOpen] = useState(initialOpen);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);

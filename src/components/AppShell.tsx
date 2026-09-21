@@ -5,18 +5,27 @@ import { installSmoothScroll } from "../lib/smoothScroll";
 import { useStore } from "../state/store";
 import { DataView } from "./bud/DataView";
 import { DialogHost } from "./bud/DialogHost";
-import { ErDiagram } from "./bud/ErDiagram";
-import { ImportCsvModal } from "./bud/ImportCsvModal";
-import { SchemaDiff } from "./bud/SchemaDiff";
-import { ShortcutsOverlay } from "./bud/ShortcutsOverlay";
 import { Sources } from "./bud/Sources";
 import { StatusBar } from "./bud/StatusBar";
 import { ToastHost } from "./bud/ToastHost";
 import { TopNav } from "./bud/TopNav";
-import { CommandPalette } from "./dash/CommandPalette";
 
 const ServerModal = lazy(() => import("./bud/ServerModal").then((mod) => ({ default: mod.ServerModal })));
 const WorkspacePanel = lazy(() => import("./bud/WorkspacePanel").then((mod) => ({ default: mod.WorkspacePanel })));
+const CommandPalette = lazy(() => import("./dash/CommandPalette").then((mod) => ({ default: mod.CommandPalette })));
+const ShortcutsOverlay = lazy(() => import("./bud/ShortcutsOverlay").then((mod) => ({ default: mod.ShortcutsOverlay })));
+const ErDiagram = lazy(() => import("./bud/ErDiagram").then((mod) => ({ default: mod.ErDiagram })));
+const ImportCsvModal = lazy(() => import("./bud/ImportCsvModal").then((mod) => ({ default: mod.ImportCsvModal })));
+const SchemaDiff = lazy(() => import("./bud/SchemaDiff").then((mod) => ({ default: mod.SchemaDiff })));
+
+type DeferredOverlay = "command" | "shortcuts" | "erd" | "importCsv" | "schemaDiff";
+const EMPTY_OVERLAYS: Record<DeferredOverlay, boolean> = {
+  command: false,
+  shortcuts: false,
+  erd: false,
+  importCsv: false,
+  schemaDiff: false,
+};
 
 function initialWidth(): number {
   try {
@@ -38,6 +47,7 @@ export function AppShell() {
   const [serverModal, setServerModal] = useState<ConnectionConfig | "new" | null>(null);
   const [sidebarHidden, setSidebarHidden] = useState(initialSidebarHidden);
   const [sidebarWidth, setSidebarWidth] = useState(initialWidth);
+  const [overlays, setOverlays] = useState(EMPTY_OVERLAYS);
   const shellRef = useRef<HTMLDivElement>(null);
   const topView = useStore((s) => s.topView);
   const restoreSession = useStore((s) => s.restoreSession);
@@ -49,6 +59,45 @@ export function AppShell() {
 
   // Smooth (eased) mouse-wheel scrolling across every scroll container.
   useEffect(() => installSmoothScroll(), []);
+
+  // Keep feature-heavy overlays out of the startup bundle. This tiny event
+  // gate catches their first invocation; once mounted, each overlay continues
+  // handling its own open/close shortcuts as before.
+  useEffect(() => {
+    const load = (name: DeferredOverlay) => setOverlays((state) => (state[name] ? state : { ...state, [name]: true }));
+    const onCommand = () => load("command");
+    const onShortcuts = () => load("shortcuts");
+    const onErd = () => load("erd");
+    const onImport = () => load("importCsv");
+    const onSchemaDiff = () => load("schemaDiff");
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        load("command");
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (e.key === "?" && !typing) {
+        e.preventDefault();
+        load("shortcuts");
+      }
+    };
+    window.addEventListener("orbitodb:cmdk", onCommand);
+    window.addEventListener("orbitodb:shortcuts", onShortcuts);
+    window.addEventListener("orbitodb:erd", onErd);
+    window.addEventListener("orbitodb:import-csv", onImport);
+    window.addEventListener("orbitodb:schema-diff", onSchemaDiff);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("orbitodb:cmdk", onCommand);
+      window.removeEventListener("orbitodb:shortcuts", onShortcuts);
+      window.removeEventListener("orbitodb:erd", onErd);
+      window.removeEventListener("orbitodb:import-csv", onImport);
+      window.removeEventListener("orbitodb:schema-diff", onSchemaDiff);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   const openAdd = () => setServerModal("new");
   const openEdit = (c: ConnectionConfig) => setServerModal(c);
@@ -169,11 +218,31 @@ export function AppShell() {
           </Suspense>
         )}
       </AnimatePresence>
-      <CommandPalette onAddServer={openAdd} />
-      <ShortcutsOverlay />
-      <ErDiagram />
-      <ImportCsvModal />
-      <SchemaDiff />
+      {overlays.command && (
+        <Suspense fallback={<div className="bud-modal-backdrop bud-modal-loading"><span className="bud-loading-spinner" /></div>}>
+          <CommandPalette onAddServer={openAdd} initialOpen />
+        </Suspense>
+      )}
+      {overlays.shortcuts && (
+        <Suspense fallback={<div className="bud-modal-backdrop bud-modal-loading"><span className="bud-loading-spinner" /></div>}>
+          <ShortcutsOverlay initialOpen />
+        </Suspense>
+      )}
+      {overlays.erd && (
+        <Suspense fallback={<div className="bud-modal-backdrop bud-modal-loading"><span className="bud-loading-spinner" /></div>}>
+          <ErDiagram initialOpen />
+        </Suspense>
+      )}
+      {overlays.importCsv && (
+        <Suspense fallback={<div className="bud-modal-backdrop bud-modal-loading"><span className="bud-loading-spinner" /></div>}>
+          <ImportCsvModal initialOpen />
+        </Suspense>
+      )}
+      {overlays.schemaDiff && (
+        <Suspense fallback={<div className="bud-modal-backdrop bud-modal-loading"><span className="bud-loading-spinner" /></div>}>
+          <SchemaDiff initialOpen />
+        </Suspense>
+      )}
       <ToastHost />
       <DialogHost />
     </div>
