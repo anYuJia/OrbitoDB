@@ -156,7 +156,7 @@ export function TopNav({
           whileTap={{ scale: 0.96 }}
         >
           <IconPlayerPlay size={14} stroke={2} />
-          <span>{t("top.run")}</span>
+          <span>{t("common.run")}</span>
         </MotionButton>
       </div>
 
