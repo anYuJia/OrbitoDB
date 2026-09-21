@@ -1,38 +1,45 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useI18n } from "../../lib/i18n";
+import { isMacPlatform, primaryModifierLabel } from "../../lib/platform";
 import { backdropV, listItemV, listV, panelV } from "../../lib/motion";
 
-const SHORTCUTS: { keys: string[]; label: string }[] = [
-  { keys: ["⌘", "K"], label: "Command palette" },
-  { keys: ["⌘", "↵"], label: "Execute query (or selection)" },
-  { keys: ["⌘", "/"], label: "Toggle line comment" },
-  { keys: ["⌘", "⇧", "F"], label: "Format SQL" },
-  { keys: ["⌘", "D"], label: "Duplicate line / selection" },
-  { keys: ["Alt", "↑", "↓"], label: "Move line up / down" },
-  { keys: ["Tab", "⇧Tab"], label: "Indent / outdent" },
-  { keys: ["(", "[", "\"", "…"], label: "Wrap selection in brackets / quotes" },
-  { keys: ["Alt", "1-9"], label: "Switch editor tab" },
-  { keys: ["⌘", "Space"], label: "Trigger autocomplete" },
-  { keys: ["↑", "↓"], label: "Navigate suggestions / palette" },
-  { keys: ["Ctrl", "C"], label: "Copy selected cell (data grid)" },
-  { keys: ["Esc"], label: "Close popups & menus" },
-  { keys: ["?"], label: "Show this help" },
-  { keys: ["Right-click"], label: "Context menu on tree / tables" },
-  { keys: ["Click / Dbl-click"], label: "Select cell / edit cell (data grid)" },
-];
-
 export function ShortcutsOverlay() {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const shortcuts = useMemo(() => {
+    const primary = primaryModifierLabel();
+    const shift = isMacPlatform() ? "⇧" : "Shift";
+    const enter = isMacPlatform() ? "↵" : "Enter";
+    return [
+      { keys: [primary, "K"], label: t("shortcuts.commandPalette") },
+      { keys: [primary, enter], label: t("shortcuts.execute") },
+      { keys: [primary, "/"], label: t("shortcuts.comment") },
+      { keys: [primary, shift, "F"], label: t("shortcuts.format") },
+      { keys: [primary, "D"], label: t("shortcuts.duplicate") },
+      { keys: ["Alt", "↑", "↓"], label: t("shortcuts.moveLine") },
+      { keys: ["Tab", `${shift}Tab`], label: t("shortcuts.indent") },
+      { keys: ["(", "[", "\"", "…"], label: t("shortcuts.wrap") },
+      { keys: ["Alt", "1-9"], label: t("shortcuts.switchTab") },
+      { keys: [primary, "Space"], label: t("shortcuts.autocomplete") },
+      { keys: ["↑", "↓"], label: t("shortcuts.navigate") },
+      { keys: [primary, "C"], label: t("shortcuts.copyCell") },
+      { keys: ["Esc"], label: t("shortcuts.closePopup") },
+      { keys: ["?"], label: t("shortcuts.showHelp") },
+      { keys: ["Right-click"], label: t("shortcuts.contextMenu") },
+      { keys: ["Click / Dbl-click"], label: t("shortcuts.editCell") },
+    ];
+  }, [t]);
 
   useEffect(() => {
     const onEvt = () => setOpen(true);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
-      const t = e.target as HTMLElement | null;
-      const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+      const target = e.target as HTMLElement | null;
+      const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
       if (e.key === "?" && !typing) {
         e.preventDefault();
-        setOpen((o) => !o);
+        setOpen((value) => !value);
       }
     };
     window.addEventListener("orbitodb:shortcuts", onEvt);
@@ -56,27 +63,30 @@ export function ShortcutsOverlay() {
         >
           <motion.div
             className="bud-sc"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("shortcuts.title")}
             variants={panelV}
             initial="hidden"
             animate="show"
             exit="exit"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bud-sc-head">Keyboard shortcuts</div>
+            <div className="bud-sc-head">{t("shortcuts.title")}</div>
             <motion.div className="bud-sc-list" variants={listV} initial="hidden" animate="show">
-              {SHORTCUTS.map((s) => (
-                <motion.div className="bud-sc-row" key={s.label} variants={listItemV}>
-                  <span className="bud-sc-label">{s.label}</span>
+              {shortcuts.map((item) => (
+                <motion.div className="bud-sc-row" key={item.label} variants={listItemV}>
+                  <span className="bud-sc-label">{item.label}</span>
                   <span className="bud-sc-keys">
-                    {s.keys.map((k, i) => (
-                      <kbd key={i}>{k}</kbd>
+                    {item.keys.map((key, index) => (
+                      <kbd key={index}>{key}</kbd>
                     ))}
                   </span>
                 </motion.div>
               ))}
             </motion.div>
             <div className="bud-sc-foot">
-              Press <kbd>Esc</kbd> to close
+              {t("shortcuts.closeHint")}
             </div>
           </motion.div>
         </motion.div>
