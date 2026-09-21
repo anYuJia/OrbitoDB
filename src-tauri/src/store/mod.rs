@@ -1,4 +1,6 @@
 use crate::error::AppResult;
+const MAX_QUERY_HISTORY: i64 = 1000;
+
 use crate::types::{ConnectionConfig, Engine, SshTunnelConfig, TlsConfig};
 use serde::Serialize;
 use sqlx::sqlite::SqlitePoolOptions;
@@ -149,11 +151,22 @@ impl Store {
     }
 
     pub async fn add_history(&self, connection_id: &str, sql: &str) -> AppResult<()> {
+        let mut tx = self.pool.begin().await?;
         sqlx::query("INSERT INTO query_history (connection_id, sql) VALUES (?1,?2)")
             .bind(connection_id)
             .bind(sql)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+        sqlx::query(
+            "DELETE FROM query_history
+             WHERE id NOT IN (
+               SELECT id FROM query_history ORDER BY id DESC LIMIT ?1
+             )",
+        )
+        .bind(MAX_QUERY_HISTORY)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -234,6 +247,21 @@ mod tests {
 
         store.delete_connection("c1").await.unwrap();
         assert!(store.list_connections().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn caps_query_history_to_latest_entries() {
+        let store = Store::open(":memory:").await.unwrap();
+        for i in 0..(MAX_QUERY_HISTORY + 5) {
+            store
+                .add_history("c1", &format!("SELECT {i}"))
+                .await
+                .unwrap();
+        }
+        let history = store.recent_history(MAX_QUERY_HISTORY + 100).await.unwrap();
+        assert_eq!(history.len() as i64, MAX_QUERY_HISTORY);
+        assert_eq!(history.first().unwrap().sql, format!("SELECT {}", MAX_QUERY_HISTORY + 4));
+        assert_eq!(history.last().unwrap().sql, "SELECT 5");
     }
 
     #[tokio::test]
