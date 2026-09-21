@@ -34,6 +34,9 @@ const en = {
   "common.connection": "connection",
   "common.connections": "connections",
   "common.readOnly": "Read-only",
+  "common.ok": "OK",
+  "common.rollback": "Rollback",
+  "common.commit": "Commit",
 
   "top.showExplorer": "Show database explorer",
   "top.hideExplorer": "Hide database explorer",
@@ -154,6 +157,11 @@ const en = {
   "status.connected": "Connected",
   "status.transaction": "Transaction",
   "status.readOnly": "Read-only",
+  "status.noActive": "No active connection",
+  "status.uncommitted": "Uncommitted changes",
+  "status.running": "Running…",
+  "status.selected": "{count} selected",
+  "status.rows": "{count} rows",
 
   "dialog.cancel": "Cancel",
   "toast.dismiss": "Dismiss",
@@ -219,6 +227,9 @@ const zh: Record<TranslationKey, string> = {
   "common.connection": "个连接",
   "common.connections": "个连接",
   "common.readOnly": "只读",
+  "common.ok": "确定",
+  "common.rollback": "回滚",
+  "common.commit": "提交",
 
   "top.showExplorer": "显示数据库资源管理器",
   "top.hideExplorer": "隐藏数据库资源管理器",
@@ -339,6 +350,11 @@ const zh: Record<TranslationKey, string> = {
   "status.connected": "已连接",
   "status.transaction": "事务",
   "status.readOnly": "只读",
+  "status.noActive": "没有活动连接",
+  "status.uncommitted": "存在未提交更改",
+  "status.running": "执行中…",
+  "status.selected": "已选择 {count} 项",
+  "status.rows": "{count} 行",
 
   "dialog.cancel": "取消",
   "toast.dismiss": "关闭",
