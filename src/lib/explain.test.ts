@@ -41,4 +41,19 @@ describe("explain", () => {
   it("rejects multiple statements", () => {
     expect(() => buildExplainSql("postgres", "SELECT 1; SELECT 2", "plan")).toThrow(/one SQL statement/i);
   });
+  it("rejects data-modifying CTEs from analyze", () => {
+    expect(isReadOnlyQuery("WITH changed AS (DELETE FROM users RETURNING *) SELECT * FROM changed")).toBe(false);
+    expect(() =>
+      buildExplainSql(
+        "postgres",
+        "WITH changed AS (UPDATE users SET active = false RETURNING *) SELECT * FROM changed",
+        "analyze",
+      ),
+    ).toThrow(/SELECT \/ WITH/i);
+  });
+
+  it("does not mistake keywords inside string literals for writes", () => {
+    expect(isReadOnlyQuery("SELECT 'delete from users' AS example")).toBe(true);
+  });
+
 });
