@@ -43,6 +43,13 @@ export interface ConnectionDiagnostics {
   latencyMs: number;
 }
 
+export interface BackupInfo {
+  id: string;
+  createdAt: string;
+  sizeBytes: number;
+  path?: string | null;
+}
+
 export interface Column {
   name: string;
   dataType: string;
