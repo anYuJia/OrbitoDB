@@ -32,6 +32,7 @@ import {
 } from "@tabler/icons-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { confirmDialog, promptDialog } from "../../state/dialog";
+import { translate, useI18n } from "../../lib/i18n";
 import type { ConnectionConfig, DatabaseObjectInfo, DatabaseObjectKind, Engine } from "../../ipc/types";
 import { useStore } from "../../state/store";
 import { buildDatabaseObjectTemplate } from "../../lib/databaseObjects";
@@ -111,6 +112,7 @@ export function Sources({
   onEditServer: (conn: ConnectionConfig) => void;
   onCreateTable: () => void;
 }) {
+  const { t } = useI18n();
   const connections = useStore((s) => s.connections);
   const loadConnections = useStore((s) => s.loadConnections);
   const scanLocal = useStore((s) => s.scanLocal);
@@ -140,8 +142,8 @@ export function Sources({
   const [compact, setCompact] = useState(false);
 
   const rootMenu: MenuItem[] = [
-    { label: "New connection…", icon: (<IconPlus size={15} stroke={1.7} />), onClick: onAddServer },
-    { label: "Refresh all", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: () => { void loadConnections(); void scanLocal(); } },
+    { label: t("sources.newConnection"), icon: (<IconPlus size={15} stroke={1.7} />), onClick: onAddServer },
+    { label: t("sources.refreshAll"), icon: (<IconRefresh size={15} stroke={1.7} />), onClick: () => { void loadConnections(); void scanLocal(); } },
   ];
 
   useEffect(() => {
@@ -153,27 +155,27 @@ export function Sources({
     <aside className={`bud-sources ${compact ? "compact" : ""}`}>
       <div className="odb-sidebar-head">
         <div>
-          <span className="odb-sidebar-kicker">Database Explorer</span>
-          <strong>{connections.length} {connections.length === 1 ? "connection" : "connections"}</strong>
+          <span className="odb-sidebar-kicker">{t("sources.explorer")}</span>
+          <strong>{t("sources.connectionsCount", { count: connections.length, label: t(connections.length === 1 ? "common.connection" : "common.connections") })}</strong>
         </div>
-        <button className="odb-sidebar-add" title="New connection" onClick={onAddServer}>
+        <button className="odb-sidebar-add" title={t("sources.newConnection")} aria-label={t("sources.newConnection")} onClick={onAddServer}>
           <IconPlus size={14} stroke={2} />
         </button>
       </div>
       <nav className="bud-panel-tabs">
         {PANELS.map((p) => (
           <button key={p} className={`bud-panel-tab ${panel === p ? "on" : ""}`} onClick={() => setPanel(p)}>
-            {p}
+            {p === "Objects" ? t("sources.objects") : p === "Scripts" ? t("sources.scripts") : t("sources.starred")}
           </button>
         ))}
       </nav>
 
       <div className="bud-tree-toolbar">
-        <button title="New connection" onClick={onAddServer}>
+        <button title={t("sources.newConnection")} aria-label={t("sources.newConnection")} onClick={onAddServer}>
           <IconPlus size={15} stroke={1.8} />
         </button>
         <button
-          title="Refresh"
+          title={t("sources.refresh")} aria-label={t("sources.refresh")}
           onClick={() => {
             void loadConnections();
             void scanLocal();
@@ -181,21 +183,21 @@ export function Sources({
         >
           <IconRefresh size={15} stroke={1.7} />
         </button>
-        <button className={searchOpen ? "on" : ""} title="Filter objects" onClick={() => setSearchOpen((v) => !v)}>
+        <button className={searchOpen ? "on" : ""} title={t("sources.filter")} aria-label={t("sources.filter")} onClick={() => setSearchOpen((v) => !v)}>
           <IconFilter size={15} stroke={1.7} />
         </button>
-        <button title="Schema diagram (ER)" onClick={() => window.dispatchEvent(new Event("orbitodb:erd"))}>
+        <button title={t("sources.erDiagram")} aria-label={t("sources.erDiagram")} onClick={() => window.dispatchEvent(new Event("orbitodb:erd"))}>
           <IconSchema size={15} stroke={1.7} />
         </button>
-        <button title="Import CSV" onClick={() => window.dispatchEvent(new Event("orbitodb:import-csv"))}>
+        <button title={t("sources.importCsv")} aria-label={t("sources.importCsv")} onClick={() => window.dispatchEvent(new Event("orbitodb:import-csv"))}>
           <IconFileImport size={15} stroke={1.7} />
         </button>
-        <button title="Schema diff (compare connections)" onClick={() => window.dispatchEvent(new Event("orbitodb:schema-diff"))}>
+        <button title={t("sources.schemaDiff")} aria-label={t("sources.schemaDiff")} onClick={() => window.dispatchEvent(new Event("orbitodb:schema-diff"))}>
           <IconGitCompare size={15} stroke={1.7} />
         </button>
         <button
           className={compact ? "on" : ""}
-          title={compact ? "Comfortable spacing" : "Compact spacing"}
+          title={compact ? t("sources.comfortable") : t("sources.compact")} aria-label={compact ? t("sources.comfortable") : t("sources.compact")}
           onClick={() => setCompact((v) => !v)}
         >
           <IconLayoutSidebar size={15} stroke={1.7} />
@@ -205,9 +207,9 @@ export function Sources({
       {searchOpen && (
         <div className="bud-src-search">
           <IconSearch size={14} stroke={1.7} />
-          <input autoFocus placeholder="Filter objects…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <input autoFocus placeholder={t("sources.filterPlaceholder")} aria-label={t("sources.filter")} value={filter} onChange={(e) => setFilter(e.target.value)} />
           {filter && (
-            <button className="bud-src-search-x" title="Clear" onClick={() => setFilter("")}>
+            <button className="bud-src-search-x" title={t("sources.clear")} aria-label={t("sources.clear")} onClick={() => setFilter("")}>
               <IconX size={13} stroke={1.9} />
             </button>
           )}
@@ -229,13 +231,13 @@ export function Sources({
                 {rootOpen ? <IconChevronDown size={13} stroke={2} /> : <IconChevronRight size={13} stroke={2} />}
               </span>
               <IconFolderOpen size={14} stroke={1.7} className="bud-tnode-ic" />
-              <span className="bud-tnode-label">Saved connections</span>
+              <span className="bud-tnode-label">{t("sources.savedConnections")}</span>
             </div>
             {rootCtx && <ContextMenu anchor={rootCtx} onClose={() => setRootCtx(null)} />}
             {rootOpen && (
               <div className="bud-tree-children">
                 {connections.length === 0 ? (
-                  <div className="bud-ds-empty">No connections yet</div>
+                  <div className="bud-ds-empty">{t("sources.noConnections")}</div>
                 ) : (
                   <>
                     {groupedConnections.ungrouped.map((connection) => (
@@ -665,12 +667,12 @@ function Datasource({
           ) : (
             <>
               <div className="odb-ds-context">
-                <span className="odb-ds-context-label">{conn.engine === "postgres" ? "Schema" : "Database"}</span>
+                <span className="odb-ds-context-label">{conn.engine === "postgres" ? translate("sources.schema") : translate("sources.database")}</span>
                 <span className="odb-ds-context-value">{conn.engine === "postgres" ? schemaName : dbName}</span>
               </div>
-              <ObjectGroup label="Tables" count={shownTables.length} defaultOpen menu={tablesMenu}>
+              <ObjectGroup label={translate("sources.tables")} count={shownTables.length} defaultOpen menu={tablesMenu}>
                 {shownTables.length === 0 ? (
-                  <div className="bud-ds-empty">{filter ? "No matching tables" : "No tables"}</div>
+                  <div className="bud-ds-empty">{filter ? translate("sources.noMatchingTables") : translate("sources.noTables")}</div>
                 ) : (
                   shownTables.map((t) => (
                     <TableRow
@@ -684,37 +686,37 @@ function Datasource({
                   ))
                 )}
               </ObjectGroup>
-              <ObjectGroup label="Views" count={objectsOf("view").length} menu={folderMenu("view")}>
+              <ObjectGroup label={translate("sources.views")} count={objectsOf("view").length} menu={folderMenu("view")}>
                 {objectsOf("view").map((object) => (
                   <DatabaseObjectRow key={`view:${object.name}`} object={object} conn={conn} />
                 ))}
               </ObjectGroup>
-              <ObjectGroup label="Indexes" count={objectsOf("index").length} menu={folderMenu("index")}>
+              <ObjectGroup label={translate("sources.indexes")} count={objectsOf("index").length} menu={folderMenu("index")}>
                 {objectsOf("index").map((object) => (
                   <DatabaseObjectRow key={`index:${object.table ?? ""}:${object.name}`} object={object} conn={conn} />
                 ))}
               </ObjectGroup>
-              <ObjectGroup label="Triggers" count={objectsOf("trigger").length} menu={folderMenu("trigger")}>
+              <ObjectGroup label={translate("sources.triggers")} count={objectsOf("trigger").length} menu={folderMenu("trigger")}>
                 {objectsOf("trigger").map((object) => (
                   <DatabaseObjectRow key={`trigger:${object.table ?? ""}:${object.name}`} object={object} conn={conn} />
                 ))}
               </ObjectGroup>
               {conn.engine === "postgres" && (
-                <ObjectGroup label="Sequences" count={objectsOf("sequence").length} menu={folderMenu("sequence")}>
+                <ObjectGroup label={translate("sources.sequences")} count={objectsOf("sequence").length} menu={folderMenu("sequence")}>
                   {objectsOf("sequence").map((object) => (
                     <DatabaseObjectRow key={`sequence:${object.name}`} object={object} conn={conn} />
                   ))}
                 </ObjectGroup>
               )}
               {conn.engine !== "sqlite" && (
-                <ObjectGroup label="Procedures" count={objectsOf("procedure").length} menu={folderMenu("procedure")}>
+                <ObjectGroup label={translate("sources.procedures")} count={objectsOf("procedure").length} menu={folderMenu("procedure")}>
                   {objectsOf("procedure").map((object) => (
                     <DatabaseObjectRow key={`procedure:${object.name}:${object.signature ?? ""}`} object={object} conn={conn} />
                   ))}
                 </ObjectGroup>
               )}
               {conn.engine !== "sqlite" && (
-                <ObjectGroup label="Functions" count={objectsOf("function").length} menu={folderMenu("function")}>
+                <ObjectGroup label={translate("sources.functions")} count={objectsOf("function").length} menu={folderMenu("function")}>
                   {objectsOf("function").map((object) => (
                     <DatabaseObjectRow key={`function:${object.name}:${object.signature ?? ""}`} object={object} conn={conn} />
                   ))}
