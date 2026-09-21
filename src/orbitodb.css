@@ -935,6 +935,119 @@ textarea:focus-visible {
   font-size: 11.5px;
 }
 
+.odb-utility-section-head {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 10px 4px 8px;
+  border-bottom: 1px solid var(--odb-border);
+}
+
+.odb-utility-section-head > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.odb-utility-section-head .odb-page-eyebrow {
+  margin-bottom: 1px;
+}
+
+.odb-utility-section-head b {
+  overflow: hidden;
+  color: var(--odb-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-backup-list {
+  border-bottom: 1px solid var(--odb-border);
+}
+
+.odb-backup-row {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 4px;
+  border-top: 1px solid rgba(37, 43, 51, 0.72);
+}
+
+.odb-backup-row:first-child {
+  border-top: 0;
+}
+
+.odb-backup-row > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.odb-backup-row b {
+  color: var(--odb-text);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.odb-backup-row span,
+.odb-backup-empty,
+.odb-utility-note {
+  color: var(--odb-text-3);
+  font-size: 11px;
+}
+
+.odb-backup-row code {
+  overflow: hidden;
+  color: #7f8996;
+  font-family: var(--odb-mono);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-backup-row button {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--odb-border);
+  border-radius: 5px;
+  background: var(--odb-surface);
+  color: var(--odb-text-2);
+  font-size: 11px;
+}
+
+.odb-backup-row button:hover:not(:disabled) {
+  border-color: var(--odb-border-strong);
+  background: var(--odb-surface-2);
+  color: var(--odb-text);
+}
+
+.odb-backup-row button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.odb-backup-empty,
+.odb-utility-note {
+  padding: 11px 4px;
+  border-bottom: 1px solid var(--odb-border);
+  line-height: 1.5;
+}
+
+.odb-utility-note {
+  font-family: var(--odb-mono);
+  font-size: 10px;
+}
+
 .odb-setting-line {
   min-height: 48px;
   display: grid;
