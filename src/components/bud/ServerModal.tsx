@@ -18,6 +18,7 @@ import type { ConnEnv, ConnectionConfig, Engine, SshAuth, TlsMode } from "../../
 import { getBackend, isTauri } from "../../ipc/backend";
 import { bridgeHealthy } from "../../ipc/http";
 import { backdropV, centeredModalV, MotionButton } from "../../lib/motion";
+import { useI18n } from "../../lib/i18n";
 import { promptDialog } from "../../state/dialog";
 import { useStore } from "../../state/store";
 import { toast } from "../../state/toast";
@@ -134,6 +135,7 @@ function parseConnectionUrl(raw: string): {
 }
 
 export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig | null; onClose: () => void }) {
+  const { t } = useI18n();
   const saveConnection = useStore((s) => s.saveConnection);
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
   const editing = !!existing;
@@ -369,11 +371,11 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
       >
         <header className="odb-connection-head">
           <div>
-            <span>{editing ? "Connection settings" : "New connection"}</span>
-            <h2>{editing ? existing?.name : "Connect a database"}</h2>
-            <p>Connections and credentials stay local to OrbitoDB.</p>
+            <span>{editing ? t("connection.settings") : t("connection.new")}</span>
+            <h2>{editing ? existing?.name : t("connection.connectDatabase")}</h2>
+            <p>{t("connection.localNotice")}</p>
           </div>
-          <button className="odb-modal-close" onClick={onClose} title="Close">
+          <button className="odb-modal-close" onClick={onClose} title={t("common.close")} aria-label={t("common.close")}>
             <IconX size={16} stroke={1.8} />
           </button>
         </header>
@@ -383,8 +385,8 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
             <div className="odb-section-label">
               <span>01</span>
               <div>
-                <b>Database engine</b>
-                <small>Choose the driver for this connection.</small>
+                <b>{t("connection.engine")}</b>
+                <small>{t("connection.engineDescription")}</small>
               </div>
             </div>
             <div className="odb-engine-grid">
@@ -392,14 +394,14 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                 <IconFileDatabase size={19} stroke={1.6} />
                 <span>
                   <b>SQLite</b>
-                  <small>Local database file</small>
+                  <small>{t("connection.localFile")}</small>
                 </span>
               </button>
               <button className={engine === "postgres" ? "on" : ""} onClick={() => chooseEngine("postgres")}>
                 <IconDatabase size={19} stroke={1.6} />
                 <span>
                   <b>PostgreSQL</b>
-                  <small>5432 by default</small>
+                  <small>{t("connection.defaultPort", { port: 5432 })}</small>
                 </span>
               </button>
               <button className={engine === "mysql" ? "on" : ""} onClick={() => chooseEngine("mysql")}>
@@ -416,33 +418,33 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
             <div className="odb-section-label">
               <span>02</span>
               <div>
-                <b>Profile</b>
-                <small>Name the connection and optionally mark its environment.</small>
+                <b>{t("connection.profile")}</b>
+                <small>{t("connection.profileDescription")}</small>
               </div>
             </div>
             <div className="odb-form-grid profile">
               <label className="odb-form-field grow">
-                <span>Name</span>
+                <span>{t("connection.name")}</span>
                 <input value={name} onChange={(e) => setName(e.target.value)} placeholder={`${engineLabel(engine)} connection`} />
               </label>
               <label className="odb-form-field group">
-                <span>Group</span>
+                <span>{t("connection.group")}</span>
                 <input value={group} onChange={(e) => setGroup(e.target.value)} placeholder="e.g. Work" />
               </label>
               <label className="odb-form-field env">
-                <span>Environment</span>
+                <span>{t("connection.environment")}</span>
                 <select value={env} onChange={(e) => setEnv(e.target.value as ConnEnv | "")}>
-                  <option value="">None</option>
-                  <option value="dev">Development</option>
-                  <option value="staging">Staging</option>
-                  <option value="prod">Production</option>
+                  <option value="">{t("common.none")}</option>
+                  <option value="dev">{t("connection.development")}</option>
+                  <option value="staging">{t("connection.staging")}</option>
+                  <option value="prod">{t("connection.production")}</option>
                 </select>
               </label>
             </div>
             {env === "prod" && (
               <div className="odb-connection-alert warn">
                 <IconAlertTriangle size={15} stroke={1.8} />
-                <span>Production guard enabled. Write queries require an extra confirmation.</span>
+                <span>{t("connection.prodGuard")}</span>
               </div>
             )}
           </section>
@@ -451,11 +453,11 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
             <div className="odb-section-label">
               <span>03</span>
               <div>
-                <b>{engine === "sqlite" ? "Database" : "Server"}</b>
+                <b>{engine === "sqlite" ? t("connection.database") : t("connection.server")}</b>
                 <small>
                   {engine === "sqlite"
-                    ? "Choose the local database name."
-                    : "Enter server credentials, test the connection, then choose a database."}
+                    ? t("connection.localDatabaseDescription")
+                    : t("connection.serverDescription")}
                 </small>
               </div>
             </div>
@@ -465,9 +467,9 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                 <div className="odb-url-import-head">
                   <span>
                     <IconLink size={14} stroke={1.8} />
-                    Connection URL
+                    {t("connection.url")}
                   </span>
-                  <small>Optional · fills the fields below, then OrbitoDB stores the profile normally.</small>
+                  <small>{t("connection.urlDescription")}</small>
                 </div>
                 <div className="odb-url-import-row">
                   <div className="odb-url-input-wrap">
@@ -488,15 +490,15 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                     <button
                       type="button"
                       className="odb-url-visibility"
-                      title={showConnectionUrl ? "Hide connection URL" : "Show connection URL"}
-                      aria-label={showConnectionUrl ? "Hide connection URL" : "Show connection URL"}
+                      title={showConnectionUrl ? t("connection.hideUrl") : t("connection.showUrl")}
+                      aria-label={showConnectionUrl ? t("connection.hideUrl") : t("connection.showUrl")}
                       onClick={() => setShowConnectionUrl((value) => !value)}
                     >
                       {showConnectionUrl ? <IconEyeOff size={13} stroke={1.8} /> : <IconEye size={13} stroke={1.8} />}
                     </button>
                   </div>
                   <button onClick={applyConnectionUrl} disabled={!connectionUrl.trim()}>
-                    Apply
+                    {t("connection.apply")}
                   </button>
                 </div>
               </div>
@@ -507,34 +509,34 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                 {bridgeUp ? <IconCheck size={15} stroke={2} /> : <IconInfoCircle size={15} stroke={1.7} />}
                 <span>
                   {bridgeUp == null
-                    ? "Checking local bridge…"
+                    ? t("connection.bridgeChecking")
                     : bridgeUp
-                      ? "Local bridge connected."
-                      : "Local bridge is offline. Start it before connecting to PostgreSQL or MySQL from the browser build."}
+                      ? t("connection.bridgeConnected")
+                       : t("connection.bridgeOffline")}
                 </span>
               </div>
             )}
 
             {engine === "sqlite" ? (
               <label className="odb-form-field">
-                <span>Database name</span>
+                <span>{t("connection.databaseName")}</span>
                 <input
                   value={database}
                   onChange={(e) => setDatabase(e.target.value)}
                   placeholder="analytics"
                   autoFocus={!editing}
                 />
-                <small>Open an existing local SQLite database or enter a new name to create one.</small>
+                <small>{t("connection.sqliteDescription")}</small>
               </label>
             ) : (
               <>
                 <div className="odb-form-grid host">
                   <label className="odb-form-field grow">
-                    <span>Host</span>
+                    <span>{t("connection.host")}</span>
                     <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="localhost" />
                   </label>
                   <label className="odb-form-field port">
-                    <span>Port</span>
+                    <span>{t("connection.port")}</span>
                     <input
                       inputMode="numeric"
                       value={port}
@@ -545,15 +547,15 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                 </div>
                 <div className="odb-form-grid credentials">
                   <label className="odb-form-field">
-                    <span>Username</span>
+                    <span>{t("connection.username")}</span>
                     <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
                   </label>
                   <label className="odb-form-field">
-                    <span>Password</span>
+                    <span>{t("connection.password")}</span>
                     <input
                       type="password"
                       value={password}
-                      placeholder={editing ? "Leave blank to keep current password" : ""}
+                      placeholder={editing ? t("connection.keepPassword") : ""}
                       onChange={(e) => setPassword(e.target.value)}
                       autoComplete="current-password"
                     />
@@ -563,7 +565,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                 <div className="odb-test-row">
                   <button className="odb-test-btn" onClick={() => void testAndList()} disabled={testing || !remoteReady || !host.trim()}>
                     <IconRefresh size={14} stroke={1.8} className={testing ? "bud-spin" : ""} />
-                    {testing ? "Testing…" : "Test connection"}
+                    {testing ? t("connection.testing") : t("connection.test")}
                   </button>
                   {status && (
                     <div className={`odb-inline-status ${status.kind}`}>
@@ -574,7 +576,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                 </div>
 
                 <label className="odb-form-field">
-                  <span>Database</span>
+                  <span>{t("connection.database")}</span>
                   <div className="odb-database-picker">
                     {databases ? (
                       <select value={database} onChange={(e) => setDatabase(e.target.value)}>
@@ -733,11 +735,11 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
         </div>
 
         <footer className="odb-connection-footer">
-          <span>{editing ? "Saving keeps the existing password when the password field is blank." : "No OrbitoDB account required."}</span>
+          <span>{editing ? t("connection.keepExistingPassword") : t("connection.noAccount")}</span>
           <div>
-            <MotionButton className="odb-modal-secondary" onClick={onClose}>Cancel</MotionButton>
+            <MotionButton className="odb-modal-secondary" onClick={onClose}>{t("connection.cancel")}</MotionButton>
             <MotionButton className="odb-modal-primary" onClick={() => void save()} disabled={busy || !canSave}>
-              {busy ? "Connecting…" : editing ? "Save & reconnect" : "Connect"}
+              {busy ? t("connection.connecting") : editing ? t("connection.saveReconnect") : t("connection.connect")}
             </MotionButton>
           </div>
         </footer>
