@@ -3,7 +3,7 @@ use crate::error::{AppError, AppResult};
 use crate::schema;
 use crate::secrets;
 use crate::store::{HistoryEntry, Store};
-use crate::types::{ColumnDef, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, Engine, ForeignKey, IndexInfo, QueryResult, TableInfo};
+use crate::types::{BackupInfo, ColumnDef, ColumnInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, Engine, ForeignKey, IndexInfo, QueryResult, TableInfo};
 use tauri::State;
 
 /// Shared application state, managed by Tauri and injected into commands.
@@ -167,6 +167,159 @@ pub async fn connection_diagnostics(
 ) -> AppResult<ConnectionDiagnostics> {
     let driver = state.registry.get(&connection_id).await?;
     driver.diagnostics().await
+}
+
+
+fn safe_backup_key(value: &str) -> String {
+    let safe: String = value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '-')
+        .collect();
+    if safe.is_empty() { "connection".into() } else { safe }
+}
+
+fn backup_directory(app: &tauri::AppHandle, connection_id: &str) -> AppResult<std::path::PathBuf> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| AppError::Internal(error.to_string()))?
+        .join("backups")
+        .join(safe_backup_key(connection_id));
+    std::fs::create_dir_all(&dir).map_err(|error| AppError::Internal(error.to_string()))?;
+    Ok(dir)
+}
+
+fn backup_info(path: &std::path::Path) -> AppResult<BackupInfo> {
+    let metadata = std::fs::metadata(path).map_err(|error| AppError::Internal(error.to_string()))?;
+    let modified = metadata
+        .modified()
+        .ok()
+        .map(chrono::DateTime::<chrono::Utc>::from)
+        .unwrap_or_else(chrono::Utc::now);
+    Ok(BackupInfo {
+        id: path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string(),
+        created_at: modified.to_rfc3339(),
+        size_bytes: metadata.len(),
+        path: Some(path.to_string_lossy().into_owned()),
+    })
+}
+
+async fn saved_connection(state: &State<'_, AppState>, id: &str) -> AppResult<ConnectionConfig> {
+    state
+        .store
+        .list_connections()
+        .await?
+        .into_iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| AppError::NotFound(format!("no saved connection: {id}")))
+}
+
+async fn vacuum_backup(
+    state: &State<'_, AppState>,
+    cfg: &ConnectionConfig,
+    destination: &std::path::Path,
+) -> AppResult<()> {
+    let driver = match state.registry.get(&cfg.id).await {
+        Ok(driver) => driver,
+        Err(_) => {
+            state.registry.open(cfg, None).await?;
+            state.registry.get(&cfg.id).await?
+        }
+    };
+    let escaped = destination.to_string_lossy().replace(''', "''");
+    driver.execute(&format!("VACUUM INTO '{escaped}'")).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_backups(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    connection_id: String,
+) -> AppResult<Vec<BackupInfo>> {
+    let cfg = saved_connection(&state, &connection_id).await?;
+    if cfg.engine != Engine::Sqlite {
+        return Err(AppError::Internal("Managed snapshots are available for SQLite connections only".into()));
+    }
+    let dir = backup_directory(&app, &connection_id)?;
+    let mut backups = std::fs::read_dir(&dir)
+        .map_err(|error| AppError::Internal(error.to_string()))?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("sqlite"))
+        .filter_map(|path| backup_info(&path).ok())
+        .collect::<Vec<_>>();
+    backups.sort_by(|a, b| b.id.cmp(&a.id));
+    Ok(backups)
+}
+
+#[tauri::command]
+pub async fn create_backup(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    connection_id: String,
+) -> AppResult<BackupInfo> {
+    let cfg = saved_connection(&state, &connection_id).await?;
+    if cfg.engine != Engine::Sqlite {
+        return Err(AppError::Internal("Managed snapshots are available for SQLite connections only".into()));
+    }
+    if cfg.database.trim() == ":memory:" {
+        return Err(AppError::Internal("In-memory SQLite databases cannot be snapshotted to managed storage".into()));
+    }
+    let dir = backup_directory(&app, &connection_id)?;
+    let id = format!("{}.sqlite", chrono::Utc::now().format("%Y%m%dT%H%M%S%3fZ"));
+    let destination = dir.join(id);
+    vacuum_backup(&state, &cfg, &destination).await?;
+    backup_info(&destination)
+}
+
+#[tauri::command]
+pub async fn restore_backup(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    connection_id: String,
+    backup_id: String,
+) -> AppResult<()> {
+    let cfg = saved_connection(&state, &connection_id).await?;
+    if cfg.engine != Engine::Sqlite {
+        return Err(AppError::Internal("Managed restore is available for SQLite connections only".into()));
+    }
+    if cfg.database.trim() == ":memory:" {
+        return Err(AppError::Internal("In-memory SQLite databases cannot be restored from managed storage".into()));
+    }
+    if backup_id.contains('/') || backup_id.contains('\\') || !backup_id.ends_with(".sqlite") {
+        return Err(AppError::Internal("Invalid backup id".into()));
+    }
+
+    let dir = backup_directory(&app, &connection_id)?;
+    let source = dir.join(&backup_id);
+    if !source.is_file() {
+        return Err(AppError::NotFound(format!("backup not found: {backup_id}")));
+    }
+
+    let safety = dir.join(format!(
+        "before-restore-{}.sqlite",
+        chrono::Utc::now().format("%Y%m%dT%H%M%S%3fZ")
+    ));
+    vacuum_backup(&state, &cfg, &safety).await?;
+
+    state.registry.close(&connection_id).await;
+    let target = std::path::PathBuf::from(&cfg.database);
+    let copy_result = std::fs::copy(&source, &target)
+        .map(|_| ())
+        .map_err(|error| AppError::Internal(format!("restore failed: {error}")));
+    if let Err(error) = copy_result {
+        let _ = state.registry.open(&cfg, None).await;
+        return Err(error);
+    }
+
+    state.registry.open(&cfg, None).await?;
+    Ok(())
 }
 
 #[tauri::command]
