@@ -511,6 +511,7 @@ const en = {
   "workspace.diagnosticsFailed": "Diagnostics failed",
 
   "shortcuts.title": "Keyboard shortcuts",
+  "shortcuts.toggleExplorer": "Show / hide database explorer",
   "shortcuts.commandPalette": "Command palette",
   "shortcuts.execute": "Execute query (or selection)",
   "shortcuts.comment": "Toggle line comment",
@@ -1043,6 +1044,7 @@ const zh: Record<TranslationKey, string> = {
   "workspace.diagnosticsFailed": "连接诊断失败",
 
   "shortcuts.title": "键盘快捷键",
+  "shortcuts.toggleExplorer": "显示 / 隐藏数据库资源管理器",
   "shortcuts.commandPalette": "命令面板",
   "shortcuts.execute": "执行查询（或选中内容）",
   "shortcuts.comment": "切换行注释",

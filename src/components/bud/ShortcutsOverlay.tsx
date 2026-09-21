@@ -13,6 +13,7 @@ export function ShortcutsOverlay() {
     const enter = isMacPlatform() ? "↵" : "Enter";
     return [
       { keys: [primary, "K"], label: t("shortcuts.commandPalette") },
+      { keys: [primary, "B"], label: t("shortcuts.toggleExplorer") },
       { keys: [primary, enter], label: t("shortcuts.execute") },
       { keys: [primary, "/"], label: t("shortcuts.comment") },
       { keys: [primary, shift, "F"], label: t("shortcuts.format") },

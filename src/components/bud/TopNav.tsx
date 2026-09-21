@@ -51,6 +51,7 @@ export function TopNav({
   const run = useStore((s) => s.run);
   const fileRef = useRef<HTMLInputElement>(null);
   const commandShortcut = shortcutLabel("K");
+  const sidebarShortcut = shortcutLabel("B");
   const runShortcut = shortcutLabel("Enter");
 
   const openFile = (file: File) => {
@@ -75,7 +76,7 @@ export function TopNav({
         <TrafficLights />
         <button
           className={`odb-icon-btn ${sidebarHidden ? "" : "on"}`}
-          title={sidebarHidden ? t("top.showExplorer") : t("top.hideExplorer")}
+          title={`${sidebarHidden ? t("top.showExplorer") : t("top.hideExplorer")} (${sidebarShortcut})`}
           aria-label={sidebarHidden ? t("top.showExplorer") : t("top.hideExplorer")}
           onClick={onToggleSidebar}
         >
