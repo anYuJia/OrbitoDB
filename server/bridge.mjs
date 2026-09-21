@@ -1309,13 +1309,18 @@ const handlers = {
 };
 
 /* ---- HTTP plumbing ---- */
+function originAllowed(req) {
+  const origin = req.headers.origin;
+  return !origin || ALLOWED_ORIGINS.has("*") || ALLOWED_ORIGINS.has(origin);
+}
+
 function applyCors(req, res) {
   const origin = req.headers.origin;
-  if (origin && (ALLOWED_ORIGINS.has(origin) || ALLOWED_ORIGINS.has("*"))) {
+  if (origin && originAllowed(req)) {
     res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGINS.has("*") ? "*" : origin);
     res.setHeader("Vary", "Origin");
   }
-  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 function sendJson(res, status, obj) {
@@ -1355,21 +1360,30 @@ function isConnLost(e) {
 
 const server = createServer((req, res) => {
   applyCors(req, res);
+
+  if (!originAllowed(req)) {
+    return sendJson(res, 403, appError("forbiddenOrigin", "Request origin is not allowed by the OrbitoDB bridge"));
+  }
+
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
     return;
   }
+
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST, OPTIONS");
+    return sendJson(res, 405, appError("methodNotAllowed", "Only POST requests are accepted"));
+  }
+
+  const contentType = String(req.headers["content-type"] || "").toLowerCase();
+  if (!contentType.startsWith("application/json")) {
+    return sendJson(res, 415, appError("unsupportedMediaType", "Bridge requests must use application/json"));
+  }
+
   const path = (req.url || "").replace(/^\/api\//, "").replace(/\?.*$/, "").replace(/^\//, "");
   const handler = handlers[path];
   if (!handler) return sendJson(res, 404, appError("notFound", `Unknown endpoint: ${path}`));
-
-  if (req.method === "GET") {
-    Promise.resolve(handler({}))
-      .then((out) => sendJson(res, 200, out))
-      .catch((e) => sendJson(res, 400, appError(e.kind || "internal", errMessage(e))));
-    return;
-  }
 
   const chunks = [];
   let bodyBytes = 0;
