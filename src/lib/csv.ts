@@ -89,36 +89,77 @@ export function inferColumns(headers: string[], rows: string[][]): ColumnDef[] {
   }));
 }
 
-/** Parse CSV text into headers + rows (handles quoted fields and "" escapes). */
-export function fromCsv(text: string): { headers: string[]; rows: string[][] } {
-  const lines = text.replace(/\r\n/g, "\n").split("\n").filter((l) => l.length > 0);
-  const parseLine = (line: string): string[] => {
-    const out: string[] = [];
-    let cur = "";
-    let q = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (q) {
-        if (ch === '"' && line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else if (ch === '"') {
-          q = false;
-        } else {
-          cur += ch;
-        }
-      } else if (ch === '"') {
-        q = true;
-      } else if (ch === ",") {
-        out.push(cur);
-        cur = "";
-      } else {
-        cur += ch;
-      }
-    }
-    out.push(cur);
-    return out;
+/** Parse delimited text with RFC-style quoted fields, escaped quotes and embedded newlines. */
+export function fromDelimited(text: string, delimiter: "," | "\t"): { headers: string[]; rows: string[][] } {
+  const source = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const parsed: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  const pushCell = () => {
+    row.push(cell);
+    cell = "";
   };
-  if (lines.length === 0) return { headers: [], rows: [] };
-  return { headers: parseLine(lines[0]), rows: lines.slice(1).map(parseLine) };
+  const pushRow = () => {
+    pushCell();
+    if (row.some((value) => value.length > 0)) parsed.push(row);
+    row = [];
+  };
+
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (quoted) {
+      if (ch === '"' && source[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') {
+        quoted = false;
+      } else {
+        cell += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      quoted = true;
+    } else if (ch === delimiter) {
+      pushCell();
+    } else if (ch === "\n") {
+      pushRow();
+    } else {
+      cell += ch;
+    }
+  }
+
+  if (cell.length || row.length) pushRow();
+  if (!parsed.length) return { headers: [], rows: [] };
+  return { headers: parsed[0], rows: parsed.slice(1) };
+}
+
+export function fromCsv(text: string): { headers: string[]; rows: string[][] } {
+  return fromDelimited(text, ",");
+}
+
+export function fromTsv(text: string): { headers: string[]; rows: string[][] } {
+  return fromDelimited(text, "\t");
+}
+
+export function detectDelimited(text: string, filename = ""): { delimiter: "," | "\t"; headers: string[]; rows: string[][] } {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".tsv") || lower.endsWith(".tab")) {
+    const parsed = fromTsv(text);
+    return { delimiter: "\t", ...parsed };
+  }
+  if (lower.endsWith(".csv")) {
+    const parsed = fromCsv(text);
+    return { delimiter: ",", ...parsed };
+  }
+
+  const firstLine = text.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] ?? "";
+  const tabs = (firstLine.match(/\t/g) ?? []).length;
+  const commas = (firstLine.match(/,/g) ?? []).length;
+  const delimiter: "," | "\t" = tabs > commas ? "\t" : ",";
+  const parsed = fromDelimited(text, delimiter);
+  return { delimiter, ...parsed };
 }
