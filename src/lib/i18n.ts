@@ -1164,8 +1164,13 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
+function getLocaleSnapshot(): string {
+  return `${currentMode}:${currentLocale}`;
+}
+
 export function useI18n() {
-  const locale = useSyncExternalStore(subscribe, getLocale, getLocale);
+  useSyncExternalStore(subscribe, getLocaleSnapshot, getLocaleSnapshot);
+  const locale = currentLocale;
   const localeMode = currentMode;
   return {
     locale,
