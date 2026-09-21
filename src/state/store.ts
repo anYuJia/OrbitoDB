@@ -147,6 +147,12 @@ function persistEditors(editors: EditorTab[], activeId: string): void {
     /* ignore */
   }
 }
+let editorIdSequence = 0;
+function newEditorId(): string {
+  editorIdSequence += 1;
+  return `ed-${Date.now().toString(36)}-${editorIdSequence.toString(36)}`;
+}
+
 const INITIAL_EDITORS = loadEditors();
 const INITIAL_ACTIVE_EDITOR = (() => {
   try {
@@ -606,7 +612,7 @@ export const useStore = create<AppStore>((set, get) => ({
         toast("SQL tab limit reached — close a tab before opening another.", "error");
         return {};
       }
-      const id = `ed-${Date.now().toString(36)}`;
+      const id = newEditorId();
       const editor: EditorTab = {
         id,
         name: `Query ${s.editors.length + 1}`,
@@ -624,7 +630,7 @@ export const useStore = create<AppStore>((set, get) => ({
         toast("SQL tab limit reached — close a tab before opening another.", "error");
         return {};
       }
-      const id = "ed-" + Date.now().toString(36);
+      const id = newEditorId();
       const editor: EditorTab = {
         id,
         name: name.trim() || "Query " + (s.editors.length + 1),
@@ -717,7 +723,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
     if (editors.length === 0) {
       const fresh: EditorTab = {
-        id: `ed-${Date.now().toString(36)}`,
+        id: newEditorId(),
         name: "Query 1",
         sql: "",
         connectionId: state.activeConnectionId,
