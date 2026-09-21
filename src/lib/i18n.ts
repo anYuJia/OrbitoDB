@@ -1154,7 +1154,7 @@ export function translate(key: TranslationKey, vars?: TranslationVars, locale: L
   let value = table[key] ?? en[key];
   if (!vars) return value;
   for (const [name, replacement] of Object.entries(vars)) {
-    value = value.replaceAll(`{${name}}`, String(replacement));
+    value = value.split(`{${name}}`).join(String(replacement));
   }
   return value;
 }

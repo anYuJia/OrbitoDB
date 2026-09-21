@@ -12,27 +12,27 @@ export function ToastHost() {
   return (
     <div className="bud-toasts">
       <AnimatePresence initial={false}>
-        {toasts.map((t) => (
+        {toasts.map((item) => (
           <motion.div
-            key={t.id}
+            key={item.id}
             layout
-            className={`bud-toast ${t.kind}`}
+            className={`bud-toast ${item.kind}`}
             variants={toastV}
             initial="hidden"
             animate="show"
             exit="exit"
           >
             <span className="bud-toast-ic">
-              {t.kind === "success" ? (
+              {item.kind === "success" ? (
                 <IconCheck size={15} stroke={2} />
-              ) : t.kind === "error" ? (
+              ) : item.kind === "error" ? (
                 <IconAlertTriangle size={15} stroke={1.8} />
               ) : (
                 <IconInfoCircle size={15} stroke={1.8} />
               )}
             </span>
-            <span className="bud-toast-msg">{t.message}</span>
-            <button className="bud-toast-x" onClick={() => dismiss(t.id)} title={t("toast.dismiss")} aria-label={t("toast.dismiss")}>
+            <span className="bud-toast-msg">{item.message}</span>
+            <button className="bud-toast-x" onClick={() => dismiss(item.id)} title={t("toast.dismiss")} aria-label={t("toast.dismiss")}>
               <IconX size={13} stroke={1.9} />
             </button>
           </motion.div>
