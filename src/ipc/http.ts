@@ -4,9 +4,8 @@
 // kept in a separate localStorage key so connections can be re-opened after a
 // reload or a bridge restart.
 import type { Backend } from "./backend";
-import { MAX_QUERY_HISTORY } from "../lib/retention";
 import { displayRows } from "../lib/cell";
-import type { AppError, BackupInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, HistoryEntry, IndexInfo, QueryResult } from "./types";
+import type { AppError, BackupInfo, ConnectionConfig, ConnectionDiagnostics, ConstraintInfo, DatabaseObjectInfo, IndexInfo, QueryResult } from "./types";
 
 // Same-origin by default: the dev server (vite proxy) and the Docker web
 // container (nginx) both forward "/api" to the bridge, so no host/port is
@@ -14,45 +13,6 @@ import type { AppError, BackupInfo, ConnectionConfig, ConnectionDiagnostics, Con
 const DEFAULT_BRIDGE = "";
 const CONNS_KEY = "orbitodb.connections";
 const SECRETS_KEY = "orbitodb.secrets";
-const HIST_KEY = "orbitodb.history";
-
-function recordHistory(connectionId: string, sql: string): void {
-  try {
-    const raw = JSON.parse(localStorage.getItem(HIST_KEY) ?? "[]");
-    const current = Array.isArray(raw) ? (raw as HistoryEntry[]) : [];
-    const previousId = current[0]?.id ?? 0;
-    const entry: HistoryEntry = {
-      id: Math.max(Date.now(), previousId + 1),
-      connectionId,
-      sql,
-      ranAt: new Date().toISOString(),
-    };
-    localStorage.setItem(
-      HIST_KEY,
-      JSON.stringify([entry, ...current].slice(0, MAX_QUERY_HISTORY)),
-    );
-  } catch {
-    // History must never make a successful bridge query fail.
-  }
-}
-
-function readHistory(limit: number): HistoryEntry[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(HIST_KEY) ?? "[]");
-    return Array.isArray(raw) ? (raw as HistoryEntry[]).slice(0, Math.max(0, limit)) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function bridgeUrl(): string {
-  try {
-    return localStorage.getItem("orbitodb.bridge") ?? DEFAULT_BRIDGE;
-  } catch {
-    return DEFAULT_BRIDGE;
-  }
-}
-
 function loadConns(): ConnectionConfig[] {
   try {
     const raw = JSON.parse(localStorage.getItem(CONNS_KEY) ?? "[]");
@@ -246,11 +206,7 @@ export const httpBackend: Backend = {
   createDatabase: (cfg, password, name) => rpc<void>("createDatabase", { cfg, password, name }).then(() => {}),
   openConnection: (id) => openById(id),
   closeConnection: (id) => rpc<void>("close", { id }).then(() => {}),
-  runQuery: (id, sql) =>
-    withReopen<QueryResult>(id, "query", { id, sql }).then((result) => {
-      recordHistory(id, sql);
-      return textifyCells(result);
-    }),
+  runQuery: (id, sql) => withReopen<QueryResult>(id, "query", { id, sql }).then(textifyCells),
   runQuerySilent: (id, sql) => withReopen<QueryResult>(id, "query", { id, sql }).then(textifyCells),
   cancelQuery: async (id) => rpc<boolean>("cancel", { id, password: await loadSecret(id) }),
   connectionDiagnostics: (id) => withReopen<ConnectionDiagnostics>(id, "diagnostics", { id }),
@@ -265,7 +221,7 @@ export const httpBackend: Backend = {
   listForeignKeys: (id) => withReopen(id, "foreignKeys", { id }),
   listIndexes: (id, table) => withReopen<IndexInfo[]>(id, "indexes", { id, table }),
   listConstraints: (id, table) => withReopen<ConstraintInfo[]>(id, "constraints", { id, table }),
-  recentHistory: async (limit) => readHistory(limit),
+  recentHistory: async () => [],
   updateCell: (id, table, pkColumn, pkValue, column, value) =>
     withReopen<void>(id, "updateCell", { id, table, pkColumn, pkValue, column, value }).then(() => {}),
   deleteRow: (id, table, pkColumn, pkValue) =>
