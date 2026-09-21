@@ -1,11 +1,11 @@
 name: Release
 
-# Builds a standalone Windows .exe and publishes it to GitHub Releases.
-# - every push to main  -> updates the rolling "latest" release
-# - a version tag (v*)  -> creates a versioned release
+# Publish a standalone Windows build only from an explicit version tag or a
+# manual workflow run. Normal main pushes are validated by CI and do not create
+# a public release.
 on:
   push:
-    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -14,12 +14,15 @@ permissions:
 jobs:
   windows-exe:
     runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('v0.1.{0}', github.run_number) }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -28,36 +31,65 @@ jobs:
           workspaces: src-tauri
 
       - name: Install JS dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Stamp version 0.1.${{ github.run_number }}
+      - name: Frontend unit tests
+        run: npm run test:ci
+
+      - name: Bridge syntax check
+        run: npm run check:bridge
+
+      - name: Release configuration check
+        run: npm run check:release
+
+      - name: TypeScript + Vite build
+        run: npm run build
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+
+      - name: Stamp application version
         shell: pwsh
         run: |
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
+            throw "Invalid release version: $version"
+          }
           $p = "src-tauri/tauri.conf.json"
-          (Get-Content $p -Raw) -replace '"version":\s*"[^"]*"', '"version": "0.1.${{ github.run_number }}"' | Set-Content $p -Encoding utf8
-          Write-Output "App version -> 0.1.${{ github.run_number }}"
+          (Get-Content $p -Raw) -replace '"version":\s*"[^"]*"', ('"version": "' + $version + '"') | Set-Content $p -Encoding utf8
+          Write-Output "App version -> $version"
 
-      - name: Build standalone .exe (no installer / no wizard)
+      - name: Build standalone .exe
         run: npm run tauri build -- --no-bundle
 
-      - name: Stage artifact
+      - name: Stage and verify artifact
         shell: pwsh
         run: |
+          $source = "src-tauri/target/release/orbitodb.exe"
+          if (-not (Test-Path $source)) {
+            throw "Expected release artifact was not produced: $source"
+          }
           New-Item -ItemType Directory -Force dist-exe | Out-Null
-          Copy-Item "src-tauri/target/release/orbitodb.exe" "dist-exe/OrbitoDB.exe"
+          Copy-Item $source "dist-exe/OrbitoDB.exe"
+          $hash = (Get-FileHash "dist-exe/OrbitoDB.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  OrbitoDB.exe" | Set-Content "dist-exe/OrbitoDB.exe.sha256" -Encoding ascii
+          Write-Output "SHA256 $hash"
 
       - name: Publish to Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: dist-exe/OrbitoDB.exe
-          tag_name: v0.1.${{ github.run_number }}
-          name: v0.1.${{ github.run_number }}
+          files: |
+            dist-exe/OrbitoDB.exe
+            dist-exe/OrbitoDB.exe.sha256
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
           prerelease: false
           make_latest: true
           fail_on_unmatched_files: true
           body: |
             **OrbitoDB — standalone Windows executable.**
 
-            Download **`OrbitoDB.exe`** below and run it. No installer, no wizard,
-            nothing else to download. (Uses the Microsoft Edge WebView2 runtime,
-            which ships with Windows 10 & 11.)
+            Download **`OrbitoDB.exe`** and verify it with
+            **`OrbitoDB.exe.sha256`** if desired. No installer or setup wizard
+            is required. Windows 10/11 already include the WebView2 runtime used
+            by the application.
