@@ -3,7 +3,12 @@ import { useStore } from "../../state/store";
 
 export function StatusBar() {
   const conn = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
-  const result = useStore((s) => s.result);
+  const connecting = useStore((s) => s.connectingConnectionId != null);
+  const loadingTables = useStore((s) => s.loadingTables);
+  const dataResult = useStore((s) => s.result);
+  const queryResult = useStore((s) => s.editorResults[s.activeEditorId] ?? null);
+  const view = useStore((s) => s.view);
+  const topView = useStore((s) => s.topView);
   const loadingResult = useStore((s) => s.loadingResult);
   const running = useStore((s) => s.running);
   const selection = useStore((s) => s.selection);
@@ -12,8 +17,9 @@ export function StatusBar() {
   const rollbackTxn = useStore((s) => s.rollbackTxn);
   const commitTxn = useStore((s) => s.commitTxn);
 
+  const result = topView === "data" ? (view === "data" ? dataResult : view === "sql" ? queryResult : null) : null;
   const rows = result?.rows.length ?? 0;
-  const sel = selection.length;
+  const sel = topView === "data" && view === "data" ? selection.length : 0;
   const secs = result ? (result.elapsedMs / 1000).toFixed(3) : "0.000";
 
   return (
@@ -23,7 +29,7 @@ export function StatusBar() {
           <span className="bud-status-conn">
             <IconPlugConnected size={13} stroke={1.8} />
             <span className="bud-status-engine">{conn.engine}</span>
-            {conn.name}
+            {connecting ? `Connecting · ${conn.name}` : conn.name}
           </span>
         ) : (
           <span className="bud-status-conn off">
@@ -50,11 +56,15 @@ export function StatusBar() {
             ● Uncommitted
           </span>
         )}
-        {(loadingResult || running) && <span className="bud-status-item">{running ? "Running query…" : "Loading…"}</span>}
+        {(connecting || loadingTables || loadingResult || running) && (
+          <span className="bud-status-item">
+            {running ? "Running query…" : connecting || loadingTables ? "Loading schema…" : "Loading rows…"}
+          </span>
+        )}
         {sel > 0 && <span className="bud-status-item accent">{sel} selected</span>}
         {result && <span className="bud-status-item">{rows.toLocaleString()} rows</span>}
         {result && <span className="bud-status-item">{secs}s</span>}
-        <span className="bud-status-ready"><i /> {loadingResult || running ? "Working" : "Ready"}</span>
+        <span className="bud-status-ready"><i /> {connecting || loadingTables || loadingResult || running ? "Working" : "Ready"}</span>
       </div>
     </footer>
   );

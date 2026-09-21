@@ -273,6 +273,16 @@ textarea {
   box-shadow: 0 0 0 3px rgba(110, 231, 173, 0.1), 0 0 12px rgba(110, 231, 173, 0.24);
 }
 
+.bud-tb-conn.pending .bud-tb-conn-dot {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px rgba(244, 184, 96, 0.14), 0 0 12px rgba(244, 184, 96, 0.2);
+  animation: bud-connection-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes bud-connection-pulse {
+  50% { opacity: 0.42; }
+}
+
 .bud-titlebar .bud-tb-run {
   width: auto;
   height: 34px;
@@ -937,13 +947,26 @@ textarea {
 }
 
 .bud-cb-select,
-.bud-cb-input {
+.bud-cb-input,
+.bud-cb-static {
   height: 31px;
+  display: flex;
+  align-items: center;
+  padding: 0 9px;
   border-color: var(--border);
+  border-style: solid;
+  border-width: 1px;
   border-radius: 8px !important;
   background-color: var(--input-bg);
   color: #dce1e9;
   font-size: 12px;
+}
+
+.bud-cb-static {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bud-cb-select:focus,
@@ -1064,6 +1087,67 @@ textarea {
   padding: 5px 9px;
   border-bottom-color: var(--border);
   background: var(--bg-2);
+}
+
+.bud-grid-selection {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px 2px 9px;
+  border: 1px solid rgba(124, 109, 242, 0.28);
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.bud-grid-selection strong {
+  color: var(--accent-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.bud-grid-selection button {
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-3);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.bud-grid-selection button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-4);
+}
+
+.bud-grid-selection button.danger {
+  color: var(--danger);
+}
+
+.bud-grid-selection button.icon {
+  width: 25px;
+  justify-content: center;
+  padding: 0;
+  color: var(--muted);
+}
+
+.bud-grid-selection button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.bud-null-label {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-style: italic;
 }
 
 .bud-res-seg,
@@ -1455,6 +1539,65 @@ textarea {
 
   .bud-cb-check,
   .bud-cb-field.sm:last-child {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .bud-app {
+    grid-template-rows: 52px minmax(0, 1fr) 28px;
+  }
+
+  .bud-titlebar {
+    height: 52px;
+  }
+
+  .bud-body,
+  .bud-app.sidebar-hidden .bud-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bud-app:not(.sidebar-hidden) .bud-sources {
+    position: absolute;
+    z-index: 45;
+    top: 52px;
+    bottom: 28px;
+    left: 0;
+    width: min(84vw, 292px);
+    border-right-color: var(--border-strong);
+    box-shadow: 18px 0 48px rgba(0, 0, 0, 0.46);
+  }
+
+  .bud-hsplit,
+  .bud-tb-conn {
+    display: none !important;
+  }
+
+  .bud-connbar {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .bud-cb-field.grow {
+    min-width: 160px;
+  }
+
+  .bud-grid-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .bud-grid-search {
+    width: min(100%, 280px);
+    flex: 1 1 210px;
+  }
+
+  .bud-grid-selection {
+    order: 3;
+    width: 100%;
+  }
+
+  .bud-status-item,
+  .bud-status-engine {
     display: none;
   }
 }

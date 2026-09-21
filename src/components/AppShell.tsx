@@ -37,7 +37,9 @@ function initialWidth(): number {
 
 function initialSidebarHidden(): boolean {
   try {
-    return localStorage.getItem("orbitodb.sidebarHidden") === "true";
+    const saved = localStorage.getItem("orbitodb.sidebarHidden");
+    if (saved != null) return saved === "true";
+    return window.matchMedia("(max-width: 720px)").matches;
   } catch {
     return false;
   }

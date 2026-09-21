@@ -33,6 +33,7 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { confirmDialog, promptDialog } from "../../state/dialog";
 import type { ConnectionConfig, Engine } from "../../ipc/types";
+import { quoteIdentifier } from "../../lib/sql";
 import { useStore } from "../../state/store";
 import { ContextMenu, type CtxAnchor, type MenuItem } from "./ContextMenu";
 
@@ -575,6 +576,7 @@ function TableRow({
   const setView = useStore((s) => s.setView);
   const views = useStore((s) => s.views);
   const loadSql = useStore((s) => s.loadSql);
+  const engine = useStore((s) => s.connections.find((connection) => connection.id === connectionId)?.engine);
   const addColumn = useStore((s) => s.addColumn);
   const showTableDdl = useStore((s) => s.showTableDdl);
   const isDatabaseView = kind === "view";
@@ -610,6 +612,7 @@ function TableRow({
     void addColumn(table, { name: name.trim(), dataType, nullable: true, primaryKey: false });
   };
   const copyName = () => void navigator.clipboard?.writeText(table).catch(() => {});
+  const tableSql = quoteIdentifier(table, engine);
 
   const items: MenuItem[] = [
     { label: "Open", icon: (<IconFolderOpen size={15} stroke={1.7} />), onClick: () => void openTableData(table) },
@@ -617,9 +620,9 @@ function TableRow({
     { label: "View data", icon: (<IconEye size={15} stroke={1.7} />), onClick: () => void openTableData(table) },
     { label: "Refresh", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: () => void reload(table) },
     { divider: true },
-    { label: "Generate SELECT", icon: (<IconCode size={15} stroke={1.7} />), onClick: () => loadSql(`SELECT * FROM ${table} LIMIT 100;`) },
+    { label: "Generate SELECT", icon: (<IconCode size={15} stroke={1.7} />), onClick: () => loadSql(`SELECT * FROM ${tableSql} LIMIT 100;`) },
     { label: "Show CREATE (DDL)", icon: (<IconSchema size={15} stroke={1.7} />), onClick: () => void showTableDdl(table) },
-    { label: "Count rows", icon: (<IconHash size={15} stroke={1.7} />), onClick: () => loadSql(`SELECT count(*) FROM ${table};`) },
+    { label: "Count rows", icon: (<IconHash size={15} stroke={1.7} />), onClick: () => loadSql(`SELECT count(*) FROM ${tableSql};`) },
     ...(!isDatabaseView
       ? [{ label: "Add column…", icon: (<IconColumnInsertRight size={15} stroke={1.7} />), onClick: () => void addColumnTo() }]
       : []),

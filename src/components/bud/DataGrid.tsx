@@ -1,4 +1,4 @@
-import { IconArrowUpRight, IconChevronLeft, IconChevronRight, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
+import { IconArrowUpRight, IconChevronLeft, IconChevronRight, IconCopy, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getBackend } from "../../ipc/backend";
 import { displayRows } from "../../lib/cell";
@@ -92,7 +92,10 @@ export function DataGrid() {
   const inspectorRow = useStore((s) => s.inspectorRow);
   const selection = useStore((s) => s.selection);
   const toggleRow = useStore((s) => s.toggleRow);
-  const selectAllRows = useStore((s) => s.selectAllRows);
+  const setSelection = useStore((s) => s.setSelection);
+  const clearSelection = useStore((s) => s.clearSelection);
+  const duplicateSelected = useStore((s) => s.duplicateSelected);
+  const deleteSelected = useStore((s) => s.deleteSelected);
   const columns = useStore((s) => (editTable ? s.schema.columnsByTable[editTable.table] : undefined));
   const activeId = useStore((s) => s.activeConnectionId);
   const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
@@ -258,16 +261,21 @@ export function DataGrid() {
   if (loadingResult && !result) return showSkel ? <GridSkeleton columns={columns} /> : null;
   if (!result || !editTable) return null;
   const table = editTable.table;
-  const allSelected = result.rows.length > 0 && selection.length === result.rows.length;
 
   const q = gridFilter.trim().toLowerCase();
   const filteredOrder = q
     ? order.filter((ri) => result.rows[ri].some((c) => c != null && String(c).toLowerCase().includes(q)))
     : order;
   const hasFilters = !!q;
+  const visibleSet = new Set(filteredOrder);
+  const selectedVisible = selection.filter((index) => visibleSet.has(index)).length;
+  const allVisibleSelected = filteredOrder.length > 0 && selectedVisible === filteredOrder.length;
+  const someVisibleSelected = selectedVisible > 0 && !allVisibleSelected;
   const pageCount = Math.max(1, Math.ceil(filteredOrder.length / pageSize));
   const curPage = Math.min(page, pageCount - 1);
   const pagedOrder = filteredOrder.slice(curPage * pageSize, curPage * pageSize + pageSize);
+  const validSelection = selection.filter((index) => index >= 0 && index < result.rows.length);
+  const exportOrder = validSelection.length > 0 ? validSelection : filteredOrder;
 
   const colInfo = (name: string): ColumnInfo =>
     columns?.find((c) => c.name === name) ?? { name, dataType: "TEXT", nullable: true, isPrimaryKey: false };
@@ -343,19 +351,48 @@ export function DataGrid() {
             {result.rows.length >= 1000 ? " (first 1,000)" : ""}
           </span>
         )}
+        {validSelection.length > 0 && (
+          <div className="bud-grid-selection" role="status" aria-label={`${validSelection.length} rows selected`}>
+            <strong>{validSelection.length}</strong> selected
+            <button title="Duplicate selected rows" onClick={() => void duplicateSelected()} disabled={readOnly}>
+              <IconCopy size={13} stroke={1.8} /> Duplicate
+            </button>
+            <button className="danger" title="Delete selected rows" onClick={() => void deleteSelected()} disabled={readOnly}>
+              <IconTrash size={13} stroke={1.8} /> Delete
+            </button>
+            <button className="icon" title="Clear selection" aria-label="Clear selection" onClick={clearSelection}>
+              <IconX size={13} stroke={2} />
+            </button>
+          </div>
+        )}
         <span className="bud-grid-foot-spacer" />
-        <ExportMenu result={result} rows={filteredOrder.map((ri) => result.rows[ri])} table={table} />
+        <ExportMenu result={result} rows={exportOrder.map((index) => result.rows[index])} table={table} />
       </div>
       <div className="bud-grid-wrap">
         <table className="bud-grid">
         <thead>
           <tr>
             <th className="bud-checkcol">
-              <input type="checkbox" checked={allSelected} onChange={selectAllRows} aria-label="Select all rows" />
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                ref={(node) => {
+                  if (node) node.indeterminate = someVisibleSelected;
+                }}
+                onChange={(event) => {
+                  if (event.target.checked) setSelection([...selection, ...filteredOrder]);
+                  else setSelection(selection.filter((index) => !visibleSet.has(index)));
+                }}
+                aria-label={hasFilters ? "Select all matching rows" : "Select all rows"}
+              />
             </th>
             <th className="bud-rownum" />
             {result.columns.map((c, i) => (
-              <th key={i} className={sort?.col === i ? "sorted" : ""}>
+              <th
+                key={i}
+                className={sort?.col === i ? "sorted" : ""}
+                aria-sort={sort?.col === i ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
+              >
                 <button className="bud-th-sort" title={`Sort by ${c.name}`} onClick={() => toggleSort(i)}>
                   <span className="bud-th-ic">{typeIcon(c.dataType)}</span>
                   <span className="bud-th-name">{c.name}</span>
@@ -430,6 +467,7 @@ export function DataGrid() {
                     className="bud-rowcheck"
                     checked={selection.includes(ri)}
                     onChange={() => toggleRow(ri)}
+                    aria-label={`Select row ${curPage * pageSize + pos + 1}`}
                   />
                 </td>
                 <td className="bud-rownum">
@@ -465,7 +503,7 @@ export function DataGrid() {
                           }}
                         />
                       ) : cell == null ? (
-                        ""
+                        <span className="bud-null-label">NULL</span>
                       ) : (
                         <>
                           {optionCols.has(ci) ? pill(cell) : String(cell)}

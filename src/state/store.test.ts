@@ -46,6 +46,7 @@ const mock = vi.hoisted(() => {
   return {
     backend: {
       listConnections: vi.fn(async () => connections.map((connection) => ({ ...connection }))),
+      deleteConnection: vi.fn(async () => {}),
       openConnection: vi.fn(async () => {}),
       listTables: vi.fn(async (id: "alpha" | "beta") => tables[id].map((table) => ({ ...table }))),
       listColumns: vi.fn(async (_id: string, table: "customers" | "invoices") =>
@@ -61,12 +62,21 @@ vi.mock("../ipc/backend", () => ({ getBackend: () => mock.backend }));
 
 import { useStore } from "./store";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 describe("store", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useStore.setState({
       connections: [],
       activeConnectionId: null,
+      connectingConnectionId: null,
       schema: { tables: [], columnsByTable: {} },
       sql: "",
       editors: [{ id: "ed-test", name: "Query 1", sql: "" }],
@@ -79,6 +89,11 @@ describe("store", () => {
       history: [],
       editTable: null,
       openTables: [],
+      selection: [],
+      inspectorRow: null,
+      views: [],
+      activeViewId: null,
+      readOnlyConns: [],
       autoCommit: true,
       txnDirty: false,
       txnConnectionId: null,
@@ -89,6 +104,40 @@ describe("store", () => {
     await useStore.getState().loadConnections();
     expect(useStore.getState().connections).toHaveLength(2);
     expect(useStore.getState().connections[1].env).toBe("prod");
+  });
+
+  it("keeps saved views when read-only mode changes", () => {
+    useStore.setState({
+      views: [
+        {
+          id: "view-alpha-customers",
+          connectionId: "alpha",
+          table: "customers",
+          name: "Active customers",
+          filter: null,
+        },
+      ],
+    });
+
+    useStore.getState().toggleReadOnly("alpha");
+
+    expect(useStore.getState().views).toHaveLength(1);
+  });
+
+  it("removes saved views when an inactive connection is deleted", async () => {
+    useStore.setState({
+      activeConnectionId: "alpha",
+      views: [
+        { id: "view-alpha", connectionId: "alpha", table: "customers", name: "Customers", filter: null },
+        { id: "view-beta", connectionId: "beta", table: "invoices", name: "Invoices", filter: null },
+      ],
+      activeViewId: "view-beta",
+    });
+
+    await useStore.getState().deleteConnection("beta");
+
+    expect(useStore.getState().views.map((view) => view.id)).toEqual(["view-alpha"]);
+    expect(useStore.getState().activeViewId).toBeNull();
   });
 
   it("opens a connection and introspects its tables", async () => {
@@ -144,6 +193,92 @@ describe("store", () => {
     expect(useStore.getState().schema.tables.map((table) => table.name)).toEqual(["invoices"]);
   });
 
+  it("disconnects cleanly when opening a connection fails", async () => {
+    await useStore.getState().loadConnections();
+    mock.backend.openConnection.mockRejectedValueOnce({ kind: "notConnected", message: "offline" });
+
+    await useStore.getState().openAndIntrospect("alpha");
+
+    expect(useStore.getState().activeConnectionId).toBeNull();
+    expect(useStore.getState().connectingConnectionId).toBeNull();
+    expect(useStore.getState().loadingTables).toBe(false);
+    expect(useStore.getState().error?.kind).toBe("notConnected");
+  });
+
+  it("ignores a stale connection response after the user switches again", async () => {
+    await useStore.getState().loadConnections();
+    const firstTables = deferred<Array<{ name: string; kind: string; schema: null }>>();
+    mock.backend.listTables.mockImplementationOnce(() => firstTables.promise);
+
+    const first = useStore.getState().openAndIntrospect("alpha");
+    await vi.waitFor(() => expect(mock.backend.listTables).toHaveBeenCalledTimes(1));
+    await useStore.getState().openAndIntrospect("beta");
+    firstTables.resolve([{ name: "customers", kind: "table", schema: null }]);
+    await first;
+
+    expect(useStore.getState().activeConnectionId).toBe("beta");
+    expect(useStore.getState().schema.tables.map((table) => table.name)).toEqual(["invoices"]);
+  });
+
+  it("quotes table names and keeps internal browsing out of query history", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    await useStore.getState().openTableData("order details");
+
+    expect(mock.backend.runQuery).toHaveBeenLastCalledWith(
+      "alpha",
+      'SELECT * FROM "order details" LIMIT 1000;',
+      { recordHistory: false },
+    );
+  });
+
+  it("deduplicates concurrent query runs", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    useStore.getState().setSql("SELECT * FROM customers");
+    const pending = deferred<{
+      columns: Array<{ name: string; dataType: string }>;
+      rows: (string | number)[][];
+      rowsAffected: number;
+      elapsedMs: number;
+      truncated: boolean;
+    }>();
+    mock.backend.runQuery.mockImplementationOnce(() => pending.promise);
+
+    const first = useStore.getState().run();
+    await vi.waitFor(() => expect(mock.backend.runQuery).toHaveBeenCalledTimes(1));
+    await useStore.getState().run();
+    pending.resolve({ columns: [{ name: "id", dataType: "INTEGER" }], rows: [[1]], rowsAffected: 0, elapsedMs: 1, truncated: false });
+    await first;
+
+    expect(mock.backend.runQuery).toHaveBeenCalledTimes(1);
+    expect(useStore.getState().editorResults["ed-test"]?.rows).toEqual([[1]]);
+    expect(useStore.getState().running).toBe(false);
+  });
+
+  it("ignores a query result after Stop", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    useStore.getState().setSql("SELECT * FROM customers");
+    const pending = deferred<{
+      columns: Array<{ name: string; dataType: string }>;
+      rows: (string | number)[][];
+      rowsAffected: number;
+      elapsedMs: number;
+      truncated: boolean;
+    }>();
+    mock.backend.runQuery.mockImplementationOnce(() => pending.promise);
+
+    const running = useStore.getState().run();
+    await vi.waitFor(() => expect(mock.backend.runQuery).toHaveBeenCalledTimes(1));
+    useStore.getState().cancelRun();
+    pending.resolve({ columns: [{ name: "id", dataType: "INTEGER" }], rows: [[99]], rowsAffected: 0, elapsedMs: 1, truncated: false });
+    await running;
+
+    expect(useStore.getState().editorResults["ed-test"]).toBeNull();
+    expect(useStore.getState().running).toBe(false);
+  });
+
   it("pins a manual transaction to its connection and blocks unsafe switching", async () => {
     await useStore.getState().loadConnections();
     await useStore.getState().openAndIntrospect("alpha");
@@ -152,7 +287,7 @@ describe("store", () => {
     await useStore.getState().run();
 
     expect(mock.backend.runQuery.mock.calls.slice(-2)).toEqual([
-      ["alpha", "BEGIN"],
+      ["alpha", "BEGIN", { recordHistory: false }],
       ["alpha", "UPDATE customers SET name = 'Grace' WHERE id = 1"],
     ]);
     expect(useStore.getState().txnConnectionId).toBe("alpha");
@@ -164,7 +299,7 @@ describe("store", () => {
     expect(mock.backend.openConnection).toHaveBeenCalledTimes(openCalls);
 
     await useStore.getState().rollbackTxn();
-    expect(mock.backend.runQuery).toHaveBeenLastCalledWith("alpha", "ROLLBACK");
+    expect(mock.backend.runQuery).toHaveBeenLastCalledWith("alpha", "ROLLBACK", { recordHistory: false });
     expect(useStore.getState().txnDirty).toBe(false);
   });
 });

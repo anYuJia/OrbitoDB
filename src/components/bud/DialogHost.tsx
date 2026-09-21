@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { backdropV, MotionButton, panelV } from "../../lib/motion";
 import { useDialog } from "../../state/dialog";
 
@@ -9,6 +9,7 @@ export function DialogHost() {
   const close = useDialog((s) => s.close);
   const [value, setValue] = useState("");
   const [checked, setChecked] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setValue(current?.defaultValue ?? "");
@@ -26,16 +27,31 @@ export function DialogHost() {
     close();
   };
 
-  // Keyboard for confirm dialogs (prompt handles its own keys via the input).
+  // Keep keyboard focus inside the modal. Destructive confirms deliberately do
+  // not bind bare Enter: the user must activate the focused button explicitly.
   useEffect(() => {
-    if (!current || current.kind !== "confirm") return;
+    if (!current) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         cancel();
-      } else if (e.key === "Enter") {
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
-        submit();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -60,6 +76,7 @@ export function DialogHost() {
             aria-modal="true"
             aria-labelledby="orbitodb-dialog-title"
             aria-describedby={current.message ? "orbitodb-dialog-message" : undefined}
+            ref={dialogRef}
             variants={panelV}
             initial="hidden"
             animate="show"
@@ -80,7 +97,6 @@ export function DialogHost() {
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") submit();
-                if (e.key === "Escape") cancel();
               }}
             />
           </div>
@@ -92,12 +108,12 @@ export function DialogHost() {
           </label>
         )}
         <div className="bud-dialog-actions">
-          <MotionButton className="bud-dialog-cancel" onClick={cancel}>
+          <MotionButton className="bud-dialog-cancel" autoFocus={current.kind === "confirm" && !!current.danger} onClick={cancel}>
             {current.cancelLabel ?? "Cancel"}
           </MotionButton>
           <MotionButton
             className={`bud-dialog-ok ${current.danger ? "danger" : ""}`}
-            autoFocus={current.kind === "confirm"}
+            autoFocus={current.kind === "confirm" && !current.danger}
             onClick={submit}
           >
             {current.confirmLabel ?? "OK"}

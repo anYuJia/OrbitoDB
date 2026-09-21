@@ -60,9 +60,9 @@ export const webBackend: Backend = {
   /* id-driven ops route by the connection's engine */
   openConnection: (id) => sub(id).openConnection(id),
   closeConnection: (id) => sub(id).closeConnection(id),
-  runQuery: async (id, sql) => {
+  runQuery: async (id, sql, options) => {
     const r = await sub(id).runQuery(id, sql);
-    pushHistory(id, sql);
+    if (options?.recordHistory !== false) pushHistory(id, sql);
     return r;
   },
   listTables: (id) => sub(id).listTables(id),

@@ -20,7 +20,7 @@ export interface Backend {
   createDatabase(cfg: ConnectionConfig, password: string | null, name: string): Promise<void>;
   openConnection(id: string): Promise<void>;
   closeConnection(id: string): Promise<void>;
-  runQuery(connectionId: string, sql: string): Promise<QueryResult>;
+  runQuery(connectionId: string, sql: string, options?: { recordHistory?: boolean }): Promise<QueryResult>;
   listTables(connectionId: string): Promise<TableInfo[]>;
   listColumns(connectionId: string, table: string): Promise<ColumnInfo[]>;
   listForeignKeys(connectionId: string): Promise<ForeignKey[]>;

@@ -27,6 +27,7 @@ export function TopNav({
 }) {
   const active = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const activeId = useStore((s) => s.activeConnectionId);
+  const connectingId = useStore((s) => s.connectingConnectionId);
   const sql = useStore((s) => s.sql);
   const setTopView = useStore((s) => s.setTopView);
   const setView = useStore((s) => s.setView);
@@ -60,7 +61,13 @@ export function TopNav({
       </div>
 
       <div className="bud-tb-tools">
-        <button className="bud-tb-icon" title={sidebarHidden ? "Show sidebar" : "Hide sidebar"} onClick={onToggleSidebar}>
+        <button
+          className="bud-tb-icon"
+          title={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+          aria-label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+          aria-expanded={!sidebarHidden}
+          onClick={onToggleSidebar}
+        >
           <IconLayoutSidebar size={16} stroke={1.6} />
         </button>
         <span className="bud-tb-divider" />
@@ -68,10 +75,10 @@ export function TopNav({
           <IconFilePlus size={16} stroke={1.6} />
           <span>New query</span>
         </button>
-        <button className="bud-tb-icon bud-tb-secondary" title="Open .sql file" onClick={() => fileRef.current?.click()}>
+        <button className="bud-tb-icon bud-tb-secondary" title="Open .sql file" aria-label="Open SQL file" onClick={() => fileRef.current?.click()}>
           <IconFolderOpen size={16} stroke={1.6} />
         </button>
-        <button className="bud-tb-icon bud-tb-secondary" title="Save as script" onClick={() => void save()}>
+        <button className="bud-tb-icon bud-tb-secondary" title="Save as script" aria-label="Save as script" onClick={() => void save()}>
           <IconDeviceFloppy size={16} stroke={1.6} />
         </button>
         <span className="bud-tb-divider" />
@@ -79,7 +86,7 @@ export function TopNav({
           <IconPlugConnected size={16} stroke={1.6} />
           <span>Connect</span>
         </button>
-        <button className="bud-tb-icon bud-tb-secondary" title="Reconnect" onClick={() => activeId && void openAndIntrospect(activeId)} disabled={!activeId}>
+        <button className="bud-tb-icon bud-tb-secondary" title="Reconnect" aria-label="Reconnect" onClick={() => activeId && void openAndIntrospect(activeId)} disabled={!activeId || !!connectingId || running}>
           <IconRefresh size={16} stroke={1.6} />
         </button>
       </div>
@@ -96,16 +103,20 @@ export function TopNav({
         <kbd>⌘K</kbd>
       </MotionButton>
 
-      <div className={`bud-tb-conn ${active ? "on" : ""}`} title={active ? `Connected to ${active.name}` : "No active connection"}>
+      <div
+        className={`bud-tb-conn ${active ? "on" : ""} ${connectingId ? "pending" : ""}`}
+        title={connectingId ? `Connecting to ${active?.name ?? "data source"}` : active ? `Connected to ${active.name}` : "No active connection"}
+        aria-live="polite"
+      >
         <span className="bud-tb-conn-dot" />
-        <span>{active ? active.name : "No connection"}</span>
+        <span>{connectingId ? `Connecting · ${active?.name ?? "data source"}` : active ? active.name : "No connection"}</span>
       </div>
 
       <MotionButton
         className="bud-tb-run"
         title="Execute query (⌘↵)"
         onClick={() => void run()}
-        disabled={!activeId || running}
+        disabled={!activeId || !!connectingId || running}
         aria-busy={running}
         whileTap={{ scale: 0.96 }}
       >
@@ -114,13 +125,13 @@ export function TopNav({
       </MotionButton>
 
       <div className="bud-tb-utility">
-        <button title="SQL history" onClick={() => setView("history")}>
+        <button title="SQL history" aria-label="SQL history" onClick={() => setView("history")}>
           <IconHistory size={17} stroke={1.7} />
         </button>
-        <button title="Settings" onClick={() => setTopView("settings")}>
+        <button title="Settings" aria-label="Settings" onClick={() => setTopView("settings")}>
           <IconSettings size={17} stroke={1.7} />
         </button>
-        <button title="Keyboard shortcuts (?)" onClick={() => window.dispatchEvent(new Event("orbitodb:shortcuts"))}>
+        <button title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" onClick={() => window.dispatchEvent(new Event("orbitodb:shortcuts"))}>
           <IconKeyboard size={17} stroke={1.7} />
         </button>
       </div>

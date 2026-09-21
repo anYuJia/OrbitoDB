@@ -141,7 +141,10 @@ class LocalBackend implements Backend {
     } catch (e) {
       throw queryErr(e);
     }
-    await this.persist(id);
+    // Keep manual transactions truly atomic. COMMIT/ROLLBACK is handled by
+    // runQuery(), which persists the final database state once the transaction
+    // closes; exporting here would leak uncommitted changes into IndexedDB.
+    if (!this.txn.has(id)) await this.persist(id);
   }
 
   /* ---- connections (persisted to localStorage) ---- */

@@ -23,8 +23,8 @@ export const tauriBackend: Backend = {
     invoke<void>("create_database", { cfg, password, name }),
   openConnection: (id) => invoke<void>("open_connection", { id }),
   closeConnection: (id) => invoke<void>("close_connection", { id }),
-  runQuery: (connectionId, sql) =>
-    invoke<QueryResult>("run_query", { connectionId, sql }),
+  runQuery: (connectionId, sql, options) =>
+    invoke<QueryResult>("run_query", { connectionId, sql, recordHistory: options?.recordHistory ?? true }),
   listTables: (connectionId) =>
     invoke<TableInfo[]>("list_tables", { connectionId }),
   listColumns: (connectionId, table) =>

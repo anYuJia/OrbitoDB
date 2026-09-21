@@ -16,21 +16,12 @@ import {
   IconTable,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getBackend } from "../../ipc/backend";
-import { resolveParams } from "../../lib/params";
 import { formatSql } from "../../lib/sqlformat";
 import { CellViewer } from "./CellViewer";
 import { ExportMenu } from "./ExportMenu";
-import { confirmDialog, promptDialog } from "../../state/dialog";
-import { changesSchema, confirmIfDestructive, confirmProdWrite, isWrite } from "../../state/safety";
-import { toast } from "../../state/toast";
-import type { AppError, Column } from "../../ipc/types";
-import { isFkError, useStore, withFkDisabled } from "../../state/store";
-
-function normalize(e: unknown): AppError {
-  if (e && typeof e === "object" && "kind" in e) return e as AppError;
-  return { kind: "internal", message: String(e) };
-}
+import { promptDialog } from "../../state/dialog";
+import type { Column } from "../../ipc/types";
+import { useStore } from "../../state/store";
 
 const KEYWORDS = new Set(
   (
@@ -110,30 +101,25 @@ export function SqlPanel() {
   const connections = useStore((s) => s.connections);
   const conn = useStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
-  const loadHistory = useStore((s) => s.loadHistory);
   const history = useStore((s) => s.history);
   const tables = useStore((s) => s.schema.tables);
   const columnsByTable = useStore((s) => s.schema.columnsByTable);
   const saveScript = useStore((s) => s.saveScript);
   const saveFavorite = useStore((s) => s.saveFavorite);
-  const activeEditorId = useStore((s) => s.activeEditorId);
   const editors = useStore((s) => s.editors);
   const selectEditor = useStore((s) => s.selectEditor);
-  const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
   const res = useStore((s) => s.editorResults[s.activeEditorId] ?? null);
   const err = useStore((s) => s.editorErrors[s.activeEditorId] ?? null);
-  const setEditorResult = useStore((s) => s.setEditorResult);
+  const running = useStore((s) => s.running);
+  const run = useStore((s) => s.run);
+  const cancelRun = useStore((s) => s.cancelRun);
   const autoCommit = useStore((s) => s.autoCommit);
   const txnDirty = useStore((s) => s.txnDirty);
   const setAutoCommit = useStore((s) => s.setAutoCommit);
-  const beginTxnIfManual = useStore((s) => s.beginTxnIfManual);
   const commitTxn = useStore((s) => s.commitTxn);
   const rollbackTxn = useStore((s) => s.rollbackTxn);
-  const refreshSchema = useStore((s) => s.refreshSchema);
 
-  const [running, setRunning] = useState(false);
   const [tab, setTab] = useState<Tab>("result");
-  const [sticky, setSticky] = useState(false);
   const [maxRows, setMaxRows] = useState("1000");
   const [maxChars, setMaxChars] = useState("-1");
   const [caretLine, setCaretLine] = useState(1);
@@ -152,72 +138,22 @@ export function SqlPanel() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const pendingCaret = useRef<number | null>(null);
   const pendingSel = useRef<{ s: number; e: number } | null>(null);
-  const runId = useRef(0);
 
   const schemaName = conn?.engine === "postgres" ? "public" : conn?.database || "main";
   const explainPrefix = conn?.engine === "sqlite" ? "EXPLAIN QUERY PLAN " : "EXPLAIN ";
 
-  const exec = async (text = sql) => {
-    if (!connId || running) return;
-    if (readOnly && isWrite(text)) {
-      toast("Connection is read-only — writes are blocked.", "error");
-      return;
-    }
-    if (!(await confirmProdWrite(conn, text))) return;
-    const finalText = await resolveParams(text);
-    if (finalText == null) return; // a parameter prompt was cancelled
-    if (!(await confirmIfDestructive(finalText))) return;
-    const id = ++runId.current;
-    const edId = activeEditorId;
-    setRunning(true);
-    setEditorResult(edId, res, null); // keep current rows visible, clear any prior error
-    try {
-      if (isWrite(finalText)) await beginTxnIfManual();
-      const r = await getBackend().runQuery(connId, finalText);
-      if (runId.current !== id) return; // superseded / stopped
-      setEditorResult(edId, r, null);
+  const exec = (text = sql) => run(text);
+  const stop = cancelRun;
+
+  // Query execution is shared by the title bar, command palette and editor.
+  // Whichever surface starts it, bring the relevant output into view.
+  useEffect(() => {
+    if (err) setTab("log");
+    else if (res) {
       setSort(null);
       setTab("result");
-      if (changesSchema(finalText)) void refreshSchema();
-      void loadHistory();
-    } catch (e) {
-      if (runId.current !== id) return;
-      // If a foreign-key constraint blocked it, offer to retry with FK checks off.
-      if (
-        isFkError(e) &&
-        (await confirmDialog({
-          title: "Foreign key constraint failed",
-          message: "Other rows reference this data, so the statement was blocked. Retry with foreign-key checks disabled?",
-          confirmLabel: "Retry, skip FK checks",
-          danger: true,
-        }))
-      ) {
-        try {
-          const r2 = await withFkDisabled(connId, conn?.engine, true, () => getBackend().runQuery(connId, finalText));
-          if (runId.current !== id) return;
-          setEditorResult(edId, r2, null);
-          setSort(null);
-          setTab("result");
-          void loadHistory();
-          return;
-        } catch (e2) {
-          if (runId.current !== id) return;
-          setEditorResult(edId, null, normalize(e2));
-          setTab("log");
-          return;
-        }
-      }
-      setEditorResult(edId, null, normalize(e));
-      setTab("log");
-    } finally {
-      if (runId.current === id) setRunning(false);
     }
-  };
-
-  const stop = () => {
-    runId.current++; // any in-flight result will be ignored
-    setRunning(false);
-  };
+  }, [err, res]);
 
   /** The highlighted selection if there is one, otherwise the whole editor. */
   const selectedOrAll = () => {
@@ -440,7 +376,15 @@ export function SqlPanel() {
 
   const lineCount = sql.split("\n").length;
   const cap = Number.parseInt(maxRows, 10);
+  const charCap = Number.parseInt(maxChars, 10);
   const limited = res ? (Number.isFinite(cap) && cap > 0 ? res.rows.length > cap : false) : false;
+  const displayValue = (value: unknown): string => {
+    if (value == null) return "NULL";
+    const text = String(value);
+    return Number.isFinite(charCap) && charCap >= 0 && text.length > charCap
+      ? `${text.slice(0, charCap)}…`
+      : text;
+  };
 
   const sortedRows = useMemo(() => {
     if (!res) return [];
@@ -482,7 +426,7 @@ export function SqlPanel() {
         <button className="bud-tb-exec" title="Execute as script" onClick={() => void exec()} disabled={running || !connId}>
           <IconPlayerSkipForward size={15} stroke={1.8} />
         </button>
-        <button title="Stop" onClick={stop} disabled={!running}>
+        <button title="Stop waiting for the current query result" onClick={stop} disabled={!running}>
           <IconPlayerStop size={15} stroke={1.8} />
         </button>
         <span className="bud-tb-sep" />
@@ -530,6 +474,8 @@ export function SqlPanel() {
           <select
             className="bud-cb-select"
             value={connId ?? ""}
+            disabled={running || txnDirty}
+            title={txnDirty ? "Commit or roll back before switching connections" : undefined}
             onChange={(e) => {
               if (e.target.value && e.target.value !== connId) void openAndIntrospect(e.target.value);
             }}
@@ -542,23 +488,17 @@ export function SqlPanel() {
             ))}
           </select>
         </label>
-        <label className="bud-cb-check">
-          <input type="checkbox" checked={sticky} onChange={(e) => setSticky(e.target.checked)} />
-          <span>Sticky Database</span>
-        </label>
-        <label className="bud-cb-field grow">
+        <div className="bud-cb-field grow">
           <span className="bud-cb-label">Schema</span>
-          <select className="bud-cb-select" defaultValue={schemaName}>
-            <option>{schemaName}</option>
-          </select>
-        </label>
+          <span className="bud-cb-static" title="Active schema">{schemaName}</span>
+        </div>
         <label className="bud-cb-field sm">
           <span className="bud-cb-label">Max Rows</span>
-          <input className="bud-cb-input" value={maxRows} onChange={(e) => setMaxRows(e.target.value)} />
+          <input type="number" min="1" inputMode="numeric" className="bud-cb-input" value={maxRows} onChange={(e) => setMaxRows(e.target.value)} />
         </label>
         <label className="bud-cb-field sm">
           <span className="bud-cb-label">Max Chars</span>
-          <input className="bud-cb-input" value={maxChars} onChange={(e) => setMaxChars(e.target.value)} />
+          <input type="number" min="-1" inputMode="numeric" title="Use -1 for unlimited" className="bud-cb-input" value={maxChars} onChange={(e) => setMaxChars(e.target.value)} />
         </label>
       </div>
 
@@ -603,6 +543,7 @@ export function SqlPanel() {
               onBlur={() => setTimeout(() => setAc(null), 120)}
               onKeyDown={(e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault();
                   setAc(null);
                   void exec(selectedOrAll());
                   return;
@@ -731,7 +672,8 @@ export function SqlPanel() {
           {tab === "log" ? (
             (() => {
               const lf = logFilter.trim().toLowerCase();
-              const rows = lf ? history.filter((h) => h.sql.toLowerCase().includes(lf)) : history;
+              const connectionHistory = history.filter((entry) => entry.connectionId === connId);
+              const rows = lf ? connectionHistory.filter((h) => h.sql.toLowerCase().includes(lf)) : connectionHistory;
               return (
                 <div className="bud-logs">
                   <div className="bud-logs-bar">
@@ -755,7 +697,7 @@ export function SqlPanel() {
                       </div>
                     )}
                     {rows.length === 0 && !err ? (
-                      <div className="bud-empty">{history.length === 0 ? "No queries run yet." : "No matching log entries."}</div>
+                      <div className="bud-empty">{connectionHistory.length === 0 ? "No queries run on this connection yet." : "No matching log entries."}</div>
                     ) : (
                       rows.map((h) => (
                         <div className="bud-log-row" key={h.id}>
@@ -806,7 +748,11 @@ export function SqlPanel() {
                       <tr>
                         <th className="bud-rownum" />
                         {res.columns.map((c, i) => (
-                          <th key={i} className={sort?.col === i ? "sorted" : ""}>
+                          <th
+                            key={i}
+                            className={sort?.col === i ? "sorted" : ""}
+                            aria-sort={sort?.col === i ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
+                          >
                             <button className="bud-th-sort" title={`Sort by ${c.name}`} onClick={() => toggleSort(i)}>
                               <span className="bud-th-name">{c.name}</span>
                               {sort?.col === i && <span className="bud-th-arrow">{sort.dir === 1 ? "↑" : "↓"}</span>}
@@ -823,10 +769,10 @@ export function SqlPanel() {
                             <td
                               key={ci}
                               className={cell == null ? "bud-null" : ""}
-                              title="Click to inspect"
+                              title={cell == null ? "NULL" : String(cell)}
                               onClick={() => setCellView({ value: cell == null ? "NULL" : String(cell), column: res.columns[ci]?.name })}
                             >
-                              {cell == null ? "NULL" : String(cell)}
+                              {displayValue(cell)}
                             </td>
                           ))}
                         </tr>

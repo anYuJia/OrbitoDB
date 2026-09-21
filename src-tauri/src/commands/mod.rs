@@ -120,11 +120,14 @@ pub async fn run_query(
     state: State<'_, AppState>,
     connection_id: String,
     sql: String,
+    record_history: Option<bool>,
 ) -> AppResult<QueryResult> {
     let driver = state.registry.get(&connection_id).await?;
     let result = driver.execute(&sql).await?;
     // History failure must never fail the query itself.
-    let _ = state.store.add_history(&connection_id, &sql).await;
+    if record_history.unwrap_or(true) {
+        let _ = state.store.add_history(&connection_id, &sql).await;
+    }
     Ok(result)
 }
 
