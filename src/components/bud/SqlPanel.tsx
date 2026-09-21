@@ -26,6 +26,8 @@ import { ExportMenu } from "./ExportMenu";
 import { confirmDialog, promptDialog } from "../../state/dialog";
 import { confirmIfDestructive, confirmProdWrite, isWrite } from "../../state/safety";
 import { toast } from "../../state/toast";
+import { useI18n } from "../../lib/i18n";
+import { shortcutLabel } from "../../lib/platform";
 import type { AppError, Column } from "../../ipc/types";
 import { isFkError, useStore, withFkDisabled } from "../../state/store";
 
@@ -106,6 +108,10 @@ function caretXY(ta: HTMLTextAreaElement): { x: number; y: number } {
 }
 
 export function SqlPanel() {
+  const { locale, t } = useI18n();
+  const runShortcut = shortcutLabel("Enter");
+  const formatShortcut = shortcutLabel("F", { shift: true });
+  const commentShortcut = shortcutLabel("/");
   const sql = useStore((s) => s.sql);
   const setSql = useStore((s) => s.setSql);
   const connId = useStore((s) => s.activeConnectionId);
@@ -568,44 +574,44 @@ export function SqlPanel() {
       <div className="bud-ide-toolbar">
         <button
           className="bud-sql-run bud-tb-exec"
-          title="Execute — runs the selection if any (⌘↵)"
+          title={t("sql.executeSelection", { shortcut: runShortcut })} aria-label={t("sql.executeSelection", { shortcut: runShortcut })}
           onClick={() => void exec(selectedOrAll())}
           disabled={running || !connId}
         >
           <IconPlayerPlay size={15} stroke={1.8} />
         </button>
-        <button className="bud-tb-exec" title="Execute as script" onClick={() => void exec()} disabled={running || !connId}>
+        <button className="bud-tb-exec" title={t("sql.executeScript")} aria-label={t("sql.executeScript")} onClick={() => void exec()} disabled={running || !connId}>
           <IconPlayerSkipForward size={15} stroke={1.8} />
         </button>
-        <button title="Stop" onClick={() => void stop()} disabled={!running}>
+        <button title={t("sql.stop")} aria-label={t("sql.stop")} onClick={() => void stop()} disabled={!running}>
           <IconPlayerStop size={15} stroke={1.8} />
         </button>
         <span className="bud-tb-sep" />
         <button
           className={`bud-tb-toggle ${autoCommit ? "" : "on"}`}
-          title={autoCommit ? "Auto-commit is on — click for manual transactions" : "Manual commit — writes run in a transaction"}
+          title={autoCommit ? t("sql.autoCommitOn") : t("sql.manualCommit")}
           onClick={() => setAutoCommit(!autoCommit)}
         >
-          {autoCommit ? "Auto" : "Manual"}
+          {autoCommit ? t("sql.auto") : t("sql.manual")}
         </button>
-        <button className={`bud-tb-commit ${txnDirty ? "live" : ""}`} title="Commit transaction" onClick={() => void commitTxn()} disabled={!txnDirty}>
+        <button className={`bud-tb-commit ${txnDirty ? "live" : ""}`} title={t("sql.commitTransaction")} aria-label={t("sql.commitTransaction")} onClick={() => void commitTxn()} disabled={!txnDirty}>
           <IconCheck size={15} stroke={1.8} />
         </button>
-        <button className={`bud-tb-rollback ${txnDirty ? "live" : ""}`} title="Rollback transaction" onClick={() => void rollbackTxn()} disabled={!txnDirty}>
+        <button className={`bud-tb-rollback ${txnDirty ? "live" : ""}`} title={t("sql.rollbackTransaction")} aria-label={t("sql.rollbackTransaction")} onClick={() => void rollbackTxn()} disabled={!txnDirty}>
           <IconArrowBackUp size={15} stroke={1.8} />
         </button>
         <span className="bud-tb-sep" />
-        <button title="Format SQL (Ctrl+Shift+F)" onClick={() => setSql(formatSql(sql))} disabled={!sql.trim()}>
+        <button title={t("sql.format", { shortcut: formatShortcut })} aria-label={t("sql.format", { shortcut: formatShortcut })} onClick={() => setSql(formatSql(sql))} disabled={!sql.trim()}>
           <IconAlignLeft size={15} stroke={1.8} />
         </button>
-        <button title="Toggle comment (Ctrl+/)" onClick={toggleComment} disabled={!sql.trim()}>
+        <button title={t("sql.toggleComment", { shortcut: commentShortcut })} aria-label={t("sql.toggleComment", { shortcut: commentShortcut })} onClick={toggleComment} disabled={!sql.trim()}>
           <IconMessage2 size={15} stroke={1.8} />
         </button>
-        <button title="Re-run" onClick={() => void exec(selectedOrAll())} disabled={running || !connId}>
+        <button title={t("sql.rerun")} aria-label={t("sql.rerun")} onClick={() => void exec(selectedOrAll())} disabled={running || !connId}>
           <IconRefresh size={15} stroke={1.8} />
         </button>
         <button
-          title="Explain plan"
+          title={t("sql.explain")} aria-label={t("sql.explain")}
           onClick={() => void explain("plan")}
           disabled={running || !sql.trim() || !connId}
         >
@@ -614,8 +620,8 @@ export function SqlPanel() {
         <button
           title={
             conn?.engine === "sqlite"
-              ? "Analyze is unavailable for SQLite — use Explain plan"
-              : "Explain Analyze — executes the selected SELECT/WITH query"
+              ? t("sql.analyzeUnavailable")
+              : t("sql.explainAnalyze")
           }
           onClick={() => void explain("analyze")}
           disabled={running || !sql.trim() || !connId || conn?.engine === "sqlite" || readOnly}
@@ -623,20 +629,20 @@ export function SqlPanel() {
           <IconActivity size={15} stroke={1.8} />
         </button>
         <span className="bud-tb-sep" />
-        <button title="Save as script" onClick={() => void saveAs("script")} disabled={!sql.trim()}>
+        <button title={t("sql.saveScript")} aria-label={t("sql.saveScript")} onClick={() => void saveAs("script")} disabled={!sql.trim()}>
           <IconDeviceFloppy size={15} stroke={1.8} />
         </button>
-        <button title="Add to Starred" onClick={() => void saveAs("favorite")} disabled={!sql.trim()}>
+        <button title={t("sql.addStarred")} aria-label={t("sql.addStarred")} onClick={() => void saveAs("favorite")} disabled={!sql.trim()}>
           <IconStar size={15} stroke={1.8} />
         </button>
-        <button title="Clear editor" onClick={() => setSql("")} disabled={!sql}>
+        <button title={t("sql.clearEditor")} aria-label={t("sql.clearEditor")} onClick={() => setSql("")} disabled={!sql}>
           <IconEraser size={15} stroke={1.8} />
         </button>
       </div>
 
       <div className="odb-query-context">
         <label className="odb-query-connection">
-          <span>Connection</span>
+          <span>{t("sql.connection")}</span>
           <select
             value={connId ?? ""}
             onChange={(e) => {
@@ -646,7 +652,7 @@ export function SqlPanel() {
               void openAndIntrospect(nextId);
             }}
           >
-            {!connId && <option value="">No connection</option>}
+            {!connId && <option value="">{t("sql.noConnection")}</option>}
             {connections.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -657,7 +663,7 @@ export function SqlPanel() {
         <span className="odb-query-separator" />
         {conn?.engine === "postgres" ? (
           <label className="odb-query-schema">
-            <span>Schema</span>
+            <span>{t("sql.schema")}</span>
             <select value={schemaName} onChange={(e) => void switchSchema(e.target.value)}>
               {(schemas.length ? schemas : [schemaName]).map((schema) => (
                 <option key={schema} value={schema}>{schema}</option>
@@ -666,22 +672,22 @@ export function SqlPanel() {
           </label>
         ) : (
           <div className="odb-query-context-item">
-            <span>Database</span>
+            <span>{t("sql.database")}</span>
             <b>{schemaName}</b>
           </div>
         )}
         <div className="odb-query-context-item">
-          <span>Engine</span>
+          <span>{t("sql.engine")}</span>
           <b>{conn?.engine === "postgres" ? "PostgreSQL" : conn?.engine === "mysql" ? "MySQL" : conn?.engine === "sqlite" ? "SQLite" : "—"}</b>
         </div>
         <span className="odb-query-context-spacer" />
         <label className="odb-query-limit">
-          <span>Display limit</span>
+          <span>{t("sql.displayLimit")}</span>
           <input
             inputMode="numeric"
             value={maxRows}
             onChange={(e) => setMaxRows(e.target.value.replace(/\D/g, ""))}
-            aria-label="Displayed query result row limit"
+            aria-label={t("sql.rowLimit")}
           />
         </label>
       </div>
@@ -806,15 +812,14 @@ export function SqlPanel() {
         <div className="bud-sql-bar">
           <button
             className="bud-sql-exec"
-            title="Execute — runs the selection if any (⌘↵)"
+            title={t("sql.executeSelection", { shortcut: runShortcut })} aria-label={t("sql.executeSelection", { shortcut: runShortcut })}
             onClick={() => void exec(selectedOrAll())}
             disabled={running || !connId}
           >
             <IconPlayerPlay size={13} stroke={1.9} />
-            {running ? "Running…" : "Execute"}
+            {running ? t("sql.running") : t("sql.execute")}
             <span className="bud-kbd">
-              <kbd>⌘</kbd>
-              <kbd>↵</kbd>
+              <kbd>{runShortcut}</kbd>
             </span>
           </button>
           <span className="bud-ed-status">
@@ -822,33 +827,33 @@ export function SqlPanel() {
           </span>
           <span className="bud-ed-mode">INS</span>
           <span className="bud-ed-spacer" />
-          {running && <span className="bud-ed-running">Running…</span>}
+          {running && <span className="bud-ed-running">{t("sql.running")}</span>}
           {res && !err && (
             <span className="bud-ed-meta">
-              {res.rows.length} {res.rows.length === 1 ? "row" : "rows"} · {res.elapsedMs} ms
+              {t("status.rows", { count: res.rows.length.toLocaleString(locale) })} · {res.elapsedMs} ms
             </span>
           )}
-          {txnDirty && <span className="bud-ed-uncommitted" title="Uncommitted changes — Commit or Rollback">● Uncommitted</span>}
+          {txnDirty && <span className="bud-ed-uncommitted" title={t("sql.uncommitted")}>● {t("sql.uncommittedShort")}</span>}
           <span className="bud-ed-eol">LF</span>
-          <button className="bud-ed-eol bud-ed-commitmode" onClick={() => setAutoCommit(!autoCommit)} title="Toggle auto-commit">
-            Auto Commit: {autoCommit ? "ON" : "OFF"}
+          <button className="bud-ed-eol bud-ed-commitmode" onClick={() => setAutoCommit(!autoCommit)} title={t("sql.toggleAutocommit")}>
+            {t("sql.autoCommit")}: {autoCommit ? "ON" : "OFF"}
           </button>
           <span className="bud-ed-eol">UTF-8</span>
         </div>
       </div>
 
-      <div className="bud-vsplit" onMouseDown={onSplitDown} title="Drag to resize" />
+      <div className="bud-vsplit" onMouseDown={onSplitDown} title={t("sql.resize")} />
 
       <div className="bud-sql-results">
         <div className="bud-results-tabs">
           <button className={tab === "result" ? "on" : ""} onClick={() => setTab("result")}>
-            {res ? `Result · ${res.rows.length.toLocaleString()}` : "Result"}
+            {res ? `${t("sql.result")} · ${res.rows.length.toLocaleString(locale)}` : t("sql.result")}
           </button>
           <button className={tab === "dbms" ? "on" : ""} onClick={() => setTab("dbms")}>
-            Messages
+            {t("sql.messages")}
           </button>
           <button className={tab === "log" ? "on" : ""} onClick={() => setTab("log")}>
-            Log
+            {t("sql.log")}
           </button>
         </div>
         <div className="bud-results-body">
@@ -912,7 +917,7 @@ export function SqlPanel() {
                   <IconSearch size={13} stroke={1.7} />
                   <input value={rowFilter} onChange={(e) => setRowFilter(e.target.value)} placeholder="Filter rows…" />
                 </div>
-                <button title="Re-run" onClick={() => void exec()} disabled={running || !connId}>
+                <button title={t("sql.rerun")} aria-label={t("sql.rerun")} onClick={() => void exec()} disabled={running || !connId}>
                   <IconRefresh size={14} stroke={1.7} />
                 </button>
                 <ExportMenu result={{ ...res, rows: filteredRows }} />
