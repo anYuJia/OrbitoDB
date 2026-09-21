@@ -231,7 +231,7 @@ async fn vacuum_backup(
             state.registry.get(&cfg.id).await?
         }
     };
-    let escaped = destination.to_string_lossy().replace(''', "''");
+    let escaped = destination.to_string_lossy().replace(char::from(39), "''");
     driver.execute(&format!("VACUUM INTO '{escaped}'")).await?;
     Ok(())
 }
