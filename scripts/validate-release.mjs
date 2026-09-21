@@ -37,8 +37,6 @@ const requiredWorkflowFragments = [
   '--bundles deb,appimage',
   'OrbitoDB-windows-x64-portable.exe',
   'OrbitoDB-windows-x64-setup.exe',
-  'OrbitoDB-macos-arm64.dmg',
-  'OrbitoDB-macos-x64.dmg',
   'OrbitoDB-linux-x64.deb',
   'OrbitoDB-linux-x64.AppImage',
   '.sha256',
@@ -47,6 +45,14 @@ const requiredWorkflowFragments = [
 
 for (const fragment of requiredWorkflowFragments) {
   if (!workflow.includes(fragment)) fail(`release workflow is missing: ${fragment}`);
+}
+
+for (const fragment of [
+  'arch: arm64',
+  'arch: x64',
+  'OrbitoDB-macos-${{ matrix.arch }}.dmg',
+]) {
+  if (!workflow.includes(fragment)) fail(`macOS release matrix is missing: ${fragment}`);
 }
 
 if (!workflow.includes('needs: [windows, macos, linux]')) {
