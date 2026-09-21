@@ -60,4 +60,8 @@ jobs:
 
       - name: Audit Rust dependencies
         working-directory: src-tauri
-        run: cargo audit
+        # RUSTSEC-2023-0071 has no patched rsa release as of 2026-09-14.
+        # SQLx uses rsa as a MySQL client for public-key password encryption;
+        # OrbitoDB never performs RSA private-key decryption, which is the
+        # vulnerable timing-side-channel operation described by the advisory.
+        run: cargo audit --ignore RUSTSEC-2023-0071
