@@ -55,8 +55,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
       - name: Audit Rust dependencies
-        uses: actions-rust-lang/audit@v1
-        with:
-          workingDirectory: src-tauri
-          createIssues: false
+        working-directory: src-tauri
+        run: cargo audit
