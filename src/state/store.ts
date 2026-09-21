@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { getBackend } from "../ipc/backend";
 import { inferColumns } from "../lib/csv";
+import { buildBulkInsertStatements } from "../lib/importSql";
+import { buildTablePageSql } from "../lib/tablePaging";
 import { buildTableDdl, quoteDdlIdentifier } from "../lib/ddl";
 import { buildCreateViewSql, buildDropDatabaseObjectSql } from "../lib/databaseObjects";
 import { resolveParams } from "../lib/params";
@@ -50,6 +52,13 @@ export interface ViewDef {
   table: string;
   name: string;
   filter: ViewFilter | null;
+}
+
+export interface DataPageState {
+  page: number;
+  pageSize: number;
+  totalRows: number;
+  search: string;
 }
 
 /** A saved SQL snippet — used for both Scripts and Starred queries. */
@@ -200,6 +209,7 @@ export interface AppStore {
   favorites: SavedItem[];
   pendingColFilter: { column: string; value: string } | null;
   readOnlyConns: string[];
+  dataPage: DataPageState;
 
   loadConnections: () => Promise<void>;
   restoreSession: () => Promise<void>;
@@ -223,6 +233,8 @@ export interface AppStore {
   loadHistory: () => Promise<void>;
   openTableData: (table: string, opts?: { newTab?: boolean }) => Promise<void>;
   closeTableTab: (table: string) => void;
+  loadTablePage: (page: number) => Promise<void>;
+  setTablePageSize: (pageSize: number) => Promise<void>;
   searchTable: (query: string) => Promise<void>;
   navigateFk: (refTable: string, refColumn: string, value: unknown) => Promise<void>;
   setPendingColFilter: (v: { column: string; value: string } | null) => void;
@@ -250,7 +262,12 @@ export interface AppStore {
   dropColumn: (table: string, column: string) => Promise<void>;
   renameColumn: (table: string, from: string, to: string) => Promise<void>;
   renameTable: (from: string, to: string) => Promise<void>;
-  importCsv: (table: string, headers: string[], rows: string[][], opts?: { create?: boolean }) => Promise<void>;
+  importCsv: (
+    table: string,
+    headers: string[],
+    rows: (string | null)[][],
+    opts?: { create?: boolean },
+  ) => Promise<void>;
   openInspector: (rowIndex: number) => void;
   closeInspector: () => void;
   setTopView: (v: TopView) => void;
@@ -326,6 +343,7 @@ export const useStore = create<AppStore>((set, get) => ({
   favorites: loadSaved(FAVS_KEY),
   pendingColFilter: null,
   readOnlyConns: loadReadOnly(),
+  dataPage: { page: 0, pageSize: 100, totalRows: 0, search: "" },
 
   toggleReadOnly: (id) =>
     set((s) => {
@@ -433,6 +451,7 @@ export const useStore = create<AppStore>((set, get) => ({
       activeViewId: null,
       selection: [],
       inspectorRow: null,
+      dataPage: { ...get().dataPage, page: 0, totalRows: 0, search: "" },
     });
     try {
       await backend.openConnection(id);
@@ -802,10 +821,7 @@ export const useStore = create<AppStore>((set, get) => ({
   openTableData: async (table, opts) => {
     const id = get().activeConnectionId;
     if (!id) return;
-    // Maintain the open-table tab list. Ctrl/Cmd-click (newTab) appends a tab;
-    // a plain click replaces the active table tab so casual browsing doesn't pile
-    // up tabs. An already-open table is just re-activated.
-    const { openTables, editTable, view } = get();
+    const { openTables, editTable, view, dataPage } = get();
     let nextTabs: string[];
     if (openTables.includes(table)) {
       nextTabs = openTables;
@@ -816,9 +832,7 @@ export const useStore = create<AppStore>((set, get) => ({
     } else {
       nextTabs = [...openTables, table];
     }
-    const conn = get().connections.find((item) => item.id === id);
-    const tableRef = conn ? quoteDdlIdentifier(conn.engine, table) : table;
-    const sql = `SELECT * FROM ${tableRef} LIMIT 1000;`;
+
     set({
       view: "data",
       topView: "data",
@@ -829,23 +843,41 @@ export const useStore = create<AppStore>((set, get) => ({
       inspectorRow: null,
       activeViewId: null,
       selection: [],
+      dataPage: { ...dataPage, page: 0, totalRows: 0, search: "" },
     });
+
     try {
-      // Column introspection is best-effort — it must never block the data load.
       try {
         await get().expandTable(table);
       } catch {
-        /* fall back to the columns the query itself returns */
+        /* query metadata still provides a usable grid */
       }
       const cols = get().schema.columnsByTable[table] ?? [];
-      const pkColumn = cols.find((c) => c.isPrimaryKey)?.name ?? null;
-      let result = await backend.runQuery(id, sql);
-      // Empty tables yield no columns from the row set — show the schema's columns.
+      const conn = get().connections.find((item) => item.id === id);
+      if (!conn) throw new Error("Active connection metadata is unavailable.");
+      const sql = buildTablePageSql(
+        conn.engine,
+        table,
+        cols.map((column) => column.name),
+        0,
+        dataPage.pageSize,
+      );
+      const [countResult, pageResult] = await Promise.all([
+        backend.runQuerySilent(id, sql.countSql),
+        backend.runQuerySilent(id, sql.dataSql),
+      ]);
+      const totalRows = Number(countResult.rows?.[0]?.[0] ?? 0);
+      let result = pageResult;
       if (result.columns.length === 0 && cols.length > 0) {
-        result = { ...result, columns: cols.map((c) => ({ name: c.name, dataType: c.dataType })) };
+        result = { ...result, columns: cols.map((column) => ({ name: column.name, dataType: column.dataType })) };
       }
-      set({ result, editTable: { table, pkColumn }, loadingResult: false });
-      await get().loadHistory();
+      const pkColumn = cols.find((column) => column.isPrimaryKey)?.name ?? null;
+      set({
+        result,
+        editTable: { table, pkColumn },
+        loadingResult: false,
+        dataPage: { page: 0, pageSize: dataPage.pageSize, totalRows, search: "" },
+      });
     } catch (e) {
       set({ error: normalizeError(e), result: null, loadingResult: false });
     }
@@ -864,30 +896,73 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  // Whole-table search: filters EVERY row of the active table on the server (not
-  // just the rows already loaded into the grid), across all columns. Engine-aware
-  // casting/quoting so it works on SQLite, PostgreSQL and MySQL.
-  searchTable: async (query) => {
-    const { activeConnectionId, editTable, result, connections } = get();
+  loadTablePage: async (requestedPage) => {
+    const { activeConnectionId, editTable, connections, schema, dataPage, result } = get();
     if (!activeConnectionId || !editTable) return;
-    const cols = (result?.columns ?? []).map((c) => c.name);
-    if (!cols.length) return;
-    const engine = connections.find((c) => c.id === activeConnectionId)?.engine;
-    const qid =
-      engine === "mysql"
-        ? (n: string) => "`" + n.replace(/`/g, "``") + "`"
-        : (n: string) => '"' + n.replace(/"/g, '""') + '"';
-    const toText = (e: string) => (engine === "mysql" ? `CAST(${e} AS CHAR)` : `CAST(${e} AS TEXT)`);
-    const lit = `'%${query.replace(/'/g, "''")}%'`;
-    const where = cols.map((c) => `${toText(qid(c))} LIKE ${lit}`).join(" OR ");
-    const from = qid(editTable.table);
-    set({ loadingResult: true, error: null });
+    const conn = connections.find((item) => item.id === activeConnectionId);
+    if (!conn) return;
+
+    const columns =
+      schema.columnsByTable[editTable.table]?.map((column) => column.name) ??
+      result?.columns.map((column) => column.name) ??
+      [];
+    const maxPage = Math.max(0, Math.ceil(dataPage.totalRows / dataPage.pageSize) - 1);
+    const page = Math.min(Math.max(0, Math.floor(requestedPage)), maxPage);
+    const sql = buildTablePageSql(
+      conn.engine,
+      editTable.table,
+      columns,
+      page,
+      dataPage.pageSize,
+      dataPage.search,
+    );
+    set({ loadingResult: true, error: null, selection: [], inspectorRow: null });
     try {
-      const r = await backend.runQuery(activeConnectionId, `SELECT * FROM ${from} WHERE ${where} LIMIT 1000;`);
-      set({ result: r, loadingResult: false });
+      const [countResult, pageResult] = await Promise.all([
+        backend.runQuerySilent(activeConnectionId, sql.countSql),
+        backend.runQuerySilent(activeConnectionId, sql.dataSql),
+      ]);
+      const totalRows = Number(countResult.rows?.[0]?.[0] ?? 0);
+      const actualMax = Math.max(0, Math.ceil(totalRows / dataPage.pageSize) - 1);
+      const actualPage = Math.min(page, actualMax);
+      if (actualPage !== page) {
+        const retry = buildTablePageSql(
+          conn.engine,
+          editTable.table,
+          columns,
+          actualPage,
+          dataPage.pageSize,
+          dataPage.search,
+        );
+        const retryResult = await backend.runQuerySilent(activeConnectionId, retry.dataSql);
+        set({
+          result: retryResult,
+          loadingResult: false,
+          dataPage: { ...dataPage, page: actualPage, totalRows },
+        });
+        return;
+      }
+      set({
+        result: pageResult,
+        loadingResult: false,
+        dataPage: { ...dataPage, page, totalRows },
+      });
     } catch (e) {
       set({ error: normalizeError(e), loadingResult: false });
     }
+  },
+
+  setTablePageSize: async (pageSize) => {
+    const size = Math.min(1000, Math.max(10, Math.floor(pageSize)));
+    set((state) => ({ dataPage: { ...state.dataPage, page: 0, pageSize: size } }));
+    await get().loadTablePage(0);
+  },
+
+  searchTable: async (query) => {
+    set((state) => ({
+      dataPage: { ...state.dataPage, page: 0, search: query.trim() },
+    }));
+    await get().loadTablePage(0);
   },
 
   editCell: async (rowIndex, colIndex, value) => {
@@ -1182,19 +1257,59 @@ export const useStore = create<AppStore>((set, get) => ({
     const id = get().activeConnectionId;
     if (!id) return;
     if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
-    const conn = get().connections.find((c) => c.id === id);
+    const conn = get().connections.find((item) => item.id === id);
+    if (!conn) return;
+    if (!headers.length || new Set(headers).size !== headers.length || headers.some((header) => !header.trim())) {
+      toast("Mapped import columns must be non-empty and unique.", "error");
+      return;
+    }
     if (!(await confirmProdWrite(conn, "INSERT"))) return;
+
+    let created = false;
+    let transactionStarted = false;
     try {
-      if (opts?.create) await backend.createTable(id, table, inferColumns(headers, rows));
-      for (const r of rows) await backend.insertRow(id, table, headers, r);
       if (opts?.create) {
-        await get().openAndIntrospect(id); // refresh tree + schema so the new table shows
+        const inferredRows = rows.map((row) => row.map((value) => value ?? ""));
+        await backend.createTable(id, table, inferColumns(headers, inferredRows));
+        created = true;
+      }
+
+      const statements = buildBulkInsertStatements(conn.engine, table, headers, rows, 200);
+      if (statements.length) {
+        await backend.runQuerySilent(id, "BEGIN");
+        transactionStarted = true;
+        for (const statement of statements) {
+          await backend.runQuerySilent(id, statement);
+        }
+        await backend.runQuerySilent(id, "COMMIT");
+        transactionStarted = false;
+      }
+
+      if (opts?.create) {
+        await get().openAndIntrospect(id);
         await get().openTableData(table);
       } else {
         await get().reload(table);
       }
-      toast(`Imported ${rows.length.toLocaleString()} ${rows.length === 1 ? "row" : "rows"} into ${table}`, "success");
+      toast(
+        `Imported ${rows.length.toLocaleString()} ${rows.length === 1 ? "row" : "rows"} into ${table}`,
+        "success",
+      );
     } catch (e) {
+      if (transactionStarted) {
+        try {
+          await backend.runQuerySilent(id, "ROLLBACK");
+        } catch {
+          /* best effort */
+        }
+      }
+      if (created) {
+        try {
+          await backend.dropTable(id, table);
+        } catch {
+          /* MySQL DDL may have auto-committed; leave the original error visible */
+        }
+      }
       const err = normalizeError(e);
       set({ error: err });
       toast(err.message ?? "Import failed", "error");
