@@ -252,6 +252,22 @@ export function SqlPanel() {
 
   const explain = async (mode: "plan" | "analyze") => {
     if (!connId || !conn || running) return;
+    if (mode === "analyze" && readOnly) {
+      toast("Read-only — Explain Analyze executes the query and is blocked.", "error");
+      return;
+    }
+    if (
+      mode === "analyze" &&
+      conn.env === "prod" &&
+      !(await confirmDialog({
+        title: "Run Explain Analyze on PRODUCTION?",
+        message: "Explain Analyze executes the selected SELECT/WITH query on the production database. Continue?",
+        confirmLabel: "Analyze on production",
+        danger: true,
+      }))
+    ) {
+      return;
+    }
     try {
       let serverVersion: string | null = null;
       if (mode === "analyze" && conn.engine === "mysql") {
@@ -602,7 +618,7 @@ export function SqlPanel() {
               : "Explain Analyze — executes the selected SELECT/WITH query"
           }
           onClick={() => void explain("analyze")}
-          disabled={running || !sql.trim() || !connId || conn?.engine === "sqlite"}
+          disabled={running || !sql.trim() || !connId || conn?.engine === "sqlite" || readOnly}
         >
           <IconActivity size={15} stroke={1.8} />
         </button>
