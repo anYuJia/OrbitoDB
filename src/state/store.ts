@@ -1044,10 +1044,10 @@ export const useStore = create<AppStore>((set, get) => ({
 
   dropTable: async (table) => {
     const id = get().activeConnectionId;
-    if (!id) return false;
+    if (!id) return;
     if (get().readOnlyConns.includes(id)) {
       toast("Read-only — writes are blocked.", "error");
-      return false;
+      return;
     }
     try {
       await backend.dropTable(id, table);
