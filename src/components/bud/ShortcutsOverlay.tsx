@@ -18,7 +18,7 @@ export function ShortcutsOverlay() {
       { keys: [primary, shift, "F"], label: t("shortcuts.format") },
       { keys: [primary, "D"], label: t("shortcuts.duplicate") },
       { keys: ["Alt", "↑", "↓"], label: t("shortcuts.moveLine") },
-      { keys: ["Tab", `${shift}Tab`], label: t("shortcuts.indent") },
+      { keys: ["Tab", isMacPlatform() ? "⇧Tab" : "Shift+Tab"], label: t("shortcuts.indent") },
       { keys: ["(", "[", "\"", "…"], label: t("shortcuts.wrap") },
       { keys: ["Alt", "1-9"], label: t("shortcuts.switchTab") },
       { keys: [primary, "Space"], label: t("shortcuts.autocomplete") },
