@@ -11,11 +11,18 @@ function oneStatement(sql: string): string {
   return body;
 }
 
+function scrubLiteralsAndComments(sql: string): string {
+  return sql
+    .replace(/--[^\n]*/g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/'(?:[^']|'')*'/g, "''")
+    .replace(/"(?:[^"]|"")*"/g, '""');
+}
+
 export function isReadOnlyQuery(sql: string): boolean {
-  const body = oneStatement(sql)
-    .replace(/^\s*(?:--[^\n]*\n\s*)*/g, "")
-    .trimStart();
-  return /^(SELECT|WITH)\b/i.test(body);
+  const body = scrubLiteralsAndComments(oneStatement(sql)).trimStart();
+  if (!/^(SELECT|WITH)\b/i.test(body)) return false;
+  return !/\b(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|REPLACE|GRANT|REVOKE|CALL|DO|COPY)\b/i.test(body);
 }
 
 export function buildExplainSql(
