@@ -471,7 +471,7 @@ function SettingsPanel({
       if (b === t("workspace.ungrouped")) return -1;
       return a.localeCompare(b);
     });
-  }, [connections]);
+  }, [connections, locale]);
 
   const engineName = (engine: string) =>
     engine === "postgres" ? "PostgreSQL" : engine === "mysql" ? "MySQL / MariaDB" : "SQLite";
@@ -479,8 +479,8 @@ function SettingsPanel({
   return (
     <PanelShell
       eyebrow={t("workspace.workspace")}
-      title="Connections"
-      subtitle="Manage local database profiles, safety settings and the active workspace connection."
+      title={t("workspace.connections")}
+      subtitle={t("workspace.connectionsSubtitle")}
     >
       <div className="odb-preference-row">
         <div>
