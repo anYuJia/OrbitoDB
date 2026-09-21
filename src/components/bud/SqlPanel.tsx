@@ -968,7 +968,7 @@ export function SqlPanel() {
           ) : res ? (
             <div className="bud-empty">Statement ran. {res.rowsAffected} rows affected.</div>
           ) : (
-            <div className="bud-empty">Write SQL and press Run (⌘/Ctrl + ↵).</div>
+            <div className="bud-empty">{t("sql.emptyHint", { shortcut: runShortcut })}</div>
           )}
         </div>
       </div>
