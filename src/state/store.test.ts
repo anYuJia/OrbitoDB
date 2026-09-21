@@ -142,8 +142,9 @@ describe("store", () => {
     useStore.getState().setSql("SELECT * FROM customers");
     await useStore.getState().run();
 
-    expect(useStore.getState().error).toBeNull();
-    expect(useStore.getState().result?.rows).toEqual([[1, "Ada"]]);
+    const state = useStore.getState();
+    expect(state.editorErrors[state.activeEditorId] ?? null).toBeNull();
+    expect(state.editorResults[state.activeEditorId]?.rows).toEqual([[1, "Ada"]]);
   });
 
   it("run() stores a typed query error and clears the active result", async () => {
@@ -152,8 +153,9 @@ describe("store", () => {
     useStore.getState().setSql("SELECT * FROM nope");
     await useStore.getState().run();
 
-    expect(useStore.getState().error?.kind).toBe("queryError");
-    expect(useStore.getState().result).toBeNull();
+    const state = useStore.getState();
+    expect(state.editorErrors[state.activeEditorId]?.kind).toBe("queryError");
+    expect(state.editorResults[state.activeEditorId] ?? null).toBeNull();
   });
 
   it("run() without a connection never calls the backend", async () => {
