@@ -7,6 +7,7 @@
 import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 import type { Backend } from "./backend";
+import { MAX_QUERY_HISTORY } from "../lib/retention";
 import type {
   AppError,
   BackupInfo,
@@ -24,6 +25,26 @@ import type {
 
 const CONNS_KEY = "orbitodb.connections";
 const HIST_KEY = "orbitodb.history";
+
+function recordHistory(connectionId: string, sql: string): void {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HIST_KEY) ?? "[]");
+    const current = Array.isArray(raw) ? (raw as HistoryEntry[]) : [];
+    const previousId = current[0]?.id ?? 0;
+    const entry: HistoryEntry = {
+      id: Math.max(Date.now(), previousId + 1),
+      connectionId,
+      sql,
+      ranAt: new Date().toISOString(),
+    };
+    localStorage.setItem(
+      HIST_KEY,
+      JSON.stringify([entry, ...current].slice(0, MAX_QUERY_HISTORY)),
+    );
+  } catch {
+    // History must never make a successful query fail.
+  }
+}
 
 function loadConns(): ConnectionConfig[] {
   try {
@@ -221,7 +242,11 @@ class LocalBackend implements Backend {
   }
 
   /* ---- queries ---- */
-  async runQuery(connectionId: string, sql: string): Promise<QueryResult> {
+  private async executeQuery(
+    connectionId: string,
+    sql: string,
+    record: boolean,
+  ): Promise<QueryResult> {
     const db = await this.ensureDb(connectionId);
     const started = performance.now();
     let columns: { name: string; dataType: string }[] = [];
@@ -251,11 +276,16 @@ class LocalBackend implements Backend {
     else if (/^(commit|end|rollback)\b/.test(s)) this.txn.delete(connectionId);
     const isWrite = !/^\s*(select|with|pragma|explain)\b/i.test(sql);
     if (isWrite && !this.txn.has(connectionId)) await this.persist(connectionId);
+    if (record) recordHistory(connectionId, sql);
     return { columns, rows, rowsAffected: db.getRowsModified(), elapsedMs, truncated: false };
   }
 
+  async runQuery(connectionId: string, sql: string): Promise<QueryResult> {
+    return this.executeQuery(connectionId, sql, true);
+  }
+
   async runQuerySilent(connectionId: string, sql: string): Promise<QueryResult> {
-    return this.runQuery(connectionId, sql);
+    return this.executeQuery(connectionId, sql, false);
   }
 
   async cancelQuery(_connectionId: string): Promise<boolean> {
