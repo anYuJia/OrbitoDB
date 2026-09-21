@@ -282,6 +282,7 @@ const en = {
   "sql.log": "Log",
   "sql.uncommittedShort": "Uncommitted",
   "sql.autoCommit": "Auto Commit",
+  "sql.emptyHint": "Write SQL and press Run ({shortcut}).",
 
   "connection.settings": "Connection settings",
   "connection.new": "New connection",
@@ -633,6 +634,7 @@ const zh: Record<TranslationKey, string> = {
   "sql.log": "日志",
   "sql.uncommittedShort": "未提交",
   "sql.autoCommit": "自动提交",
+  "sql.emptyHint": "输入 SQL 后按运行（{shortcut}）。",
 
   "connection.settings": "连接设置",
   "connection.new": "新建连接",
