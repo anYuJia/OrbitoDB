@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { ConnectionConfig } from "../ipc/types";
 import { CreateTableModal } from "./CreateTableModal";
 import { installSmoothScroll } from "../lib/smoothScroll";
+import { useI18n } from "../lib/i18n";
 import { useStore } from "../state/store";
 import { DataView } from "./bud/DataView";
 import { CrossTableSearch } from "./bud/CrossTableSearch";
@@ -27,6 +28,7 @@ function initialWidth(): number {
 }
 
 export function AppShell() {
+  const { t } = useI18n();
   const [serverModal, setServerModal] = useState<ConnectionConfig | "new" | null>(null);
   const [createTableOpen, setCreateTableOpen] = useState(false);
   const [sidebarHidden, setSidebarHidden] = useState(false);
@@ -81,7 +83,7 @@ export function AppShell() {
           )}
         </AnimatePresence>
       </div>
-      {!sidebarHidden && <div className="bud-hsplit" onMouseDown={onResize} title="Drag to resize sidebar" />}
+      {!sidebarHidden && <div className="bud-hsplit" onMouseDown={onResize} title={t("app.resizeSidebar")} aria-label={t("app.resizeSidebar")} />}
       <StatusBar />
       <AnimatePresence>
         {serverModal && (
