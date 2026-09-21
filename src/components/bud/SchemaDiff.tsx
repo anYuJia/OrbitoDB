@@ -145,7 +145,7 @@ export function SchemaDiff() {
         ? []
         : [
             `-- WARNING: cross-engine preview (${target.engine} ← ${desired.engine}).`,
-            "-- Type DDL is emitted as TODO comments because database type systems are not directly interchangeable.",
+            "-- Type DDL is emitted as REVIEW comments because database type systems are not directly interchangeable.",
           ]),
       "",
     ];
@@ -155,7 +155,7 @@ export function SchemaDiff() {
       const defs = Object.entries(cols).map(([name, type]) => `  ${q(name)} ${type || "TEXT"}`);
       if (!sameEngine) {
         lines.push(
-          `-- TODO cross-engine: create table ${table} with columns: ${Object.entries(cols)
+          `-- REVIEW cross-engine: create table ${table} with columns: ${Object.entries(cols)
             .map(([name, type]) => `${name} ${type}`)
             .join(", ")}`,
           "",
@@ -163,7 +163,7 @@ export function SchemaDiff() {
       } else if (defs.length) {
         lines.push(`CREATE TABLE ${q(table)} (`, defs.join(",\n"), ");", "");
       } else {
-        lines.push(`-- TODO: CREATE TABLE ${q(table)}; -- column metadata unavailable`, "");
+        lines.push(`-- REVIEW: CREATE TABLE ${q(table)}; -- column metadata unavailable`, "");
       }
     }
 
@@ -176,14 +176,14 @@ export function SchemaDiff() {
           );
         } else {
           lines.push(
-            `-- TODO cross-engine: add ${changed.table}.${column} as ${desiredCols[column] || "TEXT"}`,
+            `-- REVIEW cross-engine: add ${changed.table}.${column} as ${desiredCols[column] || "TEXT"}`,
           );
         }
       }
       for (const change of changed.typeChanged) {
         if (!sameEngine) {
           lines.push(
-            `-- TODO cross-engine type mapping: ${changed.table}.${change.col} ${change.a} -> ${change.b}`,
+            `-- REVIEW cross-engine type mapping: ${changed.table}.${change.col} ${change.a} -> ${change.b}`,
           );
         } else if (target.engine === "postgres") {
           lines.push(
