@@ -1,5 +1,7 @@
 import {
+  IconAdjustmentsHorizontal,
   IconAlignLeft,
+  IconAlertTriangle,
   IconArrowBackUp,
   IconChartBar,
   IconCheck,
@@ -8,6 +10,7 @@ import {
   IconEraser,
   IconFileCode,
   IconMessage2,
+  IconLoader2,
   IconPlayerPlay,
   IconPlayerSkipForward,
   IconPlayerStop,
@@ -16,15 +19,60 @@ import {
   IconSettings,
   IconStar,
   IconTable,
+  IconX,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { formatSql } from "../../lib/sqlformat";
+import {
+  normalizeHiddenColumns,
+  readGridDensity,
+  uniqueColumnLabels,
+  writeGridDensity,
+  type GridDensity,
+} from "../../lib/gridPreferences";
 import { CellViewer } from "./CellViewer";
 import { ExportMenu } from "./ExportMenu";
 import { promptDialog } from "../../state/dialog";
 import type { Column } from "../../ipc/types";
 import { useStore } from "../../state/store";
+import type { GridDisplayAnchor } from "./GridDisplayMenu";
 import "./query-workspace.css";
+
+const GridDisplayMenu = lazy(() =>
+  import("./GridDisplayMenu").then((module) => ({ default: module.GridDisplayMenu })),
+);
+
+function localStorageOrNull(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function resultTypeIcon(dataType: string, rows: unknown[][], column: number): string {
+  const type = dataType.toUpperCase();
+  if (/INT|SERIAL|NUM|DEC|REAL|FLOAT|DOUBLE/.test(type)) return "123";
+  if (/DATE|TIME/.test(type)) return "◷";
+  if (/BOOL/.test(type)) return "✓";
+  if (/JSON/.test(type)) return "{}";
+  if (!type) {
+    const values: unknown[] = [];
+    for (let index = 0; index < rows.length && values.length < 100; index += 1) {
+      const value = rows[index][column];
+      if (value != null && String(value).trim() !== "") values.push(value);
+    }
+    if (values.length > 0 && values.every((value) => typeof value === "boolean")) return "✓";
+    if (values.length > 0 && values.every((value) => typeof value !== "boolean" && !Number.isNaN(Number(value)))) return "123";
+    if (values.length > 0 && values.every((value) => /^\d{4}-\d{2}-\d{2}/.test(String(value)))) return "◷";
+  }
+  return "T";
+}
+
+function formatRunningTime(milliseconds: number): string {
+  return milliseconds < 1000 ? `${milliseconds} ms` : `${(milliseconds / 1000).toFixed(1)} s`;
+}
 
 const KEYWORDS = new Set(
   (
@@ -114,6 +162,7 @@ export function SqlPanel() {
   const saveScript = useStore((s) => s.saveScript);
   const saveFavorite = useStore((s) => s.saveFavorite);
   const editors = useStore((s) => s.editors);
+  const activeEditorId = useStore((s) => s.activeEditorId);
   const selectEditor = useStore((s) => s.selectEditor);
   const res = useStore((s) => s.editorResults[s.activeEditorId] ?? null);
   const err = useStore((s) => s.editorErrors[s.activeEditorId] ?? null);
@@ -137,12 +186,19 @@ export function SqlPanel() {
   const [rowFilter, setRowFilter] = useState("");
   const [logFilter, setLogFilter] = useState("");
   const [cellView, setCellView] = useState<{ value: string; column?: string } | null>(null);
+  const [selectedResultCell, setSelectedResultCell] = useState<{ row: number; col: number } | null>(null);
+  const [density, setDensity] = useState<GridDensity>(() => readGridDensity(localStorageOrNull()));
+  const [displayAnchor, setDisplayAnchor] = useState<GridDisplayAnchor | null>(null);
+  const [hiddenResultColumns, setHiddenResultColumns] = useState<Record<string, string[]>>({});
+  const [runningMs, setRunningMs] = useState(0);
 
   const taRef = useRef<HTMLTextAreaElement>(null);
   const hlRef = useRef<HTMLPreElement>(null);
   const gutRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const resultGridRef = useRef<HTMLDivElement>(null);
+  const displayButtonRef = useRef<HTMLButtonElement>(null);
   const pendingCaret = useRef<number | null>(null);
   const pendingSel = useRef<{ s: number; e: number } | null>(null);
 
@@ -158,9 +214,23 @@ export function SqlPanel() {
     if (err) setTab("log");
     else if (res) {
       setSort(null);
+      setRowFilter("");
+      setSelectedResultCell(null);
       setTab("result");
     }
   }, [err, res]);
+
+  useEffect(() => {
+    if (!running) {
+      setRunningMs(0);
+      return;
+    }
+    const startedAt = performance.now();
+    const update = () => setRunningMs(Math.round(performance.now() - startedAt));
+    update();
+    const timer = window.setInterval(update, 100);
+    return () => window.clearInterval(timer);
+  }, [running]);
 
   /** The highlighted selection if there is one, otherwise the whole editor. */
   const selectedOrAll = () => {
@@ -385,6 +455,27 @@ export function SqlPanel() {
   const cap = Number.parseInt(maxRows, 10);
   const charCap = Number.parseInt(maxChars, 10);
   const limited = res ? (Number.isFinite(cap) && cap > 0 ? res.rows.length > cap : false) : false;
+  const resultColumnLabels = useMemo(
+    () => uniqueColumnLabels(res?.columns.map((column) => column.name) ?? []),
+    [res?.columns],
+  );
+  const resultPreferenceKey = `${activeEditorId}\u0000${resultColumnLabels.join("\u0000")}`;
+  const hiddenColumnNames = normalizeHiddenColumns(
+    hiddenResultColumns[resultPreferenceKey] ?? [],
+    resultColumnLabels,
+  );
+  const hiddenColumnSet = useMemo(() => new Set(hiddenColumnNames), [hiddenColumnNames]);
+  const visibleColumns = useMemo(
+    () => (res?.columns ?? [])
+      .map((column, index) => ({ column, index, key: resultColumnLabels[index] }))
+      .filter(({ key }) => !hiddenColumnSet.has(key)),
+    [hiddenColumnSet, res?.columns, resultColumnLabels],
+  );
+  const densityStyle = (density === "compact" ? {
+    "--bud-grid-header-height": "32px",
+    "--bud-grid-row-height": "32px",
+    "--bud-grid-cell-padding": "5px 9px",
+  } : undefined) as CSSProperties | undefined;
   const displayValue = (value: unknown): string => {
     if (value == null) return "NULL";
     const text = String(value);
@@ -416,12 +507,81 @@ export function SqlPanel() {
     ? shownRows.filter((r) => r.some((c) => c != null && String(c).toLowerCase().includes(rf)))
     : shownRows;
 
-  const toggleSort = (col: number) =>
+  const toggleSort = (col: number) => {
+    setSelectedResultCell(null);
     setSort((s) => (!s || s.col !== col ? { col, dir: 1 } : s.dir === 1 ? { col, dir: -1 } : null));
+  };
+
+  const changeHiddenColumns = (next: string[]) => {
+    const hidden = normalizeHiddenColumns(next, resultColumnLabels);
+    setHiddenResultColumns((current) => ({ ...current, [resultPreferenceKey]: hidden }));
+    if (sort && hidden.includes(resultColumnLabels[sort.col])) setSort(null);
+    if (selectedResultCell && hidden.includes(resultColumnLabels[selectedResultCell.col])) {
+      setSelectedResultCell(null);
+    }
+  };
+
+  const changeDensity = (next: GridDensity) => {
+    setDensity(next);
+    writeGridDensity(localStorageOrNull(), next);
+  };
+
+  const closeDisplayMenu = useCallback(() => {
+    setDisplayAnchor(null);
+    requestAnimationFrame(() => displayButtonRef.current?.focus());
+  }, []);
+
+  const focusResultCell = (row: number, col: number) => {
+    requestAnimationFrame(() => {
+      const scroller = resultGridRef.current;
+      const cell = scroller?.querySelector<HTMLElement>(`[data-result-cell="${row}:${col}"]`);
+      if (!cell) return;
+      cell.focus({ preventScroll: true });
+      if (!scroller) return;
+      if (col === visibleColumns[0]?.index) {
+        scroller.scrollLeft = 0;
+        return;
+      }
+      const leftEdge = scroller.scrollLeft + 38;
+      const rightEdge = scroller.scrollLeft + scroller.clientWidth;
+      if (cell.offsetLeft < leftEdge) scroller.scrollLeft = Math.max(0, cell.offsetLeft - 38);
+      else if (cell.offsetLeft + cell.offsetWidth > rightEdge) {
+        scroller.scrollLeft = cell.offsetLeft + cell.offsetWidth - scroller.clientWidth + 8;
+      }
+    });
+  };
+
+  const openResultCell = (row: number, col: number) => {
+    const value = filteredRows[row]?.[col];
+    setCellView({ value: value == null ? "NULL" : String(value), column: res?.columns[col]?.name });
+  };
+
+  const moveResultCell = (event: ReactKeyboardEvent<HTMLTableCellElement>, row: number, col: number) => {
+    const columnPosition = visibleColumns.findIndex(({ index }) => index === col);
+    if (columnPosition < 0) return;
+    let nextRow = row;
+    let nextColumn = columnPosition;
+    if (event.key === "ArrowUp") nextRow = Math.max(0, row - 1);
+    else if (event.key === "ArrowDown") nextRow = Math.min(filteredRows.length - 1, row + 1);
+    else if (event.key === "ArrowLeft") nextColumn = Math.max(0, columnPosition - 1);
+    else if (event.key === "ArrowRight") nextColumn = Math.min(visibleColumns.length - 1, columnPosition + 1);
+    else if (event.key === "Home") nextColumn = 0;
+    else if (event.key === "End") nextColumn = visibleColumns.length - 1;
+    else if (event.key === "Enter" || event.key === "F2") {
+      event.preventDefault();
+      openResultCell(row, col);
+      return;
+    } else return;
+
+    event.preventDefault();
+    const next = { row: nextRow, col: visibleColumns[nextColumn].index };
+    setSelectedResultCell(next);
+    focusResultCell(next.row, next.col);
+  };
 
   return (
-    <div className="bud-sqlpanel" ref={panelRef}>
-      <div className="bud-ide-toolbar">
+    <div className="bud-sqlpanel" ref={panelRef} aria-busy={running}>
+      <div className={`bud-ide-toolbar ${running ? "is-running" : ""}`}>
         <label className="bud-query-connection">
           <span className="bud-query-connection-dot" />
           <select
@@ -499,7 +659,7 @@ export function SqlPanel() {
             onClick={() => void exec(selectedOrAll())}
             disabled={running || !connId}
           >
-            <IconPlayerPlay size={15} stroke={2} />
+            {running ? <IconLoader2 className="spin" size={15} stroke={2} /> : <IconPlayerPlay size={15} stroke={2} />}
             <span>{running ? "Running…" : "Run"}</span>
             <kbd>⌘↵</kbd>
           </button>
@@ -507,6 +667,7 @@ export function SqlPanel() {
             <IconPlayerSkipForward size={15} stroke={1.9} />
           </button>
         </div>
+        {running && <span className="bud-query-progress" role="progressbar" aria-label="Query running" />}
       </div>
 
       <div className="bud-sql-editor-wrap" ref={wrapRef} style={editorH != null ? { flex: "none", height: editorH } : undefined}>
@@ -635,7 +796,11 @@ export function SqlPanel() {
           </span>
           <span className="bud-ed-mode">INS</span>
           <span className="bud-ed-spacer" />
-          {running && <span className="bud-ed-running">Running…</span>}
+          {running && (
+            <span className="bud-ed-running" role="status">
+              <IconLoader2 className="spin" size={11} stroke={2} /> Running · {formatRunningTime(runningMs)}
+            </span>
+          )}
           {res && !err && (
             <span className="bud-ed-meta">
               {res.rows.length} {res.rows.length === 1 ? "row" : "rows"} · {res.elapsedMs} ms
@@ -658,7 +823,8 @@ export function SqlPanel() {
             DBMS Output
           </button>
           <button className={tab === "result" ? "on" : ""} onClick={() => setTab("result")}>
-            {res ? `1: Result [${res.rows.length}]` : "Result"}
+            <span>Result</span>
+            {res && <span className="bud-results-count">{res.rows.length.toLocaleString()}</span>}
           </button>
         </div>
         <div className="bud-results-body">
@@ -707,78 +873,168 @@ export function SqlPanel() {
           ) : tab === "dbms" ? (
             <div className="bud-results-log">No DBMS output.</div>
           ) : err ? (
-            <div className="bud-error">⚠ {err.message ?? err.kind}</div>
+            <div className="bud-query-state bud-query-error-state" role="alert">
+              <span className="bud-query-state-icon danger"><IconAlertTriangle size={19} stroke={1.8} /></span>
+              <strong>Query failed</strong>
+              <span>{err.message ?? err.kind}</span>
+              <button className="bud-grid-action" onClick={() => void exec()} disabled={running || !connId}>
+                <IconRefresh size={13} stroke={1.9} /> Run again
+              </button>
+            </div>
           ) : res && res.columns.length > 0 ? (
             <>
               <div className="bud-res-toolbar">
                 <div className="bud-res-seg">
                   <button className={resultView === "table" ? "on" : ""} title="Table view" onClick={() => setResultView("table")}>
-                    <IconTable size={14} stroke={1.7} /> Table
+                    <IconTable size={14} stroke={1.7} /> <span>Table</span>
                   </button>
                   <button className={resultView === "chart" ? "on" : ""} title="Chart view" onClick={() => setResultView("chart")}>
-                    <IconChartBar size={14} stroke={1.7} /> Chart
+                    <IconChartBar size={14} stroke={1.7} /> <span>Chart</span>
                   </button>
                 </div>
                 <div className="bud-res-filter">
                   <IconSearch size={13} stroke={1.7} />
-                  <input value={rowFilter} onChange={(e) => setRowFilter(e.target.value)} placeholder="Filter rows…" />
+                  <input
+                    value={rowFilter}
+                    aria-label="Filter query results"
+                    onChange={(e) => {
+                      setRowFilter(e.target.value);
+                      setSelectedResultCell(null);
+                    }}
+                    placeholder="Filter rows…"
+                  />
+                  {rowFilter && (
+                    <button className="bud-res-filter-clear" title="Clear filter" aria-label="Clear result filter" onClick={() => setRowFilter("")}>
+                      <IconX size={12} stroke={2} />
+                    </button>
+                  )}
                 </div>
-                <button title="Re-run" onClick={() => void exec()} disabled={running || !connId}>
+                {rf && (
+                  <span className="bud-res-match" role="status">
+                    {filteredRows.length.toLocaleString()} of {shownRows.length.toLocaleString()}
+                  </span>
+                )}
+                <span className="bud-res-spacer" />
+                <span className="bud-res-meta">
+                  {shownRows.length.toLocaleString()} {shownRows.length === 1 ? "row" : "rows"}
+                  {limited ? ` · capped at ${cap.toLocaleString()}` : res.truncated ? " · truncated" : ""}
+                  {` · ${res.columns.length.toLocaleString()} ${res.columns.length === 1 ? "column" : "columns"} · ${res.elapsedMs} ms`}
+                </span>
+                <button
+                  ref={displayButtonRef}
+                  className="bud-res-display"
+                  aria-haspopup="dialog"
+                  aria-expanded={displayAnchor != null}
+                  aria-label={`Display options, ${visibleColumns.length} of ${res.columns.length} columns shown`}
+                  onClick={(event) => {
+                    if (displayAnchor) {
+                      setDisplayAnchor(null);
+                      return;
+                    }
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    setDisplayAnchor({ bottom: rect.bottom, right: rect.right });
+                  }}
+                >
+                  <IconAdjustmentsHorizontal size={14} stroke={1.8} />
+                  <span className="bud-res-action-label">Display{hiddenColumnNames.length > 0 ? ` ${visibleColumns.length}/${res.columns.length}` : ""}</span>
+                </button>
+                <button className="bud-res-refresh" title="Re-run query" aria-label="Re-run query" onClick={() => void exec()} disabled={running || !connId}>
                   <IconRefresh size={14} stroke={1.7} />
                 </button>
                 <ExportMenu result={{ ...res, rows: filteredRows }} />
-                <span className="bud-res-meta">
-                  {filteredRows.length.toLocaleString()} {filteredRows.length === 1 ? "row" : "rows"}
-                  {limited ? ` (capped at ${cap})` : ""} · {res.elapsedMs} ms
-                </span>
               </div>
               {resultView === "chart" ? (
-                <ResultChart columns={res.columns} rows={filteredRows} />
+                <ResultChart
+                  columns={visibleColumns.map(({ column }) => column)}
+                  rows={filteredRows.map((row) => visibleColumns.map(({ index }) => row[index]))}
+                />
               ) : (
-                <div className="bud-grid-wrap">
-                  <table className="bud-grid">
-                    <thead>
-                      <tr>
-                        <th className="bud-rownum" />
-                        {res.columns.map((c, i) => (
-                          <th
-                            key={i}
-                            className={sort?.col === i ? "sorted" : ""}
-                            aria-sort={sort?.col === i ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
-                          >
-                            <button className="bud-th-sort" title={`Sort by ${c.name}`} onClick={() => toggleSort(i)}>
-                              <span className="bud-th-name">{c.name}</span>
-                              {sort?.col === i && <span className="bud-th-arrow">{sort.dir === 1 ? "↑" : "↓"}</span>}
-                            </button>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredRows.map((row, ri) => (
-                        <tr key={ri}>
-                          <td className="bud-rownum">{ri + 1}</td>
-                          {row.map((cell, ci) => (
-                            <td
-                              key={ci}
-                              className={cell == null ? "bud-null" : ""}
-                              title={cell == null ? "NULL" : String(cell)}
-                              onClick={() => setCellView({ value: cell == null ? "NULL" : String(cell), column: res.columns[ci]?.name })}
+                <div className="bud-query-grid-area" style={densityStyle}>
+                  <div className="bud-grid-wrap" ref={resultGridRef}>
+                    <table
+                      className="bud-grid bud-query-grid"
+                      aria-label="Query results"
+                      aria-rowcount={filteredRows.length}
+                      aria-colcount={visibleColumns.length + 1}
+                    >
+                      <thead>
+                        <tr>
+                          <th className="bud-rownum" aria-label="Row number" />
+                          {visibleColumns.map(({ column: c, index: i, key }) => (
+                            <th
+                              key={key}
+                              className={sort?.col === i ? "sorted" : ""}
+                              aria-sort={sort?.col === i ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
                             >
-                              {displayValue(cell)}
-                            </td>
+                              <button className="bud-th-sort" title={`Sort by ${c.name}${c.dataType ? ` · ${c.dataType}` : ""}`} onClick={() => toggleSort(i)}>
+                                <span className="bud-result-type" title={c.dataType || "Inferred value type"}>{resultTypeIcon(c.dataType, res.rows, i)}</span>
+                                <span className="bud-th-name">{c.name}</span>
+                                {sort?.col === i && <span className="bud-th-arrow">{sort.dir === 1 ? "↑" : "↓"}</span>}
+                              </button>
+                            </th>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {filteredRows.map((row, ri) => (
+                          <tr key={ri}>
+                            <td className="bud-rownum">{ri + 1}</td>
+                            {visibleColumns.map(({ index: ci, key }, visibleIndex) => {
+                              const cell = row[ci];
+                              const selected = selectedResultCell?.row === ri && selectedResultCell.col === ci;
+                              return (
+                                <td
+                                  key={key}
+                                  data-result-cell={`${ri}:${ci}`}
+                                  tabIndex={selectedResultCell ? (selected ? 0 : -1) : (ri === 0 && visibleIndex === 0 ? 0 : -1)}
+                                  className={`${cell == null ? "bud-null" : ""} ${selected ? "sel" : ""}`}
+                                  title={cell == null ? "NULL" : String(cell)}
+                                  aria-label={`${res.columns[ci]?.name}, row ${ri + 1}: ${cell == null ? "NULL" : String(cell)}`}
+                                  onFocus={() => setSelectedResultCell({ row: ri, col: ci })}
+                                  onKeyDown={(event) => moveResultCell(event, ri, ci)}
+                                  onClick={(event) => {
+                                    event.currentTarget.focus();
+                                    setSelectedResultCell({ row: ri, col: ci });
+                                  }}
+                                  onDoubleClick={() => openResultCell(ri, ci)}
+                                >
+                                  {displayValue(cell)}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {filteredRows.length === 0 && (
+                    <div className="bud-query-grid-empty" role="status">
+                      <span className="bud-query-state-icon"><IconSearch size={18} stroke={1.8} /></span>
+                      <strong>{rf ? `No rows match “${rowFilter.trim()}”` : "Query returned no rows"}</strong>
+                      <span>{rf ? "Try a different phrase or clear the result filter." : "The statement completed successfully, but there is nothing to display."}</span>
+                      {rf && (
+                        <button className="bud-grid-action" onClick={() => setRowFilter("")}>
+                          <IconX size={13} stroke={2} /> Clear filter
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </>
           ) : res ? (
-            <div className="bud-empty">Statement ran. {res.rowsAffected} rows affected.</div>
+            <div className="bud-query-state" role="status">
+              <span className="bud-query-state-icon success"><IconCheck size={19} stroke={2} /></span>
+              <strong>Statement completed</strong>
+              <span>{res.rowsAffected.toLocaleString()} {res.rowsAffected === 1 ? "row" : "rows"} affected in {res.elapsedMs} ms.</span>
+            </div>
           ) : (
-            <div className="bud-empty">Write SQL and press Run (⌘/Ctrl + ↵).</div>
+            <div className="bud-query-state">
+              <span className="bud-query-state-icon"><IconTable size={19} stroke={1.8} /></span>
+              <strong>Results will appear here</strong>
+              <span>Write SQL above, select the statement you need, then run it.</span>
+              <kbd>⌘ ↵</kbd>
+            </div>
           )}
         </div>
       </div>
@@ -803,20 +1059,49 @@ export function SqlPanel() {
       )}
 
       {cellView && <CellViewer value={cellView.value} column={cellView.column} onClose={() => setCellView(null)} />}
+      {displayAnchor && res && (
+        <Suspense fallback={null}>
+          <GridDisplayMenu
+            anchor={displayAnchor}
+            columns={resultColumnLabels}
+            hiddenColumns={hiddenColumnNames}
+            density={density}
+            onChangeHidden={changeHiddenColumns}
+            onChangeDensity={changeDensity}
+            onClose={closeDisplayMenu}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
 
 /** Instant horizontal bar chart of a result set — picks a numeric column and a label column. */
 function ResultChart({ columns, rows }: { columns: Column[]; rows: unknown[][] }) {
+  if (rows.length === 0) {
+    return (
+      <div className="bud-query-state">
+        <span className="bud-query-state-icon"><IconChartBar size={19} stroke={1.8} /></span>
+        <strong>No rows to chart</strong>
+        <span>Clear the result filter or run a query that returns data.</span>
+      </div>
+    );
+  }
   const isNum = (i: number) =>
-    rows.length > 0 &&
     rows.some((r) => r[i] != null && String(r[i]).trim() !== "") &&
     rows.every((r) => r[i] == null || (String(r[i]).trim() !== "" && !Number.isNaN(Number(r[i]))));
 
   const idLike = (name: string) => /(^id$|_id$|^.*key$)/i.test(name);
   const numericIdxs = columns.map((_, i) => i).filter((i) => isNum(i));
-  if (numericIdxs.length === 0) return <div className="bud-empty">No numeric column to chart.</div>;
+  if (numericIdxs.length === 0) {
+    return (
+      <div className="bud-query-state">
+        <span className="bud-query-state-icon"><IconChartBar size={19} stroke={1.8} /></span>
+        <strong>No numeric column to chart</strong>
+        <span>Show a numeric result column or switch back to the table view.</span>
+      </div>
+    );
+  }
   // Prefer a real measure over a primary/foreign key column.
   const valueIdx = numericIdxs.find((i) => !idLike(columns[i].name)) ?? numericIdxs[0];
   const textIdx = columns.findIndex((_, i) => i !== valueIdx && !isNum(i));

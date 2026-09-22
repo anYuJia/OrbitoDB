@@ -8,6 +8,7 @@
 }
 
 .bud-ide-toolbar {
+  position: relative;
   min-height: 46px;
   display: flex;
   align-items: center;
@@ -16,6 +17,33 @@
   flex: none;
   border-bottom: 1px solid var(--border);
   background: var(--bg-2);
+}
+
+.bud-query-progress {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  background: var(--green-soft);
+}
+
+.bud-query-progress::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  width: 32%;
+  border-radius: 2px;
+  background: var(--green-bright);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--green-bright) 58%, transparent);
+  animation: bud-query-progress 1.15s ease-in-out infinite;
+}
+
+@keyframes bud-query-progress {
+  from { transform: translateX(-105%); }
+  to { transform: translateX(415%); }
 }
 
 .bud-query-connection {
@@ -364,7 +392,13 @@
 
 .bud-ed-status { color: var(--muted); }
 .bud-ed-spacer { flex: 1; }
-.bud-ed-running { color: var(--green-bright); }
+.bud-ed-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--green-bright);
+  font-variant-numeric: tabular-nums;
+}
 .bud-ed-uncommitted { color: var(--warning); }
 
 .bud-vsplit {
@@ -415,6 +449,9 @@
 
 .bud-results-tabs button {
   height: 37px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 0 10px;
   border: 0;
   border-bottom: 2px solid transparent;
@@ -422,6 +459,25 @@
   color: var(--faint);
   font-size: 11px;
   cursor: pointer;
+}
+
+.bud-results-count {
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--panel-3);
+  color: var(--muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bud-results-tabs button.on .bud-results-count {
+  background: var(--accent-soft);
+  color: var(--accent-2);
 }
 
 .bud-results-tabs button:hover { color: var(--text); }
@@ -495,8 +551,180 @@
   height: 30px;
 }
 
-.bud-res-meta {
-  margin-left: auto;
+.bud-res-filter .bud-res-filter-clear {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  flex: none;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.bud-res-filter .bud-res-filter-clear:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.bud-res-match {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  flex: none;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent-2);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bud-res-spacer {
+  min-width: 4px;
+  flex: 1;
+}
+
+.bud-res-toolbar .bud-res-meta {
+  margin-left: 0;
+  flex: none;
+  white-space: nowrap;
+}
+
+.bud-res-toolbar > .bud-res-display {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  flex: none;
+  white-space: nowrap;
+}
+
+.bud-res-toolbar > .bud-res-refresh {
+  flex: none;
+}
+
+.bud-query-grid-area {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bud-query-grid .bud-rownum {
+  left: 0;
+}
+
+.bud-query-grid tbody td:not(.bud-rownum) {
+  cursor: default;
+  outline: 0;
+}
+
+.bud-query-grid tbody td:not(.bud-rownum):focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.bud-result-type {
+  min-width: 17px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.bud-query-grid-empty {
+  position: absolute;
+  z-index: 5;
+  inset: var(--bud-grid-header-height, 40px) 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  padding: 18px;
+  background: var(--bg);
+  color: var(--muted);
+  text-align: center;
+}
+
+.bud-query-grid-empty strong,
+.bud-query-state strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.bud-query-grid-empty > span:not(.bud-query-state-icon),
+.bud-query-state > span:not(.bud-query-state-icon) {
+  max-width: 460px;
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.bud-query-state {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.bud-query-state-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.bud-query-state-icon.success {
+  border-color: color-mix(in srgb, var(--green-bright) 32%, var(--border));
+  background: var(--green-soft);
+  color: var(--green-bright);
+}
+
+.bud-query-state-icon.danger {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.bud-query-state > kbd {
+  margin-top: 4px;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-bottom-color: var(--border-strong);
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.bud-query-error-state > span:not(.bud-query-state-icon) {
+  color: var(--danger);
+  font-family: var(--mono);
+}
+
+.bud-query-error-state .bud-grid-action {
+  margin-top: 4px;
 }
 
 .bud-logs {
@@ -610,6 +838,10 @@
     width: 30px;
     padding: 0;
   }
+
+  .bud-res-toolbar .bud-res-meta {
+    display: none;
+  }
 }
 
 @media (max-width: 760px) {
@@ -624,5 +856,36 @@
 
   .bud-ide-toolbar .bud-query-run {
     min-width: 70px;
+  }
+
+  .bud-res-toolbar {
+    gap: 4px;
+    padding-inline: 6px;
+    overflow-x: auto;
+  }
+
+  .bud-res-seg button {
+    width: 28px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .bud-res-seg button span,
+  .bud-res-action-label,
+  .bud-res-match,
+  .bud-res-spacer {
+    display: none;
+  }
+
+  .bud-res-filter {
+    width: auto;
+    min-width: 128px;
+    flex: 1;
+  }
+
+  .bud-res-toolbar > .bud-res-display {
+    width: 30px;
+    justify-content: center;
+    padding: 0;
   }
 }

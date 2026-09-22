@@ -5,6 +5,7 @@ import {
   normalizeHiddenColumns,
   readGridDensity,
   readHiddenColumns,
+  uniqueColumnLabels,
   writeGridDensity,
   writeHiddenColumns,
 } from "./gridPreferences";
@@ -18,6 +19,16 @@ function memoryStorage() {
 }
 
 describe("grid preferences", () => {
+  it("creates stable unique labels for duplicate query columns", () => {
+    expect(uniqueColumnLabels(["id", "name", "id", "id", "id (2)"])).toEqual([
+      "id",
+      "name",
+      "id (2)",
+      "id (3)",
+      "id (2) (2)",
+    ]);
+  });
+
   it("removes stale and duplicate hidden columns", () => {
     expect(normalizeHiddenColumns(["email", "gone", "email"], ["id", "email", "status"])).toEqual(["email"]);
   });

@@ -5,6 +5,34 @@ type StorageLike = Pick<Storage, "getItem" | "setItem">;
 const GRID_COLUMNS_PREFIX = "orbitodb.gridColumns.v1";
 export const GRID_DENSITY_KEY = "orbitodb.gridDensity.v1";
 
+/**
+ * SQL joins can return the same column name more than once. Give every column
+ * a stable display key so visibility controls never hide two columns at once
+ * or render duplicate React keys.
+ */
+export function uniqueColumnLabels(columns: string[]): string[] {
+  const used = new Set<string>();
+  const nextSuffix = new Map<string, number>();
+
+  return columns.map((column) => {
+    if (!used.has(column)) {
+      used.add(column);
+      nextSuffix.set(column, 2);
+      return column;
+    }
+
+    let suffix = nextSuffix.get(column) ?? 2;
+    let label = `${column} (${suffix})`;
+    while (used.has(label)) {
+      suffix += 1;
+      label = `${column} (${suffix})`;
+    }
+    nextSuffix.set(column, suffix + 1);
+    used.add(label);
+    return label;
+  });
+}
+
 export function gridColumnsStorageKey(connectionId: string, table: string): string {
   return `${GRID_COLUMNS_PREFIX}:${encodeURIComponent(connectionId)}:${encodeURIComponent(table)}`;
 }
