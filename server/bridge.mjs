@@ -514,6 +514,13 @@ const handlers = {
       return { ok: true };
     }
     const Q = quote[engine];
+    if (columns.length === 0) {
+      const sql = engine === "mysql"
+        ? `INSERT INTO ${Q(table)} () VALUES ()`
+        : `INSERT INTO ${Q(table)} DEFAULT VALUES`;
+      await conn.query(sql);
+      return { ok: true };
+    }
     const cols = columns.map(Q).join(", ");
     const ph = columns.map((_, i) => placeholder[engine](i)).join(", ");
     await conn.query(`INSERT INTO ${Q(table)} (${cols}) VALUES (${ph})`, values);

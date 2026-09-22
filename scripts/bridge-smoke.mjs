@@ -30,6 +30,17 @@ child.stderr.on("data", (chunk) => {
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function post(pathname, body) {
+  const response = await fetch(`${base}/api/${pathname}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(data));
+  return data;
+}
+
 async function waitUntilReady() {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
@@ -75,6 +86,22 @@ try {
   });
   assert.equal(acceptedOrigin.status, 204);
   assert.equal(acceptedOrigin.headers.get("access-control-allow-origin"), allowedOrigin);
+
+  const sqlite = {
+    id: "smoke-sqlite",
+    name: "Smoke SQLite",
+    engine: "sqlite",
+    database: "smoke.sqlite",
+  };
+  await post("open", { id: sqlite.id, cfg: sqlite, password: null });
+  await post("query", {
+    id: sqlite.id,
+    sql: "CREATE TABLE defaults_test (id INTEGER PRIMARY KEY, note TEXT DEFAULT 'ready')",
+  });
+  await post("insertRow", { id: sqlite.id, table: "defaults_test", columns: [], values: [] });
+  const defaultRow = await post("query", { id: sqlite.id, sql: "SELECT note FROM defaults_test" });
+  assert.deepEqual(defaultRow.rows, [["ready"]]);
+  await post("close", { id: sqlite.id });
 
   console.log("bridge smoke test passed");
 } finally {

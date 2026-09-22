@@ -395,16 +395,24 @@ function Datasource({
     return false;
   };
   const toggle = async () => {
-    if (!isActive) await openAndIntrospect(conn.id);
-    setOpen((v) => (isActive ? !v : true));
+    if (!isActive) {
+      if (!(await openAndIntrospect(conn.id))) return;
+      setOpen(true);
+      return;
+    }
+    setOpen((value) => !value);
   };
 
   const newTable = async () => {
     const name = await promptDialog({ title: "New table", label: "Table name", placeholder: "e.g. invoices" });
     if (!name?.trim()) return;
-    if (!isActive) await openAndIntrospect(conn.id);
+    if (!isActive && !(await openAndIntrospect(conn.id))) return;
     await createTable(name.trim(), [{ name: "id", dataType: "INTEGER", nullable: false, primaryKey: true }]);
     setOpen(true);
+  };
+  const openProperties = async () => {
+    if (!isActive && !(await openAndIntrospect(conn.id))) return;
+    setTopView("settings");
   };
   const rename = async () => {
     const name = await promptDialog({ title: "Rename data source", label: "Name", defaultValue: conn.name });
@@ -440,10 +448,7 @@ function Datasource({
     {
       label: "Properties",
       icon: (<IconSettings size={15} stroke={1.7} />),
-      onClick: () => {
-        void openAndIntrospect(conn.id);
-        setTopView("settings");
-      },
+      onClick: () => void openProperties(),
     },
     {
       label: isReadOnly ? "Read-only mode (on)" : "Read-only mode",

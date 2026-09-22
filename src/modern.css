@@ -1338,8 +1338,7 @@ textarea {
 
 .bud-field input,
 .bud-field select,
-.bud-dialog-input,
-.bud-setting-input {
+.bud-dialog-input {
   min-height: 38px;
   border-color: var(--border);
   border-radius: 9px !important;
@@ -1594,6 +1593,44 @@ textarea {
   .bud-grid-selection {
     order: 3;
     width: 100%;
+  }
+
+  .bud-wp-head {
+    flex-direction: column;
+    padding: 18px 16px 6px;
+  }
+
+  .bud-wp-head-actions {
+    width: 100%;
+  }
+
+  .bud-wp-head-actions > button {
+    flex: 1;
+  }
+
+  .bud-wp-body {
+    padding: 14px 16px 28px;
+  }
+
+  .bud-settings-card-head {
+    flex-wrap: wrap;
+  }
+
+  .bud-settings-health {
+    margin-left: 46px;
+  }
+
+  .bud-settings-list > div {
+    grid-template-columns: 100px minmax(0, 1fr);
+  }
+
+  .bud-settings-safety-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .bud-settings-safety-actions > button {
+    justify-content: center;
   }
 
   .bud-status-item,

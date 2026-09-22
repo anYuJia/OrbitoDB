@@ -2,7 +2,12 @@ import { create } from "zustand";
 import { getBackend } from "../ipc/backend";
 import { inferColumns } from "../lib/csv";
 import { resolveParams } from "../lib/params";
-import { quoteIdentifier, selectTableSql } from "../lib/sql";
+import {
+  capQueryResult,
+  quoteIdentifier,
+  selectTableSql,
+  TABLE_BROWSER_ROW_LIMIT,
+} from "../lib/sql";
 import { confirmDelete, confirmDialog } from "./dialog";
 import { changesSchema, confirmIfDestructive, confirmProdWrite, isWrite } from "./safety";
 import { toast } from "./toast";
@@ -31,7 +36,7 @@ interface SchemaState {
   columnsByTable: Record<string, ColumnInfo[]>;
 }
 
-export type TopView = "data" | "design" | "automation" | "settings";
+export type TopView = "data" | "settings";
 export type AppScreen = "dashboard" | "workspace";
 export type DashPage = "home" | "connections" | "logs";
 export type FilterOp = "=" | "!=" | "contains" | ">" | "<";
@@ -201,7 +206,7 @@ export interface AppStore {
   restoreSession: () => Promise<void>;
   saveConnection: (cfg: ConnectionConfig, password?: string | null) => Promise<void>;
   deleteConnection: (id: string) => Promise<void>;
-  openAndIntrospect: (id: string) => Promise<void>;
+  openAndIntrospect: (id: string) => Promise<boolean>;
   expandTable: (table: string) => Promise<void>;
   setSql: (sql: string) => void;
   newEditor: () => void;
@@ -226,7 +231,7 @@ export interface AppStore {
   rollbackTxn: () => Promise<void>;
   editCell: (rowIndex: number, colIndex: number, value: unknown) => Promise<void>;
   deleteRowAt: (rowIndex: number) => Promise<void>;
-  addRow: (columns: string[], values: unknown[]) => Promise<void>;
+  addRow: (columns: string[], values: unknown[]) => Promise<boolean>;
   dropTable: (table: string) => Promise<void>;
   dropTables: (tables: string[]) => Promise<void>;
   clearTables: (tables: string[]) => Promise<void>;
@@ -239,8 +244,8 @@ export interface AppStore {
   refresh: () => Promise<void>;
   reload: (table: string) => Promise<void>;
   addColumn: (table: string, column: ColumnDef) => Promise<void>;
-  dropColumn: (table: string, column: string) => Promise<void>;
-  renameColumn: (table: string, from: string, to: string) => Promise<void>;
+  dropColumn: (table: string, column: string) => Promise<boolean>;
+  renameColumn: (table: string, from: string, to: string) => Promise<boolean>;
   renameTable: (from: string, to: string) => Promise<void>;
   importCsv: (table: string, headers: string[], rows: string[][], opts?: { create?: boolean }) => Promise<void>;
   openInspector: (rowIndex: number) => void;
@@ -499,16 +504,28 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   openAndIntrospect: async (id) => {
-    const { txnDirty, txnConnectionId, running } = get();
+    const previous = get();
+    const { txnDirty, txnConnectionId, running } = previous;
     if (running) {
       toast("Stop or finish the running query before switching connections.", "error");
-      return;
+      return false;
     }
     if (txnDirty && txnConnectionId) {
       const action = txnConnectionId === id ? "reconnecting" : "switching connections";
       toast(`Commit or roll back the open transaction before ${action}.`, "error");
-      return;
+      return false;
     }
+    const previousContext = {
+      activeConnectionId: previous.activeConnectionId,
+      schema: previous.schema,
+      editTable: previous.editTable,
+      openTables: previous.openTables,
+      result: previous.result,
+      view: previous.view,
+      activeViewId: previous.activeViewId,
+      selection: previous.selection,
+      inspectorRow: previous.inspectorRow,
+    };
     const requestId = ++connectionRequestId;
     dataRequestId += 1;
     // Reset everything tied to the previous source so its tables/data don't
@@ -530,9 +547,9 @@ export const useStore = create<AppStore>((set, get) => ({
     });
     try {
       await backend.openConnection(id);
-      if (requestId !== connectionRequestId) return;
+      if (requestId !== connectionRequestId) return false;
       const tables = await backend.listTables(id);
-      if (requestId !== connectionRequestId) return;
+      if (requestId !== connectionRequestId) return false;
       persistLocal(LASTCONN_KEY, id);
       set({ schema: { tables, columnsByTable: {} }, loadingTables: false, connectingConnectionId: null });
       // Eagerly cache columns for small schemas so SQL autocomplete has them.
@@ -554,26 +571,40 @@ export const useStore = create<AppStore>((set, get) => ({
           }
         })();
       }
+      return true;
     } catch (e) {
-      if (requestId !== connectionRequestId) return;
+      if (requestId !== connectionRequestId) return false;
       const err = normalizeError(e);
-      set({
-        activeConnectionId: null,
-        connectingConnectionId: null,
-        schema: { tables: [], columnsByTable: {} },
-        editTable: null,
-        openTables: [],
-        result: null,
-        error: err,
-        loadingTables: false,
-        loadingResult: false,
-      });
+      const restorePrevious =
+        previousContext.activeConnectionId != null && previousContext.activeConnectionId !== id;
+      set(
+        restorePrevious
+          ? {
+              ...previousContext,
+              connectingConnectionId: null,
+              error: err,
+              loadingTables: false,
+              loadingResult: false,
+            }
+          : {
+              activeConnectionId: null,
+              connectingConnectionId: null,
+              schema: { tables: [], columnsByTable: {} },
+              editTable: null,
+              openTables: [],
+              result: null,
+              error: err,
+              loadingTables: false,
+              loadingResult: false,
+            },
+      );
       try {
         if (localStorage.getItem(LASTCONN_KEY) === id) localStorage.removeItem(LASTCONN_KEY);
       } catch {
         /* ignore */
       }
       toast(err.message ?? "Could not open connection", "error");
+      return false;
     }
   },
 
@@ -789,7 +820,7 @@ export const useStore = create<AppStore>((set, get) => ({
       nextTabs = [...openTables, table];
     }
     const engine = connections.find((connection) => connection.id === id)?.engine;
-    const sql = selectTableSql(table, engine);
+    const sql = selectTableSql(table, engine, TABLE_BROWSER_ROW_LIMIT + 1);
     set({
       view: "data",
       topView: "data",
@@ -811,7 +842,10 @@ export const useStore = create<AppStore>((set, get) => ({
       if (requestId !== dataRequestId || get().activeConnectionId !== id) return;
       const cols = get().schema.columnsByTable[table] ?? [];
       const pkColumn = cols.find((c) => c.isPrimaryKey)?.name ?? null;
-      let result = await backend.runQuery(id, sql, { recordHistory: false });
+      let result = capQueryResult(
+        await backend.runQuery(id, sql, { recordHistory: false }),
+        TABLE_BROWSER_ROW_LIMIT,
+      );
       // Empty tables yield no columns from the row set — show the schema's columns.
       if (result.columns.length === 0 && cols.length > 0) {
         result = { ...result, columns: cols.map((c) => ({ name: c.name, dataType: c.dataType })) };
@@ -858,7 +892,14 @@ export const useStore = create<AppStore>((set, get) => ({
     const from = qid(editTable.table);
     set({ loadingResult: true, error: null });
     try {
-      let next = await backend.runQuery(activeConnectionId, `SELECT * FROM ${from} WHERE ${where} LIMIT 1000;`, { recordHistory: false });
+      let next = capQueryResult(
+        await backend.runQuery(
+          activeConnectionId,
+          `SELECT * FROM ${from} WHERE ${where} LIMIT ${TABLE_BROWSER_ROW_LIMIT + 1};`,
+          { recordHistory: false },
+        ),
+        TABLE_BROWSER_ROW_LIMIT,
+      );
       if (requestId !== dataRequestId || get().activeConnectionId !== activeConnectionId || get().editTable?.table !== editTable.table) return;
       if (next.columns.length === 0 && result?.columns.length) next = { ...next, columns: result.columns };
       set({ result: next, loadingResult: false, selection: [], inspectorRow: null });
@@ -957,20 +998,27 @@ export const useStore = create<AppStore>((set, get) => ({
 
   addRow: async (columns, values) => {
     const { activeConnectionId, editTable } = get();
-    if (!activeConnectionId || !editTable) return;
-    if (get().readOnlyConns.includes(activeConnectionId)) return toast("Read-only — writes are blocked.", "error");
+    if (!activeConnectionId || !editTable) return false;
+    if (get().readOnlyConns.includes(activeConnectionId)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
     const conn = get().connections.find((connection) => connection.id === activeConnectionId);
-    if (!(await confirmProdWrite(conn, "INSERT"))) return;
+    if (!(await confirmProdWrite(conn, "INSERT"))) return false;
     try {
       await get().beginTxnIfManual();
       await backend.insertRow(activeConnectionId, editTable.table, columns, values);
       if (
         get().activeConnectionId !== activeConnectionId ||
         get().editTable?.table !== editTable.table
-      ) return;
+      ) return true;
       await get().openTableData(editTable.table); // refresh to show the new row + its PK
+      return true;
     } catch (e) {
-      set({ error: normalizeError(e) });
+      const err = normalizeError(e);
+      set({ error: err });
+      toast(err.message ?? "Could not add row", "error");
+      return false;
     }
   },
 
@@ -1197,31 +1245,43 @@ export const useStore = create<AppStore>((set, get) => ({
 
   dropColumn: async (table, column) => {
     const id = get().activeConnectionId;
-    if (!id) return;
-    if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
     const conn = get().connections.find((connection) => connection.id === id);
-    if (!(await confirmProdWrite(conn, "ALTER TABLE"))) return;
+    if (!(await confirmProdWrite(conn, "ALTER TABLE"))) return false;
     try {
       await backend.dropColumn(id, table, column);
-      if (get().activeConnectionId !== id) return;
-      await get().reload(table);
+      if (get().activeConnectionId === id) await get().reload(table);
+      return true;
     } catch (e) {
-      set({ error: normalizeError(e) });
+      const err = normalizeError(e);
+      set({ error: err });
+      toast(err.message ?? "Could not delete column", "error");
+      return false;
     }
   },
 
   renameColumn: async (table, from, to) => {
     const id = get().activeConnectionId;
-    if (!id) return;
-    if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
     const conn = get().connections.find((connection) => connection.id === id);
-    if (!(await confirmProdWrite(conn, "ALTER TABLE"))) return;
+    if (!(await confirmProdWrite(conn, "ALTER TABLE"))) return false;
     try {
       await backend.renameColumn(id, table, from, to);
-      if (get().activeConnectionId !== id) return;
-      await get().reload(table);
+      if (get().activeConnectionId === id) await get().reload(table);
+      return true;
     } catch (e) {
-      set({ error: normalizeError(e) });
+      const err = normalizeError(e);
+      set({ error: err });
+      toast(err.message ?? "Could not rename column", "error");
+      return false;
     }
   },
 

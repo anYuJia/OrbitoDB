@@ -93,6 +93,13 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
   const [busy, setBusy] = useState(false);
 
   const defaultPort = engine === "postgres" ? "5432" : engine === "mysql" ? "3306" : "";
+  const changeEngine = (next: Engine) => {
+    const previousDefault = engine === "postgres" ? "5432" : engine === "mysql" ? "3306" : "";
+    setEngine(next);
+    setPort((current) => (!current || current === previousDefault ? "" : current));
+    setDatabases(null);
+    setStatus(null);
+  };
 
   const draftCfg = (db: string): ConnectionConfig => ({
     id: existing?.id ?? `srv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -148,7 +155,16 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
     try {
       const cfg = draftCfg(database.trim());
       await saveConnection(cfg, password || null);
-      await openAndIntrospect(cfg.id);
+      const opened = await openAndIntrospect(cfg.id);
+      if (!opened) {
+        const reason = useStore.getState().error?.message;
+        setStatus({
+          kind: "error",
+          msg: `Connection saved, but it could not be opened${reason ? `: ${reason}` : "."}`,
+        });
+        setBusy(false);
+        return;
+      }
       toast(`Connected to ${cfg.name}`, "success");
       onClose();
     } catch (e) {
@@ -195,7 +211,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
         <div className="bud-modal-body">
           <label className="bud-field">
             <span>Engine</span>
-            <select value={engine} onChange={(e) => { setEngine(e.target.value as Engine); setDatabases(null); setStatus(null); }}>
+            <select value={engine} onChange={(e) => changeEngine(e.target.value as Engine)}>
               <option value="sqlite">SQLite (server file)</option>
               <option value="postgres">PostgreSQL</option>
               <option value="mysql">MySQL / MariaDB</option>
@@ -273,17 +289,10 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                 </label>
               </div>
 
-              <button className="bud-test-btn" onClick={testAndList} disabled={testing}>
+              <button className="bud-test-btn" onClick={testAndList} disabled={testing || !remoteReady || !host.trim()}>
                 <IconRefresh size={15} stroke={1.7} className={testing ? "bud-spin" : ""} />
                 {testing ? "Connecting…" : "Test connection & list databases"}
               </button>
-              {status && (
-                <div className={`bud-conn-status ${status.kind}`}>
-                  {status.kind === "ok" ? <IconCheck size={15} stroke={2} /> : <IconAlertTriangle size={15} stroke={1.8} />}
-                  <span>{status.msg}</span>
-                </div>
-              )}
-
               <label className="bud-field">
                 <span>Database</span>
                 <div className="bud-db-row">
@@ -304,7 +313,7 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                       placeholder="test the connection to list, or type a name"
                     />
                   )}
-                  <button className="bud-db-new" onClick={newDatabase} disabled={testing} title="Create a new database">
+                  <button className="bud-db-new" onClick={newDatabase} disabled={testing || !remoteReady || !host.trim()} title="Create a new database">
                     <IconPlus size={15} stroke={2} /> New
                   </button>
                 </div>
@@ -319,6 +328,12 @@ export function ServerModal({ existing, onClose }: { existing?: ConnectionConfig
                 existing name to open it, or a new name to create it.
               </span>
             </label>
+          )}
+          {status && (
+            <div className={`bud-conn-status ${status.kind}`} role="status" aria-live="polite">
+              {status.kind === "ok" ? <IconCheck size={15} stroke={2} /> : <IconAlertTriangle size={15} stroke={1.8} />}
+              <span>{status.msg}</span>
+            </div>
           )}
         </div>
         <div className="bud-modal-actions">

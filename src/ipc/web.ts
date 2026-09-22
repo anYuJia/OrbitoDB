@@ -40,7 +40,11 @@ export const webBackend: Backend = {
   listConnections: () => localBackend.listConnections(),
   saveConnection: async (cfg, password = null) => {
     await localBackend.saveConnection(cfg, password);
-    if (cfg.engine !== "sqlite") await saveSecret(cfg.id, password);
+    // An empty password in the edit dialog means "leave the saved password
+    // unchanged". Only overwrite it when the user supplied a new value; moving
+    // a connection to SQLite is the one case where the old secret is obsolete.
+    if (cfg.engine === "sqlite") deleteSecret(cfg.id);
+    else if (password !== null) await saveSecret(cfg.id, password);
   },
   deleteConnection: async (id) => {
     try {

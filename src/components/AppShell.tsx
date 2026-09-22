@@ -178,7 +178,7 @@ export function AppShell() {
                 </main>
               }
             >
-              <WorkspacePanel view={topView} />
+              <WorkspacePanel onAddServer={openAdd} onEditServer={openEdit} />
             </Suspense>
           )}
         </AnimatePresence>

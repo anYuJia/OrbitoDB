@@ -53,6 +53,12 @@ pub fn build_delete(engine: Engine, table: &str, pk_column: &str, pk_value: &Val
 }
 
 pub fn build_insert(engine: Engine, table: &str, columns: &[String], values: &[Value]) -> String {
+    if columns.is_empty() {
+        return match engine {
+            Engine::MySql => format!("INSERT INTO {} () VALUES ()", quote_ident(engine, table)),
+            _ => format!("INSERT INTO {} DEFAULT VALUES", quote_ident(engine, table)),
+        };
+    }
     let cols = columns
         .iter()
         .map(|c| quote_ident(engine, c))
@@ -248,6 +254,22 @@ mod tests {
                 &[json!("x"), json!(2)]
             ),
             r#"INSERT INTO "t" ("a", "b") VALUES ('x', '2')"#
+        );
+    }
+
+    #[test]
+    fn empty_insert_uses_engine_default_values_syntax() {
+        assert_eq!(
+            build_insert(Engine::Sqlite, "events", &[], &[]),
+            r#"INSERT INTO "events" DEFAULT VALUES"#
+        );
+        assert_eq!(
+            build_insert(Engine::Postgres, "events", &[], &[]),
+            r#"INSERT INTO "events" DEFAULT VALUES"#
+        );
+        assert_eq!(
+            build_insert(Engine::MySql, "events", &[], &[]),
+            "INSERT INTO `events` () VALUES ()"
         );
     }
 }

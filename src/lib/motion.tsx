@@ -65,7 +65,7 @@ export const listItemV: Variants = {
   show: { opacity: 1, y: 0, transition: easeOut },
 };
 
-/** Top-level view swap (data / design / automation / settings). */
+/** Top-level view swap between the data workspace and connection settings. */
 export const viewV: Variants = {
   hidden: { opacity: 0, y: 10 },
   show: { opacity: 1, y: 0, transition: ease },

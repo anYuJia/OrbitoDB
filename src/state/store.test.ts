@@ -142,7 +142,7 @@ describe("store", () => {
 
   it("opens a connection and introspects its tables", async () => {
     await useStore.getState().loadConnections();
-    await useStore.getState().openAndIntrospect("alpha");
+    expect(await useStore.getState().openAndIntrospect("alpha")).toBe(true);
     expect(useStore.getState().activeConnectionId).toBe("alpha");
     expect(useStore.getState().schema.tables.map((table) => table.name)).toEqual(["customers"]);
   });
@@ -197,12 +197,29 @@ describe("store", () => {
     await useStore.getState().loadConnections();
     mock.backend.openConnection.mockRejectedValueOnce({ kind: "notConnected", message: "offline" });
 
-    await useStore.getState().openAndIntrospect("alpha");
+    const opened = await useStore.getState().openAndIntrospect("alpha");
 
+    expect(opened).toBe(false);
     expect(useStore.getState().activeConnectionId).toBeNull();
     expect(useStore.getState().connectingConnectionId).toBeNull();
     expect(useStore.getState().loadingTables).toBe(false);
     expect(useStore.getState().error?.kind).toBe("notConnected");
+  });
+
+  it("restores the previous workspace when a connection switch fails", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    await useStore.getState().openTableData("customers");
+    mock.backend.openConnection.mockRejectedValueOnce({ kind: "notConnected", message: "beta offline" });
+
+    const opened = await useStore.getState().openAndIntrospect("beta");
+
+    expect(opened).toBe(false);
+    expect(useStore.getState().activeConnectionId).toBe("alpha");
+    expect(useStore.getState().editTable?.table).toBe("customers");
+    expect(useStore.getState().result?.rows).toHaveLength(2);
+    expect(useStore.getState().schema.tables.map((table) => table.name)).toEqual(["customers"]);
+    expect(useStore.getState().error?.message).toBe("beta offline");
   });
 
   it("ignores a stale connection response after the user switches again", async () => {
@@ -227,7 +244,7 @@ describe("store", () => {
 
     expect(mock.backend.runQuery).toHaveBeenLastCalledWith(
       "alpha",
-      'SELECT * FROM "order details" LIMIT 1000;',
+      'SELECT * FROM "order details" LIMIT 1001;',
       { recordHistory: false },
     );
   });

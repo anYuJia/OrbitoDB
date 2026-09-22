@@ -35,7 +35,12 @@ pub async fn save_connection(
     password: Option<String>,
 ) -> AppResult<()> {
     state.store.upsert_connection(&cfg).await?;
-    if let Some(pw) = password {
+    if matches!(cfg.engine, Engine::Sqlite) {
+        // Switching an existing remote connection to SQLite makes any stored
+        // server password obsolete. A missing password for remote engines,
+        // however, means "leave the existing keychain entry unchanged".
+        secrets::delete_password(&cfg.id)?;
+    } else if let Some(pw) = password {
         secrets::set_password(&cfg.id, &pw)?;
     }
     Ok(())

@@ -1,7 +1,8 @@
-import { IconArrowUpRight, IconChevronLeft, IconChevronRight, IconCopy, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
+import { IconArrowUpRight, IconCheck, IconChevronLeft, IconChevronRight, IconCopy, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getBackend } from "../../ipc/backend";
 import { displayRows } from "../../lib/cell";
+import { TABLE_BROWSER_ROW_LIMIT } from "../../lib/sql";
 import { promptDialog } from "../../state/dialog";
 import { toast } from "../../state/toast";
 import type { ColumnInfo } from "../../ipc/types";
@@ -107,6 +108,8 @@ export function DataGrid() {
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null);
   const [draft, setDraft] = useState("");
   const [newRow, setNewRow] = useState<string[] | null>(null);
+  const [addingRow, setAddingRow] = useState(false);
+  const cancelEditRef = useRef(false);
   const [colEditor, setColEditor] = useState<ColumnEditorAnchor | null>(null);
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const [cellView, setCellView] = useState<{ value: string; column?: string } | null>(null);
@@ -255,6 +258,21 @@ export function DataGrid() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selCell, result]);
 
+  // The shortcut advertised in the add-row footer must be real. Ignore it
+  // while the user is typing so the SQL editor and cell inputs keep ownership.
+  useEffect(() => {
+    if (!result || !editTable || readOnly || newRow) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      event.preventDefault();
+      setNewRow(result.columns.map(() => ""));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editTable, newRow, readOnly, result]);
+
   // While loading we keep the current grid on screen, so switching tables doesn't
   // flash to black (local queries finish well under the skeleton delay). Only show
   // a skeleton when there's genuinely nothing yet (the first load).
@@ -285,15 +303,18 @@ export function DataGrid() {
 
   const startEdit = (row: number, col: number) => {
     if (!pkCol || col === pkIdx || readOnly) return;
+    cancelEditRef.current = false;
     setEditing({ row, col });
     setDraft(result.rows[row][col] == null ? "" : String(result.rows[row][col]));
   };
   const commitEdit = () => {
-    if (editing) void editCell(editing.row, editing.col, draft);
+    const cancelled = cancelEditRef.current;
+    cancelEditRef.current = false;
+    if (editing && !cancelled) void editCell(editing.row, editing.col, draft);
     setEditing(null);
   };
-  const saveNewRow = () => {
-    if (!newRow) return;
+  const saveNewRow = async () => {
+    if (!newRow || addingRow) return;
     const cols: string[] = [];
     const vals: unknown[] = [];
     result.columns.forEach((c, i) => {
@@ -302,8 +323,10 @@ export function DataGrid() {
         vals.push(newRow[i]);
       }
     });
-    void addRow(cols, vals);
-    setNewRow(null);
+    setAddingRow(true);
+    const added = await addRow(cols, vals);
+    setAddingRow(false);
+    if (added) setNewRow(null);
   };
   const addColumnPrompt = async () => {
     const name = await promptDialog({ title: "New column", label: "Column name", placeholder: "e.g. created_at" });
@@ -434,15 +457,24 @@ export function DataGrid() {
                     className="bud-cell-input"
                     placeholder={c.name}
                     value={newRow[i]}
+                    autoFocus={i === 0}
+                    disabled={addingRow}
                     onChange={(e) => setNewRow((nr) => (nr ? nr.map((v, j) => (j === i ? e.target.value : v)) : nr))}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") saveNewRow();
-                      if (e.key === "Escape") setNewRow(null);
+                      if (e.key === "Enter") void saveNewRow();
+                      if (e.key === "Escape" && !addingRow) setNewRow(null);
                     }}
                   />
                 </td>
               ))}
-              <td />
+              <td className="bud-newrow-actions">
+                <button title="Add row" aria-label="Add row" onClick={() => void saveNewRow()} disabled={addingRow}>
+                  <IconCheck size={13} stroke={2} />
+                </button>
+                <button title="Cancel" aria-label="Cancel new row" onClick={() => setNewRow(null)} disabled={addingRow}>
+                  <IconX size={13} stroke={2} />
+                </button>
+              </td>
             </tr>
           )}
           {filteredOrder.length === 0 && !newRow && (
@@ -498,8 +530,15 @@ export function DataGrid() {
                           onChange={(e) => setDraft(e.target.value)}
                           onBlur={commitEdit}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") commitEdit();
-                            if (e.key === "Escape") setEditing(null);
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              e.currentTarget.blur();
+                            }
+                            if (e.key === "Escape") {
+                              e.preventDefault();
+                              cancelEditRef.current = true;
+                              e.currentTarget.blur();
+                            }
                           }}
                         />
                       ) : cell == null ? (
@@ -530,7 +569,7 @@ export function DataGrid() {
           })}
           <tr className="bud-addrow">
             <td className="bud-checkcol">
-              <button className="bud-addrow-btn" onClick={() => setNewRow(result.columns.map(() => ""))} title="Add row" disabled={readOnly}>
+              <button className="bud-addrow-btn" onClick={() => setNewRow(result.columns.map(() => ""))} title="Add row (⌘/Ctrl + Enter)" aria-label="Add row" disabled={readOnly}>
                 <IconPlus size={15} stroke={2} />
               </button>
             </td>
@@ -549,7 +588,7 @@ export function DataGrid() {
             {hasFilters
               ? `${filteredOrder.length.toLocaleString()} of ${result.rows.length.toLocaleString()} rows`
               : `${result.rows.length.toLocaleString()} ${result.rows.length === 1 ? "row" : "rows"}`}
-            {result.truncated ? " (first 1000)" : ""}
+            {result.truncated ? ` (first ${TABLE_BROWSER_ROW_LIMIT.toLocaleString()})` : ""}
           </span>
           <span className="bud-grid-foot-spacer" />
           {pageCount > 1 && (
