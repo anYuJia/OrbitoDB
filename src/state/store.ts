@@ -227,6 +227,7 @@ export interface AppStore {
   loadingResult: boolean;
   view: WorkspaceView;
   inspectorRow: number | null;
+  inspectorDirty: boolean;
   topView: TopView;
   screen: AppScreen;
   dashPage: DashPage;
@@ -266,7 +267,7 @@ export interface AppStore {
   beginTxnIfManual: () => Promise<void>;
   commitTxn: () => Promise<void>;
   rollbackTxn: () => Promise<void>;
-  editCell: (rowIndex: number, colIndex: number, value: unknown) => Promise<void>;
+  editCell: (rowIndex: number, colIndex: number, value: unknown) => Promise<boolean>;
   deleteRowAt: (rowIndex: number) => Promise<void>;
   addRow: (columns: string[], values: unknown[]) => Promise<boolean>;
   dropTable: (table: string) => Promise<void>;
@@ -285,8 +286,9 @@ export interface AppStore {
   renameColumn: (table: string, from: string, to: string) => Promise<boolean>;
   renameTable: (from: string, to: string) => Promise<void>;
   importCsv: (table: string, headers: string[], rows: string[][], opts?: { create?: boolean }) => Promise<void>;
-  openInspector: (rowIndex: number) => void;
-  closeInspector: () => void;
+  openInspector: (rowIndex: number) => Promise<void>;
+  closeInspector: () => Promise<void>;
+  setInspectorDirty: (dirty: boolean) => void;
   setTopView: (v: TopView) => void;
   setScreen: (s: AppScreen) => void;
   setDashPage: (p: DashPage) => void;
@@ -338,6 +340,15 @@ export function isFkError(e: unknown): boolean {
   return m.includes("foreign key");
 }
 
+async function confirmDiscardInspectorChanges(): Promise<boolean> {
+  return confirmDialog({
+    title: "Discard unsaved changes?",
+    message: "This record has changes that haven’t been saved.",
+    confirmLabel: "Discard changes",
+    danger: true,
+  });
+}
+
 export const useStore = create<AppStore>((set, get) => ({
   connections: [],
   activeConnectionId: null,
@@ -359,6 +370,7 @@ export const useStore = create<AppStore>((set, get) => ({
   loadingResult: false,
   view: "sql",
   inspectorRow: null,
+  inspectorDirty: false,
   topView: "data",
   screen: "dashboard",
   dashPage: "home",
@@ -511,6 +523,7 @@ export const useStore = create<AppStore>((set, get) => ({
         loadingTables: false,
         loadingResult: false,
         inspectorRow: null,
+        inspectorDirty: false,
         activeViewId: null,
         selection: [],
       });
@@ -541,6 +554,7 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   openAndIntrospect: async (id) => {
+    if (get().inspectorDirty && !(await confirmDiscardInspectorChanges())) return false;
     const previous = get();
     const { txnDirty, txnConnectionId, running } = previous;
     if (running) {
@@ -581,6 +595,7 @@ export const useStore = create<AppStore>((set, get) => ({
       activeViewId: null,
       selection: [],
       inspectorRow: null,
+      inspectorDirty: false,
     });
     try {
       await backend.openConnection(id);
@@ -860,6 +875,7 @@ export const useStore = create<AppStore>((set, get) => ({
   openTableData: async (table, opts) => {
     const id = get().activeConnectionId;
     if (!id) return;
+    if (get().inspectorDirty && !(await confirmDiscardInspectorChanges())) return;
     const requestId = ++dataRequestId;
     // Maintain the open-table tab list. Ctrl/Cmd-click (newTab) appends a tab;
     // a plain click replaces the active table tab so casual browsing doesn't pile
@@ -885,6 +901,7 @@ export const useStore = create<AppStore>((set, get) => ({
       editTable: { table, pkColumn: null },
       openTables: nextTabs,
       inspectorRow: null,
+      inspectorDirty: false,
       activeViewId: null,
       selection: [],
     });
@@ -919,6 +936,14 @@ export const useStore = create<AppStore>((set, get) => ({
     const { openTables, editTable } = get();
     const idx = openTables.indexOf(table);
     if (idx === -1) return;
+    if (editTable?.table === table && get().inspectorDirty) {
+      void confirmDiscardInspectorChanges().then((discard) => {
+        if (!discard) return;
+        set({ inspectorDirty: false });
+        get().closeTableTab(table);
+      });
+      return;
+    }
     const next = openTables.filter((t) => t !== table);
     set({ openTables: next });
     // If the closed tab was the active one, fall back to a neighbour (or the editor).
@@ -926,7 +951,7 @@ export const useStore = create<AppStore>((set, get) => ({
       if (next.length) void get().openTableData(next[Math.min(idx, next.length - 1)]);
       else {
         dataRequestId += 1;
-        set({ editTable: null, result: null, loadingResult: false, view: "sql", selection: [], inspectorRow: null });
+        set({ editTable: null, result: null, loadingResult: false, view: "sql", selection: [], inspectorRow: null, inspectorDirty: false });
       }
     }
   },
@@ -937,6 +962,7 @@ export const useStore = create<AppStore>((set, get) => ({
   searchTable: async (query) => {
     const { activeConnectionId, editTable, result, connections, activeViewId, views } = get();
     if (!activeConnectionId || !editTable) return;
+    if (get().inspectorDirty && !(await confirmDiscardInspectorChanges())) return;
     const cols = (result?.columns ?? []).map((c) => c.name);
     if (!cols.length) return;
     const requestId = ++dataRequestId;
@@ -963,7 +989,7 @@ export const useStore = create<AppStore>((set, get) => ({
       );
       if (requestId !== dataRequestId || get().activeConnectionId !== activeConnectionId || get().editTable?.table !== editTable.table) return;
       if (next.columns.length === 0 && result?.columns.length) next = { ...next, columns: result.columns };
-      set({ result: next, loadingResult: false, selection: [], inspectorRow: null });
+      set({ result: next, loadingResult: false, selection: [], inspectorRow: null, inspectorDirty: false });
     } catch (e) {
       if (requestId !== dataRequestId || get().activeConnectionId !== activeConnectionId) return;
       set({ error: normalizeError(e), loadingResult: false });
@@ -972,14 +998,17 @@ export const useStore = create<AppStore>((set, get) => ({
 
   editCell: async (rowIndex, colIndex, value) => {
     const { activeConnectionId, result, editTable } = get();
-    if (!activeConnectionId || !result || !editTable?.pkColumn) return;
-    if (get().readOnlyConns.includes(activeConnectionId)) return toast("Read-only — writes are blocked.", "error");
+    if (!activeConnectionId || !result || !editTable?.pkColumn) return false;
+    if (get().readOnlyConns.includes(activeConnectionId)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
     const pkIdx = result.columns.findIndex((c) => c.name === editTable.pkColumn);
-    if (pkIdx < 0) return;
+    if (pkIdx < 0) return false;
     const pkValue = result.rows[rowIndex][pkIdx];
     const column = result.columns[colIndex].name;
     const conn = get().connections.find((connection) => connection.id === activeConnectionId);
-    if (!(await confirmProdWrite(conn, "UPDATE"))) return;
+    if (!(await confirmProdWrite(conn, "UPDATE"))) return false;
     try {
       await get().beginTxnIfManual();
       await backend.updateCell(
@@ -993,18 +1022,20 @@ export const useStore = create<AppStore>((set, get) => ({
       if (
         get().activeConnectionId !== activeConnectionId ||
         get().editTable?.table !== editTable.table
-      ) return;
+      ) return true;
       const activeView = get().views.find((view) => view.id === get().activeViewId);
       if (activeView?.filter?.column === column) {
         await get().openView(activeView);
-        return;
+        return true;
       }
       const rows = result.rows.map((r, i) =>
         i === rowIndex ? r.map((c, j) => (j === colIndex ? value : c)) : r,
       );
       set({ result: { ...result, rows }, error: null });
+      return true;
     } catch (e) {
       set({ error: normalizeError(e) });
+      return false;
     }
   },
 
@@ -1052,6 +1083,7 @@ export const useStore = create<AppStore>((set, get) => ({
             : s.inspectorRow > rowIndex
               ? s.inspectorRow - 1
               : s.inspectorRow,
+        inspectorDirty: s.inspectorRow === rowIndex ? false : s.inspectorDirty,
       }));
     } catch (e) {
       set({ error: normalizeError(e) });
@@ -1114,6 +1146,7 @@ export const useStore = create<AppStore>((set, get) => ({
         activeViewId: s.editTable?.table === table ? null : s.activeViewId,
         selection: s.editTable?.table === table ? [] : s.selection,
         inspectorRow: s.editTable?.table === table ? null : s.inspectorRow,
+        inspectorDirty: s.editTable?.table === table ? false : s.inspectorDirty,
       }));
     } catch (e) {
       set({ error: normalizeError(e) });
@@ -1162,6 +1195,7 @@ export const useStore = create<AppStore>((set, get) => ({
         activeViewId: s.editTable && names.includes(s.editTable.table) ? null : s.activeViewId,
         selection: s.editTable && names.includes(s.editTable.table) ? [] : s.selection,
         inspectorRow: s.editTable && names.includes(s.editTable.table) ? null : s.inspectorRow,
+        inspectorDirty: s.editTable && names.includes(s.editTable.table) ? false : s.inspectorDirty,
       }));
       toast(`Dropped ${names.length} ${names.length === 1 ? "table" : "tables"}.`, "success");
     } catch (e) {
@@ -1259,7 +1293,15 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  setView: (v) => set({ view: v }),
+  setView: (v) => {
+    if (v !== "data" && get().view === "data" && get().inspectorDirty) {
+      void confirmDiscardInspectorChanges().then((discard) => {
+        if (discard) set({ view: v, inspectorRow: null, inspectorDirty: false });
+      });
+      return;
+    }
+    set({ view: v });
+  },
 
   refreshSchema: async () => {
     const id = get().activeConnectionId;
@@ -1446,12 +1488,36 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  openInspector: (rowIndex) => set({ inspectorRow: rowIndex }),
-  closeInspector: () => set({ inspectorRow: null }),
+  openInspector: async (rowIndex) => {
+    if (get().inspectorRow === rowIndex) return;
+    if (get().inspectorDirty && !(await confirmDiscardInspectorChanges())) return;
+    set({ inspectorRow: rowIndex, inspectorDirty: false });
+  },
+  closeInspector: async () => {
+    if (get().inspectorDirty && !(await confirmDiscardInspectorChanges())) return;
+    set({ inspectorRow: null, inspectorDirty: false });
+  },
+  setInspectorDirty: (dirty) => set({ inspectorDirty: dirty }),
 
-  setTopView: (v) => set({ topView: v }),
+  setTopView: (v) => {
+    if (v !== "data" && get().topView === "data" && get().inspectorDirty) {
+      void confirmDiscardInspectorChanges().then((discard) => {
+        if (discard) set({ topView: v, inspectorRow: null, inspectorDirty: false });
+      });
+      return;
+    }
+    set({ topView: v });
+  },
 
-  setScreen: (s) => set({ screen: s }),
+  setScreen: (s) => {
+    if (s !== "workspace" && get().screen === "workspace" && get().inspectorDirty) {
+      void confirmDiscardInspectorChanges().then((discard) => {
+        if (discard) set({ screen: s, inspectorRow: null, inspectorDirty: false });
+      });
+      return;
+    }
+    set({ screen: s });
+  },
 
   setDashPage: (p) => set({ dashPage: p, screen: "dashboard" }),
 
@@ -1517,6 +1583,7 @@ export const useStore = create<AppStore>((set, get) => ({
       editTable: { table: view.table, pkColumn: null },
       openTables,
       inspectorRow: null,
+      inspectorDirty: false,
       activeViewId: view.id,
       selection: [],
     });

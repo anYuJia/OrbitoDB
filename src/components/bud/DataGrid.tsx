@@ -682,7 +682,7 @@ export function DataGrid() {
                     className="rn-expand"
                     title="Edit row in panel"
                     aria-label={`Open row ${curPage * pageSize + pos + 1} details`}
-                    onClick={() => openInspector(ri)}
+                    onClick={() => void openInspector(ri)}
                   >
                     ⤢
                   </button>

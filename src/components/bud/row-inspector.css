@@ -1,0 +1,618 @@
+.bud-data-row {
+  position: relative;
+}
+
+.odb-inspector-scrim {
+  display: none;
+}
+
+.bud-inspector.odb-record-inspector {
+  width: clamp(360px, 30vw, 448px);
+  min-width: 340px;
+  min-height: 0;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.08);
+  animation: odb-inspector-enter 160ms ease-out;
+}
+
+@keyframes odb-inspector-enter {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.odb-inspector-header {
+  min-height: 58px;
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.odb-inspector-heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.odb-inspector-heading strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 680;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-inspector-heading span {
+  overflow: hidden;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-inspector-nav {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+}
+
+.odb-inspector-nav button,
+.odb-inspector-close {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.odb-inspector-nav button:hover:not(:disabled),
+.odb-inspector-close:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.odb-inspector-nav button:disabled {
+  color: var(--faint);
+  cursor: default;
+  opacity: 0.35;
+}
+
+.odb-inspector-nav > span {
+  min-width: 54px;
+  padding: 0 7px;
+  border-inline: 1px solid var(--border);
+  color: var(--faint);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.odb-inspector-nav > span strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.odb-inspector-close {
+  border-radius: 5px;
+}
+
+.odb-inspector-body {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 14px;
+}
+
+.odb-inspector-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.odb-inspector-meta > span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-inspector-meta code {
+  max-width: 55%;
+  overflow: hidden;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-inspector-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-bottom: 12px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent);
+  border-radius: 6px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.odb-inspector-notice svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.odb-inspector-search {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 14px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--faint);
+}
+
+.odb-inspector-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.odb-inspector-search input {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 11.5px;
+}
+
+.odb-inspector-search button {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.odb-inspector-search button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.odb-inspector-search > span {
+  min-width: 18px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.odb-inspector-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.odb-inspector-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 9px;
+  border-left: 2px solid transparent;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.odb-inspector-field.is-modified {
+  border-left-color: var(--accent);
+}
+
+.odb-inspector-label-row {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.odb-inspector-label-row > label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-inspector-type,
+.odb-inspector-pk,
+.odb-inspector-modified {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.55;
+  text-transform: uppercase;
+}
+
+.odb-inspector-type {
+  max-width: 110px;
+  overflow: hidden;
+  background: var(--panel-2);
+  color: var(--faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-inspector-pk {
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.odb-inspector-modified {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.odb-inspector-label-row > button {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.odb-inspector-label-row > button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.odb-inspector-control-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 6px;
+}
+
+.odb-inspector-input-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.odb-inspector-input,
+.odb-inspector-bool {
+  width: 100%;
+  min-height: 36px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 6px !important;
+  background: var(--input-bg) !important;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.odb-inspector-input {
+  padding: 7px 9px;
+}
+
+.odb-inspector-input:focus {
+  outline: 0;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.odb-inspector-input:disabled,
+.odb-inspector-bool:has(input:disabled) {
+  color: var(--faint);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.odb-inspector-field.is-modified .odb-inspector-input:not(:disabled),
+.odb-inspector-field.is-modified .odb-inspector-bool:not(:has(input:disabled)) {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border)) !important;
+}
+
+.odb-inspector-textarea {
+  min-height: 72px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+select.odb-inspector-input {
+  cursor: pointer;
+}
+
+.odb-inspector-bool {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+
+.odb-inspector-bool input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.odb-inspector-bool input:checked + .bud-switch {
+  background: var(--accent);
+}
+
+.odb-inspector-bool input:checked + .bud-switch::after {
+  left: 15px;
+}
+
+.odb-inspector-bool > span:last-child {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.odb-inspector-null-toggle {
+  min-height: 36px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.odb-inspector-null-toggle:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.odb-inspector-null-toggle[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.odb-inspector-null-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.odb-inspector-null-value {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 10px;
+  transform: translateY(-50%);
+  color: var(--accent-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-style: italic;
+  pointer-events: none;
+}
+
+.odb-inspector-field.is-null .odb-inspector-input,
+.odb-inspector-field.is-null .odb-inspector-bool {
+  color: transparent;
+}
+
+.odb-inspector-empty {
+  min-height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--faint);
+  text-align: center;
+}
+
+.odb-inspector-empty strong {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.odb-inspector-empty span {
+  font-size: 10.5px;
+}
+
+.odb-inspector-footer {
+  min-height: 56px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.odb-inspector-delete,
+.odb-inspector-reset,
+.odb-inspector-save {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 640;
+  cursor: pointer;
+}
+
+.odb-inspector-delete {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--danger);
+}
+
+.odb-inspector-delete:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 44%, var(--border));
+  background: var(--danger-soft);
+}
+
+.odb-inspector-status {
+  min-width: 0;
+  flex: 1;
+  color: var(--faint);
+  font-size: 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.odb-inspector-status .is-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--green-bright);
+}
+
+.odb-inspector-reset {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.odb-inspector-reset:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.odb-inspector-save {
+  min-width: 72px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.odb-inspector-save:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.odb-inspector-delete:disabled,
+.odb-inspector-reset:disabled,
+.odb-inspector-save:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+@media (max-width: 1180px) {
+  .bud-inspector.odb-record-inspector {
+    width: 370px;
+  }
+}
+
+@media (max-width: 900px) {
+  .odb-inspector-scrim {
+    position: absolute;
+    z-index: 49;
+    inset: 0;
+    display: block;
+    padding: 0;
+    border: 0;
+    background: rgba(5, 7, 10, 0.5);
+    backdrop-filter: blur(1.5px);
+    cursor: default;
+  }
+
+  .bud-inspector.odb-record-inspector {
+    position: absolute;
+    z-index: 50;
+    inset: 0 0 0 auto;
+    width: min(448px, calc(100% - 40px));
+    min-width: 0;
+    box-shadow: var(--shadow-modal);
+  }
+}
+
+@media (max-width: 560px) {
+  .bud-inspector.odb-record-inspector {
+    width: 100%;
+  }
+
+  .odb-inspector-header {
+    grid-template-columns: minmax(0, 1fr) auto 30px;
+    padding-left: 10px;
+  }
+
+  .odb-inspector-heading span,
+  .odb-inspector-delete span {
+    display: none;
+  }
+
+  .odb-inspector-body {
+    padding-inline: 10px;
+  }
+
+  .odb-inspector-footer {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+
+  .odb-inspector-status {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bud-inspector.odb-record-inspector {
+    animation: none;
+  }
+}

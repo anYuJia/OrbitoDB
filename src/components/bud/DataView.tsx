@@ -21,7 +21,6 @@ import { confirmDialog } from "../../state/dialog";
 import { toast } from "../../state/toast";
 import { useStore } from "../../state/store";
 import { DataGrid } from "./DataGrid";
-import { RowInspector } from "./RowInspector";
 
 const ConnectionOverview = lazy(() =>
   import("./ConnectionOverview").then((module) => ({ default: module.ConnectionOverview })),
@@ -29,6 +28,9 @@ const ConnectionOverview = lazy(() =>
 const SqlPanel = lazy(() => import("./SqlPanel").then((module) => ({ default: module.SqlPanel })));
 const QueryTabActions = lazy(() =>
   import("./QueryTabActions").then((module) => ({ default: module.QueryTabActions })),
+);
+const RowInspector = lazy(() =>
+  import("./RowInspector").then((module) => ({ default: module.RowInspector })),
 );
 
 function WorkspaceFallback({ label }: { label: string }) {
@@ -283,7 +285,11 @@ export function DataView({ onAddServer }: { onAddServer: () => void }) {
           </header>
           <div className="bud-data-row">
             <DataGrid />
-            <RowInspector key={inspectorRow ?? "none"} />
+            {inspectorRow != null && (
+              <Suspense fallback={null}>
+                <RowInspector key={inspectorRow} />
+              </Suspense>
+            )}
           </div>
         </div>
       )}

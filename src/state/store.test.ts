@@ -54,6 +54,7 @@ const mock = vi.hoisted(() => {
       ),
       runQuery,
       insertRow: vi.fn(async () => {}),
+      updateCell: vi.fn(async () => {}),
       recentHistory: vi.fn(async () => []),
     },
   };
@@ -62,6 +63,7 @@ const mock = vi.hoisted(() => {
 vi.mock("../ipc/backend", () => ({ getBackend: () => mock.backend }));
 
 import { useStore } from "./store";
+import { useDialog } from "./dialog";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -93,6 +95,7 @@ describe("store", () => {
       openTables: [],
       selection: [],
       inspectorRow: null,
+      inspectorDirty: false,
       views: [],
       activeViewId: null,
       readOnlyConns: [],
@@ -100,6 +103,7 @@ describe("store", () => {
       txnDirty: false,
       txnConnectionId: null,
     });
+    useDialog.setState({ current: null });
   });
 
   it("loads saved connections including their safety environment", async () => {
@@ -392,6 +396,49 @@ describe("store", () => {
       ["name"],
       ["Ada"],
     );
+  });
+
+  it("protects an edited record before navigating to another row", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    await useStore.getState().openTableData("customers");
+    useStore.setState({ inspectorRow: 0, inspectorDirty: true });
+
+    const cancelledMove = useStore.getState().openInspector(1);
+    expect(useDialog.getState().current?.title).toBe("Discard unsaved changes?");
+    useDialog.getState().current?.resolve(false);
+    useDialog.getState().close();
+    await cancelledMove;
+    expect(useStore.getState().inspectorRow).toBe(0);
+    expect(useStore.getState().inspectorDirty).toBe(true);
+
+    const confirmedMove = useStore.getState().openInspector(1);
+    useDialog.getState().current?.resolve(true);
+    useDialog.getState().close();
+    await confirmedMove;
+    expect(useStore.getState().inspectorRow).toBe(1);
+    expect(useStore.getState().inspectorDirty).toBe(false);
+  });
+
+  it("reports whether a cell edit actually reached the database", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    await useStore.getState().openTableData("customers");
+
+    await expect(useStore.getState().editCell(0, 1, "Grace")).resolves.toBe(true);
+    expect(mock.backend.updateCell).toHaveBeenCalledWith(
+      "alpha",
+      "customers",
+      "id",
+      1,
+      "name",
+      "Grace",
+    );
+    expect(useStore.getState().result?.rows[0][1]).toBe("Grace");
+
+    useStore.setState({ readOnlyConns: ["alpha"] });
+    await expect(useStore.getState().editCell(0, 1, "Blocked")).resolves.toBe(false);
+    expect(mock.backend.updateCell).toHaveBeenCalledTimes(1);
   });
 
   it("deduplicates concurrent query runs", async () => {

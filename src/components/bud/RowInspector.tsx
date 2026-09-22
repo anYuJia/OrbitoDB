@@ -1,7 +1,21 @@
-import { IconDeviceFloppy, IconLock, IconTable, IconTrash, IconX } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import {
+  IconCheck,
+  IconChevronLeft,
+  IconChevronRight,
+  IconDeviceFloppy,
+  IconLock,
+  IconRefresh,
+  IconSearch,
+  IconTable,
+  IconTrash,
+  IconX,
+} from "@tabler/icons-react";
+import { useEffect, useMemo, useState } from "react";
+import { matchesRecordField, sameCellValue } from "../../lib/rowInspector";
 import { useStore } from "../../state/store";
+import "./row-inspector.css";
 
+// Kept in its own lazy-loaded chunk so the dense editor does not tax startup.
 type Col = { name: string; dataType: string };
 type Kind = "number" | "date" | "datetime" | "bool" | "select" | "textarea" | "text";
 
@@ -13,7 +27,6 @@ function fieldKind(col: Col, samples: unknown[]): Kind {
   if (/TIMESTAMP|DATETIME/.test(t)) return "datetime";
   if (/DATE/.test(t)) return "date";
   const nonNull = samples.filter((v) => v != null).map(String);
-  // Value-based date detection (TEXT columns that actually hold ISO dates).
   if (nonNull.length > 0 && nonNull.every((s) => /^\d{4}-\d{2}-\d{2}$/.test(s))) return "date";
   if (nonNull.length > 0 && nonNull.every((s) => /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s))) return "datetime";
   if (/(comment|description|note|body|content|message|summary|bio|address)/.test(name)) return "textarea";
@@ -25,41 +38,41 @@ function fieldKind(col: Col, samples: unknown[]): Kind {
 }
 
 function FieldInput({
+  id,
   kind,
   value,
   disabled,
   samples,
   onChange,
 }: {
+  id: string;
   kind: Kind;
   value: unknown;
   disabled: boolean;
   samples: unknown[];
   onChange: (v: unknown) => void;
 }) {
-  const s = value == null ? "" : String(value);
+  const stringValue = value == null ? "" : String(value);
 
   if (kind === "bool") {
-    const checked = value === true || s === "true" || s === "1" || s === "t";
+    const checked = value === true || stringValue === "true" || stringValue === "1" || stringValue === "t";
     return (
-      <label className="insp-bool">
-        <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <label className="odb-inspector-bool" htmlFor={id}>
+        <input id={id} type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
         <span className="bud-switch" />
-        <span className="insp-bool-val">{checked ? "true" : "false"}</span>
+        <span>{checked ? "true" : "false"}</span>
       </label>
     );
   }
 
   if (kind === "select") {
-    const distinct = [...new Set(samples.filter((v) => v != null).map(String))];
-    if (s !== "" && !distinct.includes(s)) distinct.unshift(s);
+    const distinct = [...new Set(samples.filter((sample) => sample != null).map(String))];
+    if (stringValue !== "" && !distinct.includes(stringValue)) distinct.unshift(stringValue);
     return (
-      <select className="insp-input" value={s} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-        <option value="">—</option>
-        {distinct.map((d) => (
-          <option key={d} value={d}>
-            {d}
-          </option>
+      <select id={id} className="odb-inspector-input" value={stringValue} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Empty string</option>
+        {distinct.map((option) => (
+          <option key={option} value={option}>{option}</option>
         ))}
       </select>
     );
@@ -68,145 +81,294 @@ function FieldInput({
   if (kind === "textarea") {
     return (
       <textarea
-        className="insp-input insp-textarea"
-        value={s}
+        id={id}
+        className="odb-inspector-input odb-inspector-textarea"
+        value={stringValue}
         rows={3}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(event) => onChange(event.target.value)}
       />
     );
   }
 
   let inputType = kind === "number" ? "number" : kind === "date" ? "date" : kind === "datetime" ? "datetime-local" : "text";
-  let inputVal = s;
+  let inputValue = stringValue;
   if (kind === "date") {
-    if (/^\d{4}-\d{2}-\d{2}/.test(s)) inputVal = s.slice(0, 10);
-    else if (s !== "") inputType = "text";
+    if (/^\d{4}-\d{2}-\d{2}/.test(stringValue)) inputValue = stringValue.slice(0, 10);
+    else if (stringValue !== "") inputType = "text";
   } else if (kind === "datetime") {
-    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s)) inputVal = s.slice(0, 16).replace(" ", "T");
-    else if (s !== "") inputType = "text";
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(stringValue)) inputValue = stringValue.slice(0, 16).replace(" ", "T");
+    else if (stringValue !== "") inputType = "text";
   }
   return (
     <input
-      className="insp-input"
+      id={id}
+      className="odb-inspector-input"
       type={inputType}
-      value={inputVal}
+      value={inputValue}
       disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(event) => onChange(event.target.value)}
     />
   );
 }
 
 export function RowInspector() {
-  const result = useStore((s) => s.result);
-  const editTable = useStore((s) => s.editTable);
-  const inspectorRow = useStore((s) => s.inspectorRow);
-  const closeInspector = useStore((s) => s.closeInspector);
-  const editCell = useStore((s) => s.editCell);
-  const deleteRowAt = useStore((s) => s.deleteRowAt);
+  const result = useStore((state) => state.result);
+  const editTable = useStore((state) => state.editTable);
+  const schemaColumns = useStore((state) => (
+    editTable ? state.schema.columnsByTable[editTable.table] : undefined
+  ));
+  const inspectorRow = useStore((state) => state.inspectorRow);
+  const readOnly = useStore((state) => state.readOnlyConns.includes(state.activeConnectionId ?? ""));
+  const openInspector = useStore((state) => state.openInspector);
+  const closeInspector = useStore((state) => state.closeInspector);
+  const setInspectorDirty = useStore((state) => state.setInspectorDirty);
+  const editCell = useStore((state) => state.editCell);
+  const deleteRowAt = useStore((state) => state.deleteRowAt);
 
-  const pkCol = editTable?.pkColumn ?? null;
-  const pkIdx = useMemo(
-    () => (pkCol && result ? result.columns.findIndex((c) => c.name === pkCol) : -1),
-    [pkCol, result],
+  const pkColumn = editTable?.pkColumn ?? null;
+  const pkIndex = useMemo(
+    () => (pkColumn && result ? result.columns.findIndex((column) => column.name === pkColumn) : -1),
+    [pkColumn, result],
   );
-  const samplesByCol = useMemo(
-    () => (result ? result.columns.map((_, ci) => result.rows.map((r) => r[ci])) : []),
+  const samplesByColumn = useMemo(
+    () => (result ? result.columns.map((_, columnIndex) => result.rows.map((row) => row[columnIndex])) : []),
     [result],
   );
-
+  const inspectorColumns = useMemo(() => (
+    result?.columns.map((column) => ({
+      ...column,
+      dataType: column.dataType || schemaColumns?.find((candidate) => candidate.name === column.name)?.dataType || "",
+    })) ?? []
+  ), [result, schemaColumns]);
+  const row = result && inspectorRow != null ? result.rows[inspectorRow] : undefined;
   const [draft, setDraft] = useState<Record<string, unknown>>(() => {
-    const d: Record<string, unknown> = {};
+    const initial: Record<string, unknown> = {};
     if (result && inspectorRow != null && result.rows[inspectorRow]) {
-      result.columns.forEach((c, i) => (d[c.name] = result.rows[inspectorRow][i]));
+      result.columns.forEach((column, index) => {
+        initial[column.name] = result.rows[inspectorRow][index];
+      });
     }
-    return d;
+    return initial;
   });
+  const [fieldQuery, setFieldQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  if (!result || !editTable || inspectorRow == null || inspectorRow >= result.rows.length) return null;
-  const row = result.rows[inspectorRow];
-  const canEdit = !!pkCol && pkIdx >= 0;
-  const pkValue = pkIdx >= 0 ? row[pkIdx] : null;
-  const changedCount = result.columns.reduce((count, column, index) => (
-    index !== pkIdx && String(draft[column.name] ?? "") !== String(row[index] ?? "") ? count + 1 : count
-  ), 0);
+  const changedColumns = useMemo(() => {
+    if (!result || !row) return [];
+    return result.columns.flatMap((column, index) => (
+      index !== pkIndex && !sameCellValue(draft[column.name], row[index]) ? [index] : []
+    ));
+  }, [draft, pkIndex, result, row]);
+  const changedSet = useMemo(() => new Set(changedColumns), [changedColumns]);
+  const changedCount = changedColumns.length;
 
-  const set = (name: string, v: unknown) => {
-    setDraft((d) => ({ ...d, [name]: v }));
+  useEffect(() => {
+    setInspectorDirty(changedCount > 0);
+  }, [changedCount, setInspectorDirty]);
+
+  useEffect(() => {
+    if (changedCount === 0) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [changedCount]);
+
+  if (!result || !editTable || inspectorRow == null || !row) return null;
+
+  const canEdit = !!pkColumn && pkIndex >= 0 && !readOnly;
+  const pkValue = pkIndex >= 0 ? row[pkIndex] : null;
+  const visibleFields = inspectorColumns
+    .map((column, index) => ({ column, index }))
+    .filter(({ column }) => matchesRecordField(column, fieldQuery));
+
+  const updateDraft = (name: string, value: unknown) => {
+    const nextDraft = { ...draft, [name]: value };
+    setDraft(nextDraft);
+    setInspectorDirty(result.columns.some((column, index) => (
+      index !== pkIndex && !sameCellValue(nextDraft[column.name], row[index])
+    )));
+    setSaved(false);
+  };
+
+  const resetField = (columnIndex: number) => {
+    const column = result.columns[columnIndex];
+    updateDraft(column.name, row[columnIndex]);
+  };
+
+  const resetAll = () => {
+    setDraft(Object.fromEntries(result.columns.map((column, index) => [column.name, row[index]])));
+    setInspectorDirty(false);
     setSaved(false);
   };
 
   const save = async () => {
+    if (!canEdit || busy || changedCount === 0) return;
     setBusy(true);
-    for (let ci = 0; ci < result.columns.length; ci++) {
-      if (ci === pkIdx) continue;
-      const name = result.columns[ci].name;
-      if (String(draft[name] ?? "") !== String(row[ci] ?? "")) {
-        await editCell(inspectorRow, ci, draft[name]);
+    setSaved(false);
+    for (const columnIndex of changedColumns) {
+      const name = result.columns[columnIndex].name;
+      if (!(await editCell(inspectorRow, columnIndex, draft[name]))) {
+        setBusy(false);
+        return;
       }
     }
     setBusy(false);
     setSaved(true);
+    setInspectorDirty(false);
   };
 
-  const del = async () => {
-    // deleteRowAt now shows its own themed confirm (with the skip-FK-checks option).
-    await deleteRowAt(inspectorRow);
+  const moveTo = (nextRow: number) => {
+    if (nextRow < 0 || nextRow >= result.rows.length) return;
+    void openInspector(nextRow);
   };
 
-  const fieldsBlock = (
-    <div className="insp-fields">
-      {result.columns.map((col, ci) => {
-        const isPk = ci === pkIdx;
-        return (
-          <label className="insp-field" key={col.name}>
-            <span className="insp-label">
-              {col.name}
-              {isPk && <span className="insp-pk-tag">PK</span>}
-            </span>
-            <FieldInput
-              kind={fieldKind(col, samplesByCol[ci] ?? [])}
-              value={draft[col.name]}
-              disabled={isPk || !canEdit}
-              samples={samplesByCol[ci] ?? []}
-              onChange={(v) => set(col.name, v)}
-            />
-          </label>
-        );
-      })}
-    </div>
-  );
+  const handleKeys = (event: React.KeyboardEvent<HTMLElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "s") {
+      event.preventDefault();
+      void save();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      void closeInspector();
+      return;
+    }
+    if (event.altKey && ["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key)) {
+      event.preventDefault();
+      moveTo(inspectorRow + (["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1));
+    }
+  };
 
   return (
-    <aside className="bud-inspector" aria-label="Record details">
-      <div className="insp-head">
-        <span className="insp-title"><strong>Record details</strong><small>{editTable.table}</small></span>
-        <button className="insp-close" title="Close inspector" aria-label="Close inspector" onClick={closeInspector}>
-          <IconX size={17} stroke={1.8} />
-        </button>
-      </div>
-      <div className="insp-body">
-        <div className="insp-meta">
-          <span className="insp-table"><IconTable size={14} stroke={1.7} /> {editTable.table}</span>
-          {pkValue != null && <span className="insp-pk">{pkCol} = {String(pkValue)}</span>}
+    <>
+      <button className="odb-inspector-scrim" aria-label="Close record details" onClick={() => void closeInspector()} />
+      <aside className="bud-inspector odb-record-inspector" aria-label="Record details" aria-busy={busy} onKeyDown={handleKeys}>
+        <header className="odb-inspector-header">
+          <div className="odb-inspector-heading">
+            <strong>Record details</strong>
+            <span>{editTable.table}</span>
+          </div>
+          <div className="odb-inspector-nav" aria-label="Record navigation">
+            <button type="button" title="Previous record · Alt+↑" aria-label="Previous record" disabled={inspectorRow === 0} onClick={() => moveTo(inspectorRow - 1)}>
+              <IconChevronLeft size={15} stroke={1.9} />
+            </button>
+            <span><strong>{inspectorRow + 1}</strong> / {result.rows.length}</span>
+            <button type="button" title="Next record · Alt+↓" aria-label="Next record" disabled={inspectorRow === result.rows.length - 1} onClick={() => moveTo(inspectorRow + 1)}>
+              <IconChevronRight size={15} stroke={1.9} />
+            </button>
+          </div>
+          <button type="button" className="odb-inspector-close" title="Close · Esc" aria-label="Close record details" onClick={() => void closeInspector()}>
+            <IconX size={17} stroke={1.9} />
+          </button>
+        </header>
+
+        <div className="odb-inspector-body">
+          <div className="odb-inspector-meta">
+            <span><IconTable size={14} stroke={1.7} /> {editTable.table}</span>
+            {pkValue != null && <code title={`${pkColumn} = ${String(pkValue)}`}>{pkColumn} = {String(pkValue)}</code>}
+          </div>
+
+          {!pkColumn || pkIndex < 0 ? (
+            <div className="odb-inspector-notice"><IconLock size={15} /> No primary key. This record is read-only.</div>
+          ) : readOnly ? (
+            <div className="odb-inspector-notice"><IconLock size={15} /> Read-only mode is enabled for this connection.</div>
+          ) : null}
+
+          {result.columns.length >= 8 && (
+            <div className="odb-inspector-search">
+              <IconSearch size={14} stroke={1.8} />
+              <input
+                value={fieldQuery}
+                aria-label="Filter record fields"
+                placeholder={`Filter ${result.columns.length} fields…`}
+                onChange={(event) => setFieldQuery(event.target.value)}
+              />
+              {fieldQuery && (
+                <button type="button" title="Clear field filter" aria-label="Clear field filter" onClick={() => setFieldQuery("")}>
+                  <IconX size={13} stroke={2} />
+                </button>
+              )}
+              <span>{visibleFields.length}</span>
+            </div>
+          )}
+
+          <div className="odb-inspector-fields">
+            {visibleFields.map(({ column, index }) => {
+              const isPrimaryKey = index === pkIndex;
+              const isModified = changedSet.has(index);
+              const isNull = draft[column.name] == null;
+              const inputId = `record-field-${inspectorRow}-${index}`;
+              const fieldDisabled = isPrimaryKey || !canEdit || isNull || busy;
+              return (
+                <section className={`odb-inspector-field ${isModified ? "is-modified" : ""} ${isNull ? "is-null" : ""}`} key={column.name}>
+                  <div className="odb-inspector-label-row">
+                    <label htmlFor={inputId}>{column.name}</label>
+                    {column.dataType && <span className="odb-inspector-type">{column.dataType}</span>}
+                    {isPrimaryKey && <span className="odb-inspector-pk">PK</span>}
+                    {isModified && <span className="odb-inspector-modified">Modified</span>}
+                    {isModified && (
+                      <button type="button" title={`Reset ${column.name}`} aria-label={`Reset ${column.name}`} onClick={() => resetField(index)}>
+                        <IconRefresh size={12} stroke={1.9} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="odb-inspector-control-row">
+                    <div className="odb-inspector-input-wrap">
+                      {isNull && <span className="odb-inspector-null-value">NULL</span>}
+                      <FieldInput
+                        id={inputId}
+                        kind={fieldKind(column, samplesByColumn[index] ?? [])}
+                        value={draft[column.name]}
+                        disabled={fieldDisabled}
+                        samples={samplesByColumn[index] ?? []}
+                        onChange={(value) => updateDraft(column.name, value)}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="odb-inspector-null-toggle"
+                      aria-label={`${isNull ? "Unset" : "Set"} ${column.name} as NULL`}
+                      aria-pressed={isNull}
+                      title={isNull ? "Use a value" : "Set as NULL"}
+                      disabled={isPrimaryKey || !canEdit || busy}
+                      onClick={() => updateDraft(column.name, isNull ? "" : null)}
+                    >
+                      NULL
+                    </button>
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+
+          {visibleFields.length === 0 && (
+            <div className="odb-inspector-empty">
+              <IconSearch size={18} stroke={1.6} />
+              <strong>No matching fields</strong>
+              <span>Try a field name or data type.</span>
+            </div>
+          )}
         </div>
 
-        {!canEdit && <div className="insp-warn"><IconLock size={14} /> No primary key — this record is read-only.</div>}
-        {fieldsBlock}
-      </div>
-
-      <div className="insp-actions">
-        <button className="insp-del" onClick={del} disabled={!canEdit}>
-          <IconTrash size={15} stroke={1.7} /> Delete
-        </button>
-        <div className="spacer" />
-        {saved && changedCount === 0 ? <span className="insp-saved">Saved</span> : changedCount > 0 && <span className="insp-unsaved">{changedCount} unsaved</span>}
-        <button className="insp-save" onClick={save} disabled={!canEdit || busy || changedCount === 0}>
-          <IconDeviceFloppy size={15} stroke={1.8} /> {busy ? "Saving…" : "Save changes"}
-        </button>
-      </div>
-    </aside>
+        <footer className="odb-inspector-footer">
+          <button type="button" className="odb-inspector-delete" onClick={() => void deleteRowAt(inspectorRow)} disabled={!canEdit || busy}>
+            <IconTrash size={15} stroke={1.8} /> Delete
+          </button>
+          <div className="odb-inspector-status" aria-live="polite">
+            {saved && changedCount === 0 ? <span className="is-saved"><IconCheck size={13} /> Saved</span> : changedCount > 0 ? <span>{changedCount} modified</span> : <span>No changes</span>}
+          </div>
+          {changedCount > 0 && (
+            <button type="button" className="odb-inspector-reset" onClick={resetAll} disabled={busy}>Reset</button>
+          )}
+          <button type="button" className="odb-inspector-save" onClick={() => void save()} disabled={!canEdit || busy || changedCount === 0} title="Save changes · ⌘S">
+            <IconDeviceFloppy size={15} stroke={1.9} /> {busy ? "Saving…" : "Save"}
+          </button>
+        </footer>
+      </aside>
+    </>
   );
 }
