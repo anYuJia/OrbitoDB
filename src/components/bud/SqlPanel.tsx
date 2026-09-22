@@ -4,6 +4,7 @@ import {
   IconChartBar,
   IconCheck,
   IconDeviceFloppy,
+  IconDots,
   IconEraser,
   IconFileCode,
   IconMessage2,
@@ -12,6 +13,7 @@ import {
   IconPlayerStop,
   IconRefresh,
   IconSearch,
+  IconSettings,
   IconStar,
   IconTable,
 } from "@tabler/icons-react";
@@ -22,6 +24,7 @@ import { ExportMenu } from "./ExportMenu";
 import { promptDialog } from "../../state/dialog";
 import type { Column } from "../../ipc/types";
 import { useStore } from "../../state/store";
+import "./query-workspace.css";
 
 const KEYWORDS = new Set(
   (
@@ -37,6 +40,10 @@ const KW_LIST = [...KEYWORDS];
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function closeDetailsMenu(event: React.MouseEvent<HTMLButtonElement>) {
+  event.currentTarget.closest("details")?.removeAttribute("open");
 }
 
 function highlightSql(src: string): string {
@@ -415,57 +422,58 @@ export function SqlPanel() {
   return (
     <div className="bud-sqlpanel" ref={panelRef}>
       <div className="bud-ide-toolbar">
-        <button
-          className="bud-sql-run bud-tb-exec"
-          title="Execute — runs the selection if any (⌘↵)"
-          onClick={() => void exec(selectedOrAll())}
-          disabled={running || !connId}
-        >
-          <IconPlayerPlay size={15} stroke={1.8} />
-        </button>
-        <button className="bud-tb-exec" title="Execute as script" onClick={() => void exec()} disabled={running || !connId}>
-          <IconPlayerSkipForward size={15} stroke={1.8} />
-        </button>
-        <button title="Stop waiting for the current query result" onClick={stop} disabled={!running}>
+        <div className="bud-query-run-group">
+          <button
+            className="bud-query-run"
+            title="Execute — runs the selection if any (⌘↵)"
+            onClick={() => void exec(selectedOrAll())}
+            disabled={running || !connId}
+          >
+            <IconPlayerPlay size={15} stroke={2} />
+            <span>{running ? "Running…" : "Run query"}</span>
+            <kbd>⌘↵</kbd>
+          </button>
+          <button className="bud-query-run-alt" title="Execute the full editor as a script" onClick={() => void exec()} disabled={running || !connId}>
+            <IconPlayerSkipForward size={15} stroke={1.9} />
+          </button>
+        </div>
+        <button className="bud-query-stop" title="Stop waiting for the current query result" onClick={stop} disabled={!running}>
           <IconPlayerStop size={15} stroke={1.8} />
         </button>
         <span className="bud-tb-sep" />
-        <button
-          className={`bud-tb-toggle ${autoCommit ? "" : "on"}`}
-          title={autoCommit ? "Auto-commit is on — click for manual transactions" : "Manual commit — writes run in a transaction"}
-          onClick={() => setAutoCommit(!autoCommit)}
-        >
-          {autoCommit ? "Auto" : "Manual"}
+        <div className="bud-query-transaction" aria-label="Transaction controls">
+          <button
+            className={`bud-tb-toggle ${autoCommit ? "" : "on"}`}
+            title={autoCommit ? "Auto-commit is on — click for manual transactions" : "Manual commit — writes run in a transaction"}
+            onClick={() => setAutoCommit(!autoCommit)}
+          >
+            {autoCommit ? "Auto-commit" : "Manual transaction"}
+          </button>
+          <button className={`bud-tb-commit ${txnDirty ? "live" : ""}`} title="Commit transaction" aria-label="Commit transaction" onClick={() => void commitTxn()} disabled={!txnDirty}>
+            <IconCheck size={15} stroke={1.8} />
+          </button>
+          <button className={`bud-tb-rollback ${txnDirty ? "live" : ""}`} title="Rollback transaction" aria-label="Rollback transaction" onClick={() => void rollbackTxn()} disabled={!txnDirty}>
+            <IconArrowBackUp size={15} stroke={1.8} />
+          </button>
+        </div>
+        <span className="bud-ide-spacer" />
+        <button className="bud-query-text-action" title="Format SQL (Ctrl+Shift+F)" onClick={() => setSql(formatSql(sql))} disabled={!sql.trim()}>
+          <IconAlignLeft size={15} stroke={1.8} /><span>Format</span>
         </button>
-        <button className={`bud-tb-commit ${txnDirty ? "live" : ""}`} title="Commit transaction" onClick={() => void commitTxn()} disabled={!txnDirty}>
-          <IconCheck size={15} stroke={1.8} />
+        <button className="bud-query-text-action" title="Explain query plan" onClick={() => void exec(explainPrefix + selectedOrAll())} disabled={!sql.trim() || !connId}>
+          <IconFileCode size={15} stroke={1.8} /><span>Explain</span>
         </button>
-        <button className={`bud-tb-rollback ${txnDirty ? "live" : ""}`} title="Rollback transaction" onClick={() => void rollbackTxn()} disabled={!txnDirty}>
-          <IconArrowBackUp size={15} stroke={1.8} />
-        </button>
-        <span className="bud-tb-sep" />
-        <button title="Format SQL (Ctrl+Shift+F)" onClick={() => setSql(formatSql(sql))} disabled={!sql.trim()}>
-          <IconAlignLeft size={15} stroke={1.8} />
-        </button>
-        <button title="Toggle comment (Ctrl+/)" onClick={toggleComment} disabled={!sql.trim()}>
-          <IconMessage2 size={15} stroke={1.8} />
-        </button>
-        <button title="Re-run" onClick={() => void exec(selectedOrAll())} disabled={running || !connId}>
-          <IconRefresh size={15} stroke={1.8} />
-        </button>
-        <button title="Explain plan" onClick={() => void exec(explainPrefix + selectedOrAll())} disabled={!sql.trim() || !connId}>
-          <IconFileCode size={15} stroke={1.8} />
-        </button>
-        <span className="bud-tb-sep" />
-        <button title="Save as script" onClick={() => void saveAs("script")} disabled={!sql.trim()}>
-          <IconDeviceFloppy size={15} stroke={1.8} />
-        </button>
-        <button title="Add to favorites" onClick={() => void saveAs("favorite")} disabled={!sql.trim()}>
-          <IconStar size={15} stroke={1.8} />
-        </button>
-        <button title="Clear editor" onClick={() => setSql("")} disabled={!sql}>
-          <IconEraser size={15} stroke={1.8} />
-        </button>
+        <details className="bud-query-more">
+          <summary title="More query actions"><IconDots size={17} stroke={1.8} /><span>More</span></summary>
+          <div className="bud-query-menu">
+            <button onClick={(event) => { closeDetailsMenu(event); toggleComment(); }} disabled={!sql.trim()}><IconMessage2 size={15} /> Toggle comment</button>
+            <button onClick={(event) => { closeDetailsMenu(event); void exec(selectedOrAll()); }} disabled={running || !connId}><IconRefresh size={15} /> Re-run query</button>
+            <button onClick={(event) => { closeDetailsMenu(event); void saveAs("script"); }} disabled={!sql.trim()}><IconDeviceFloppy size={15} /> Save as script</button>
+            <button onClick={(event) => { closeDetailsMenu(event); void saveAs("favorite"); }} disabled={!sql.trim()}><IconStar size={15} /> Add to favorites</button>
+            <span />
+            <button className="danger" onClick={(event) => { closeDetailsMenu(event); setSql(""); }} disabled={!sql}><IconEraser size={15} /> Clear editor</button>
+          </div>
+        </details>
       </div>
 
       <div className="bud-connbar">
@@ -492,14 +500,21 @@ export function SqlPanel() {
           <span className="bud-cb-label">Schema</span>
           <span className="bud-cb-static" title="Active schema">{schemaName}</span>
         </div>
-        <label className="bud-cb-field sm">
-          <span className="bud-cb-label">Max Rows</span>
-          <input type="number" min="1" inputMode="numeric" className="bud-cb-input" value={maxRows} onChange={(e) => setMaxRows(e.target.value)} />
-        </label>
-        <label className="bud-cb-field sm">
-          <span className="bud-cb-label">Max Chars</span>
-          <input type="number" min="-1" inputMode="numeric" title="Use -1 for unlimited" className="bud-cb-input" value={maxChars} onChange={(e) => setMaxChars(e.target.value)} />
-        </label>
+        <span className="bud-connbar-spacer" />
+        <details className="bud-query-settings">
+          <summary><IconSettings size={15} stroke={1.8} /> Query limits</summary>
+          <div className="bud-query-settings-menu">
+            <label>
+              <span>Maximum rows</span>
+              <input type="number" min="1" inputMode="numeric" className="bud-cb-input" value={maxRows} onChange={(e) => setMaxRows(e.target.value)} />
+            </label>
+            <label>
+              <span>Maximum characters</span>
+              <input type="number" min="-1" inputMode="numeric" title="Use -1 for unlimited" className="bud-cb-input" value={maxChars} onChange={(e) => setMaxChars(e.target.value)} />
+              <small>Use −1 for unlimited cell content.</small>
+            </label>
+          </div>
+        </details>
       </div>
 
       <div className="bud-sql-editor-wrap" ref={wrapRef} style={editorH != null ? { flex: "none", height: editorH } : undefined}>
@@ -621,19 +636,6 @@ export function SqlPanel() {
           </div>
         </div>
         <div className="bud-sql-bar">
-          <button
-            className="bud-sql-exec"
-            title="Execute — runs the selection if any (⌘↵)"
-            onClick={() => void exec(selectedOrAll())}
-            disabled={running || !connId}
-          >
-            <IconPlayerPlay size={13} stroke={1.9} />
-            {running ? "Running…" : "Execute"}
-            <span className="bud-kbd">
-              <kbd>⌘</kbd>
-              <kbd>↵</kbd>
-            </span>
-          </button>
           <span className="bud-ed-status">
             {caretLine}/{lineCount} [{sql.length}]
           </span>
@@ -647,9 +649,6 @@ export function SqlPanel() {
           )}
           {txnDirty && <span className="bud-ed-uncommitted" title="Uncommitted changes — Commit or Rollback">● Uncommitted</span>}
           <span className="bud-ed-eol">LF</span>
-          <button className="bud-ed-eol bud-ed-commitmode" onClick={() => setAutoCommit(!autoCommit)} title="Toggle auto-commit">
-            Auto Commit: {autoCommit ? "ON" : "OFF"}
-          </button>
           <span className="bud-ed-eol">UTF-8</span>
         </div>
       </div>

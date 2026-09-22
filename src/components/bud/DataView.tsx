@@ -3,6 +3,7 @@ import {
   IconClock,
   IconCode,
   IconDatabase,
+  IconLayoutDashboard,
   IconPlayerPlay,
   IconPlus,
   IconSearch,
@@ -11,13 +12,26 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { viewV } from "../../lib/motion";
 import { toast } from "../../state/toast";
 import { useStore } from "../../state/store";
 import { DataGrid } from "./DataGrid";
 import { RowInspector } from "./RowInspector";
-import { SqlPanel } from "./SqlPanel";
+
+const ConnectionOverview = lazy(() =>
+  import("./ConnectionOverview").then((module) => ({ default: module.ConnectionOverview })),
+);
+const SqlPanel = lazy(() => import("./SqlPanel").then((module) => ({ default: module.SqlPanel })));
+
+function WorkspaceFallback({ label }: { label: string }) {
+  return (
+    <div className="bud-workspace-fallback" role="status" aria-label={label}>
+      <span className="bud-loading-spinner" />
+      <span>{label}</span>
+    </div>
+  );
+}
 
 export function DataView({ onAddServer }: { onAddServer: () => void }) {
   const editTable = useStore((s) => s.editTable);
@@ -52,6 +66,20 @@ export function DataView({ onAddServer }: { onAddServer: () => void }) {
   return (
     <motion.main className="bud-main" variants={viewV} initial="hidden" animate="show" exit="exit">
       <div className="bud-qtabs" role="tablist" aria-label="Open workspace tabs" onKeyDown={moveTabFocus}>
+        {activeId && (
+          <div className={`bud-qtab bud-qtab-overview ${view === "overview" ? "on" : ""}`}>
+            <button
+              className="bud-qtab-main"
+              role="tab"
+              aria-selected={view === "overview"}
+              tabIndex={view === "overview" ? 0 : -1}
+              onClick={() => setView("overview")}
+            >
+              <IconLayoutDashboard size={14} stroke={1.7} className="bud-qtab-ic" />
+              <span>Overview</span>
+            </button>
+          </div>
+        )}
         {editors.map((ed) => (
           <div
             key={ed.id}
@@ -154,10 +182,16 @@ export function DataView({ onAddServer }: { onAddServer: () => void }) {
             <span><IconTable size={15} stroke={1.7} /> Schema-aware tools</span>
           </div>
         </div>
+      ) : view === "overview" ? (
+        <Suspense fallback={<WorkspaceFallback label="Loading overview" />}>
+          <ConnectionOverview />
+        </Suspense>
       ) : view === "history" ? (
         <HistoryView />
       ) : view === "sql" ? (
-        <SqlPanel key={activeEditorId} />
+        <Suspense fallback={<WorkspaceFallback label="Loading query editor" />}>
+          <SqlPanel key={activeEditorId} />
+        </Suspense>
       ) : !editTable ? (
         <div className="bud-context-empty">
           <span className="bud-context-empty-icon"><IconTable size={22} stroke={1.55} /></span>

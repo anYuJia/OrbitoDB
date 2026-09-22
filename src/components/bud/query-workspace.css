@@ -1,0 +1,223 @@
+/* Query workspace hierarchy */
+
+.bud-ide-toolbar {
+  min-height: 48px;
+  gap: 7px;
+  padding: 6px 12px;
+  background: var(--bg-2);
+}
+
+.bud-ide-toolbar button {
+  height: 34px;
+  width: 34px;
+  border-radius: 7px !important;
+}
+
+.bud-query-run-group,
+.bud-query-transaction {
+  display: inline-flex;
+  align-items: center;
+}
+
+.bud-query-run-group {
+  border-radius: 8px;
+  box-shadow: 0 5px 16px rgba(35, 121, 78, 0.14);
+}
+
+.bud-ide-toolbar .bud-query-run {
+  width: auto;
+  min-width: 112px;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid rgba(112, 228, 173, 0.2);
+  border-radius: 8px 0 0 8px !important;
+  background: rgba(61, 214, 140, 0.14);
+  color: var(--green-bright);
+  font-size: 11.5px;
+  font-weight: 680;
+}
+
+.bud-query-run kbd {
+  color: rgba(180, 247, 215, 0.52);
+  font-family: var(--mono);
+  font-size: 8.5px;
+}
+
+.bud-ide-toolbar .bud-query-run-alt {
+  width: 34px;
+  border: 1px solid rgba(112, 228, 173, 0.2);
+  border-left: 0;
+  border-radius: 0 8px 8px 0 !important;
+  background: rgba(61, 214, 140, 0.1);
+  color: var(--green-bright);
+}
+
+.bud-ide-toolbar .bud-query-run:hover:not(:disabled),
+.bud-ide-toolbar .bud-query-run-alt:hover:not(:disabled) {
+  background: rgba(61, 214, 140, 0.21);
+}
+
+.bud-ide-toolbar .bud-query-stop {
+  color: var(--danger);
+}
+
+.bud-query-transaction {
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.bud-ide-toolbar .bud-query-transaction button {
+  height: 28px;
+  border: 0;
+}
+
+.bud-ide-toolbar .bud-query-transaction .bud-tb-toggle {
+  width: auto;
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.bud-ide-spacer,
+.bud-connbar-spacer {
+  flex: 1;
+}
+
+.bud-ide-toolbar .bud-query-text-action {
+  width: auto;
+  gap: 6px;
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.bud-query-more,
+.bud-query-settings {
+  position: relative;
+  flex: none;
+}
+
+.bud-query-more > summary,
+.bud-query-settings > summary {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 10.5px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.bud-query-more[open] > summary,
+.bud-query-more > summary:hover,
+.bud-query-settings[open] > summary,
+.bud-query-settings > summary:hover {
+  border-color: var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.bud-query-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  width: 205px;
+}
+
+.bud-query-menu .danger {
+  color: #fda4af;
+}
+
+.bud-connbar {
+  min-height: 54px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(13, 16, 21, 0.94);
+}
+
+.bud-connbar .bud-cb-field {
+  min-width: 150px;
+  max-width: 270px;
+}
+
+.bud-connbar .bud-cb-label {
+  font-size: 9px;
+}
+
+.bud-query-settings-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  width: 240px;
+  gap: 11px;
+  padding: 13px;
+}
+
+.bud-query-settings-menu label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.bud-query-settings-menu .bud-cb-input {
+  width: 100%;
+}
+
+.bud-query-settings-menu small {
+  color: var(--faint);
+  font-size: 9.5px;
+}
+
+@media (max-width: 900px) {
+  .bud-query-text-action span,
+  .bud-query-more > summary span {
+    display: none;
+  }
+
+  .bud-ide-toolbar .bud-query-text-action,
+  .bud-query-more > summary {
+    width: 34px;
+    padding: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .bud-query-transaction {
+    display: none;
+  }
+
+  .bud-query-run kbd,
+  .bud-query-settings > summary {
+    display: none;
+  }
+
+  .bud-connbar {
+    overflow-x: auto;
+  }
+}
+
+.bud-sql-editor-wrap,
+.bud-sql-results,
+.bud-grid-area {
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.bud-sql-editor-wrap {
+  margin: 12px 14px 0;
+}
+
+.bud-sql-results,
+.bud-grid-area {
+  margin: 0 14px 14px;
+}

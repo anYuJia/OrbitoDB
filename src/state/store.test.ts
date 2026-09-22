@@ -88,6 +88,7 @@ describe("store", () => {
       error: null,
       running: false,
       history: [],
+      view: "sql",
       editTable: null,
       openTables: [],
       selection: [],
@@ -145,6 +146,7 @@ describe("store", () => {
     await useStore.getState().loadConnections();
     expect(await useStore.getState().openAndIntrospect("alpha")).toBe(true);
     expect(useStore.getState().activeConnectionId).toBe("alpha");
+    expect(useStore.getState().view).toBe("overview");
     expect(useStore.getState().schema.tables.map((table) => table.name)).toEqual(["customers"]);
   });
 

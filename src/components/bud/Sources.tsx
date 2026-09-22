@@ -7,6 +7,7 @@ import {
   IconCopy,
   IconDatabase,
   IconDatabaseCog,
+  IconDots,
   IconEraser,
   IconEye,
   IconFileText,
@@ -52,6 +53,10 @@ function keyboardActivate(e: React.KeyboardEvent, action: () => void) {
   if (e.key !== "Enter" && e.key !== " ") return;
   e.preventDefault();
   action();
+}
+
+function closeDetailsMenu(event: React.MouseEvent<HTMLButtonElement>) {
+  event.currentTarget.closest("details")?.removeAttribute("open");
 }
 
 function EngineIcon({ engine }: { engine: Engine }) {
@@ -126,7 +131,6 @@ export function Sources({
   const loadConnections = useStore((s) => s.loadConnections);
   const scanLocal = useStore((s) => s.scanLocal);
   const [filter, setFilter] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
   const [panel, setPanel] = useState<(typeof PANELS)[number]>("Databases");
   const [rootOpen, setRootOpen] = useState(true);
   const [rootCtx, setRootCtx] = useState<CtxAnchor | null>(null);
@@ -164,61 +168,19 @@ export function Sources({
             aria-selected={panel === p}
             onClick={() => setPanel(p)}
           >
-            {p}
+            {p === "Databases" ? <IconDatabase size={14} /> : p === "Scripts" ? <IconFileText size={14} /> : <IconStar size={14} />}
+            <span>{p}</span>
           </button>
         ))}
       </nav>
 
-      <div className="bud-tree-toolbar">
-        <button title="New connection" onClick={onAddServer}>
-          <IconPlus size={15} stroke={1.8} />
-        </button>
-        <button
-          title="Refresh"
-          onClick={() => {
-            void loadConnections();
-            void scanLocal();
-          }}
-        >
-          <IconRefresh size={15} stroke={1.7} />
-        </button>
-        <button className={searchOpen ? "on" : ""} title="Filter objects" onClick={() => setSearchOpen((v) => !v)}>
-          <IconFilter size={15} stroke={1.7} />
-        </button>
-        <button title="Schema diagram (ER)" onClick={() => window.dispatchEvent(new Event("orbitodb:erd"))}>
-          <IconSchema size={15} stroke={1.7} />
-        </button>
-        <button title="Import CSV" onClick={() => window.dispatchEvent(new Event("orbitodb:import-csv"))}>
-          <IconFileImport size={15} stroke={1.7} />
-        </button>
-        <button title="Schema diff (compare connections)" onClick={() => window.dispatchEvent(new Event("orbitodb:schema-diff"))}>
-          <IconGitCompare size={15} stroke={1.7} />
-        </button>
-        <button
-          className={compact ? "on" : ""}
-          title={compact ? "Comfortable spacing" : "Compact spacing"}
-          aria-pressed={compact}
-          onClick={() => setCompact((value) => {
-            const next = !value;
-            try {
-              localStorage.setItem("orbitodb.sidebarCompact", String(next));
-            } catch {
-              /* ignore */
-            }
-            return next;
-          })}
-        >
-          <IconLayoutSidebar size={15} stroke={1.7} />
-        </button>
-      </div>
-
-      {searchOpen && (
-        <div className="bud-src-search">
+      {panel === "Databases" && (
+        <div className="bud-source-controls">
+          <div className="bud-src-search">
           <IconSearch size={14} stroke={1.7} />
           <input
-            autoFocus
             aria-label="Filter database objects"
-            placeholder="Filter objects…"
+            placeholder="Filter schema…"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
@@ -227,6 +189,49 @@ export function Sources({
               <IconX size={13} stroke={1.9} />
             </button>
           )}
+          </div>
+          <button
+            className="bud-source-refresh"
+            title="Refresh connections and schema"
+            aria-label="Refresh connections and schema"
+            onClick={() => {
+              void loadConnections();
+              void scanLocal();
+            }}
+          >
+            <IconRefresh size={15} stroke={1.7} />
+          </button>
+          <details className="bud-source-tools">
+            <summary title="Database tools"><IconDots size={17} stroke={1.8} /><span>Tools</span></summary>
+            <div className="bud-source-tools-menu">
+              <button onClick={(event) => { closeDetailsMenu(event); window.dispatchEvent(new Event("orbitodb:erd")); }}>
+                <IconSchema size={15} /> Schema diagram
+              </button>
+              <button onClick={(event) => { closeDetailsMenu(event); window.dispatchEvent(new Event("orbitodb:import-csv")); }}>
+                <IconFileImport size={15} /> Import CSV
+              </button>
+              <button onClick={(event) => { closeDetailsMenu(event); window.dispatchEvent(new Event("orbitodb:schema-diff")); }}>
+                <IconGitCompare size={15} /> Compare schemas
+              </button>
+              <button
+                aria-pressed={compact}
+                onClick={(event) => {
+                  closeDetailsMenu(event);
+                  setCompact((value) => {
+                    const next = !value;
+                    try {
+                      localStorage.setItem("orbitodb.sidebarCompact", String(next));
+                    } catch {
+                      /* ignore */
+                    }
+                    return next;
+                  });
+                }}
+              >
+                <IconLayoutSidebar size={15} /> {compact ? "Comfortable density" : "Compact density"}
+              </button>
+            </div>
+          </details>
         </div>
       )}
 

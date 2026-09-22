@@ -43,6 +43,7 @@ interface SchemaState {
 export type TopView = "data" | "settings";
 export type AppScreen = "dashboard" | "workspace";
 export type DashPage = "home" | "connections" | "logs";
+export type WorkspaceView = "overview" | "data" | "sql" | "history";
 export type FilterOp = TableFilterOp;
 export type ViewFilter = TableFilter;
 export interface ViewDef {
@@ -216,7 +217,7 @@ export interface AppStore {
   detected: ConnectionConfig[];
   loadingTables: boolean;
   loadingResult: boolean;
-  view: "data" | "sql" | "history";
+  view: WorkspaceView;
   inspectorRow: number | null;
   topView: TopView;
   screen: AppScreen;
@@ -266,7 +267,7 @@ export interface AppStore {
   createLocalDatabase: (name: string) => Promise<void>;
   scanLocal: () => Promise<void>;
   addDetected: (cfg: ConnectionConfig) => Promise<void>;
-  setView: (v: "data" | "sql" | "history") => void;
+  setView: (v: WorkspaceView) => void;
   refreshSchema: () => Promise<void>;
   refresh: () => Promise<void>;
   reload: (table: string) => Promise<void>;
@@ -567,7 +568,7 @@ export const useStore = create<AppStore>((set, get) => ({
       editTable: null,
       openTables: [],
       result: null,
-      view: "sql",
+      view: "overview",
       activeViewId: null,
       selection: [],
       inspectorRow: null,
