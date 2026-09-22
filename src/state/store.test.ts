@@ -126,6 +126,46 @@ describe("store", () => {
     expect(useStore.getState().views).toHaveLength(1);
   });
 
+  it("reuses an untouched query tab instead of creating tab clutter", () => {
+    useStore.setState({
+      editors: [
+        { id: "ed-sql", name: "Query 1", sql: "SELECT 1" },
+        { id: "ed-blank", name: "Query 2", sql: "" },
+      ],
+      activeEditorId: "ed-sql",
+      sql: "SELECT 1",
+      editorResults: {},
+      editorErrors: {},
+      view: "overview",
+    });
+
+    useStore.getState().newEditor();
+
+    expect(useStore.getState().editors).toHaveLength(2);
+    expect(useStore.getState().activeEditorId).toBe("ed-blank");
+    expect(useStore.getState().view).toBe("sql");
+  });
+
+  it("closes several query tabs as one workspace action", () => {
+    useStore.setState({
+      editors: [
+        { id: "ed-1", name: "Query 1", sql: "SELECT 1" },
+        { id: "ed-2", name: "Query 2", sql: "SELECT 2" },
+        { id: "ed-3", name: "Query 3", sql: "SELECT 3" },
+      ],
+      activeEditorId: "ed-2",
+      sql: "SELECT 2",
+      editorResults: { "ed-1": null, "ed-2": null, "ed-3": null },
+      editorErrors: { "ed-1": null, "ed-2": null, "ed-3": null },
+    });
+
+    useStore.getState().closeEditors(["ed-1", "ed-2"]);
+
+    expect(useStore.getState().editors.map((editor) => editor.id)).toEqual(["ed-3"]);
+    expect(useStore.getState().activeEditorId).toBe("ed-3");
+    expect(useStore.getState().sql).toBe("SELECT 3");
+  });
+
   it("removes saved views when an inactive connection is deleted", async () => {
     useStore.setState({
       activeConnectionId: "alpha",

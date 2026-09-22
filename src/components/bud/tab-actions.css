@@ -1,0 +1,97 @@
+/* Low-frequency query-tab management is loaded on demand with its component. */
+.odb-tabbar-actions {
+  height: 41px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: none;
+  padding: 5px 8px 0 5px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.odb-tab-actions {
+  position: relative;
+  height: 36px;
+}
+
+.odb-tab-actions > summary {
+  width: 34px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.odb-tab-actions > summary::-webkit-details-marker {
+  display: none;
+}
+
+.odb-tab-actions[open] > summary,
+.odb-tab-actions > summary:hover {
+  border-color: var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.odb-tab-actions-menu {
+  position: absolute;
+  z-index: 120;
+  top: calc(100% + 5px);
+  right: 0;
+  width: 226px;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow-menu);
+}
+
+.odb-tab-actions-menu button {
+  width: 100%;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.odb-tab-actions-menu button > span {
+  color: var(--faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.odb-tab-actions-menu button:hover:not(:disabled) {
+  background: var(--panel-2);
+}
+
+.odb-tab-actions-menu button:disabled {
+  color: var(--faint);
+  cursor: default;
+  opacity: 0.58;
+}
+
+.odb-tab-actions-menu button.danger:not(:disabled) {
+  color: var(--danger);
+}
+
+.odb-tab-actions-separator {
+  height: 1px;
+  margin: 4px 5px;
+  background: var(--border);
+}

@@ -123,10 +123,12 @@ export function Sources({
   panel,
   onAddServer,
   onEditServer,
+  onNavigate,
 }: {
   panel: ExplorerPanel;
   onAddServer: () => void;
   onEditServer: (conn: ConnectionConfig) => void;
+  onNavigate: () => void;
 }) {
   const connections = useStore((s) => s.connections);
   const loadConnections = useStore((s) => s.loadConnections);
@@ -233,11 +235,11 @@ export function Sources({
             </div>
           ) : (
             connections.map((c) => (
-              <Datasource key={c.id} conn={c} onEditServer={onEditServer} filter={filter} />
+              <Datasource key={c.id} conn={c} onEditServer={onEditServer} onNavigate={onNavigate} filter={filter} />
             ))
           )
         ) : (
-          <SavedList kind={panel} />
+          <SavedList kind={panel} onNavigate={onNavigate} />
         )}
       </div>
     </aside>
@@ -245,34 +247,60 @@ export function Sources({
 }
 
 /** The Scripts / Favorites panels: saved SQL snippets, click to load, ✕ to delete. */
-function SavedList({ kind }: { kind: "Scripts" | "Favorites" }) {
+function SavedList({ kind, onNavigate }: { kind: "Scripts" | "Favorites"; onNavigate: () => void }) {
   const scripts = useStore((s) => s.scripts);
   const favorites = useStore((s) => s.favorites);
   const loadSql = useStore((s) => s.loadSql);
+  const newEditor = useStore((s) => s.newEditor);
   const deleteScript = useStore((s) => s.deleteScript);
   const deleteFavorite = useStore((s) => s.deleteFavorite);
+  const [query, setQuery] = useState("");
   const items = kind === "Scripts" ? scripts : favorites;
   const del = kind === "Scripts" ? deleteScript : deleteFavorite;
   const Icon = kind === "Scripts" ? IconFileText : IconStar;
+  const normalizedQuery = query.trim().toLowerCase();
+  const shown = normalizedQuery
+    ? items.filter((item) => `${item.name} ${item.sql}`.toLowerCase().includes(normalizedQuery))
+    : items;
+  const openItem = (sql: string) => {
+    loadSql(sql);
+    onNavigate();
+  };
 
   if (items.length === 0) {
     return (
-      <div className="bud-ds-empty">
-        {kind === "Scripts"
-          ? "No saved scripts. Use the Save icon in the editor toolbar."
-          : "No favorites. Use the ★ icon in the editor toolbar."}
+      <div className="bud-sidebar-empty odb-library-empty">
+        <span><Icon size={20} stroke={1.55} /></span>
+        <strong>{kind === "Scripts" ? "No saved queries" : "No favorites yet"}</strong>
+        <p>{kind === "Scripts"
+          ? "Save reusable SQL from the editor and it will stay available here."
+          : "Favorite an important statement to keep it one click away."}</p>
+        <button onClick={() => { newEditor(); onNavigate(); }}>
+          <IconCode size={14} stroke={1.8} /> Write a query
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="bud-saved-list">
-      {items.map((it) => (
+    <>
+      <div className="odb-library-search">
+        <IconSearch size={14} stroke={1.7} />
+        <input
+          aria-label={`Search ${kind === "Scripts" ? "saved queries" : "favorites"}`}
+          placeholder={`Search ${kind === "Scripts" ? "saved queries" : "favorites"}…`}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        {query && <button aria-label="Clear library search" onClick={() => setQuery("")}><IconX size={13} /></button>}
+      </div>
+      <div className="bud-saved-list">
+      {shown.map((it) => (
         <div
           key={it.id}
           className="bud-saved-row"
-          onClick={() => loadSql(it.sql)}
-          onKeyDown={(e) => keyboardActivate(e, () => loadSql(it.sql))}
+          onClick={() => openItem(it.sql)}
+          onKeyDown={(e) => keyboardActivate(e, () => openItem(it.sql))}
           role="button"
           tabIndex={0}
           title={it.sql}
@@ -284,6 +312,7 @@ function SavedList({ kind }: { kind: "Scripts" | "Favorites" }) {
           <button
             className="bud-saved-del"
             title="Delete"
+            aria-label={`Delete ${it.name}`}
             onClick={(e) => {
               e.stopPropagation();
               del(it.id);
@@ -293,17 +322,26 @@ function SavedList({ kind }: { kind: "Scripts" | "Favorites" }) {
           </button>
         </div>
       ))}
-    </div>
+      {shown.length === 0 && (
+        <div className="bud-sidebar-empty odb-library-no-results">
+          <strong>No matching queries</strong>
+          <button onClick={() => setQuery("")}>Clear search</button>
+        </div>
+      )}
+      </div>
+    </>
   );
 }
 
 function Datasource({
   conn,
   onEditServer,
+  onNavigate,
   filter,
 }: {
   conn: ConnectionConfig;
   onEditServer: (conn: ConnectionConfig) => void;
+  onNavigate: () => void;
   filter: string;
 }) {
   const [open, setOpen] = useState(true);
@@ -360,6 +398,7 @@ function Datasource({
     if (!isActive) {
       if (!(await openAndIntrospect(conn.id))) return;
       setOpen(true);
+      onNavigate();
       return;
     }
     setOpen((value) => !value);
@@ -493,6 +532,7 @@ function Datasource({
                       selected={selTables.includes(t.name)}
                       selectedNames={selTables}
                       onActivate={activateTable}
+                      onNavigate={onNavigate}
                     />
                   ))
                 )}
@@ -500,7 +540,7 @@ function Datasource({
               {shownViews.length > 0 && (
                 <ObjectGroup label="Views" count={shownViews.length} defaultOpen menu={refreshMenu}>
                   {shownViews.map((view) => (
-                    <TableRow key={view.name} table={view.name} kind="view" connectionId={conn.id} />
+                    <TableRow key={view.name} table={view.name} kind="view" connectionId={conn.id} onNavigate={onNavigate} />
                   ))}
                 </ObjectGroup>
               )}
@@ -520,6 +560,7 @@ function TableRow({
   selected = false,
   selectedNames = [],
   onActivate,
+  onNavigate,
 }: {
   table: string;
   kind?: "table" | "view";
@@ -527,6 +568,7 @@ function TableRow({
   selected?: boolean;
   selectedNames?: string[];
   onActivate?: (name: string, e: React.MouseEvent) => boolean;
+  onNavigate: () => void;
 }) {
   const [ctx, setCtx] = useState<CtxAnchor | null>(null);
   const openTableData = useStore((s) => s.openTableData);
@@ -631,11 +673,13 @@ function TableRow({
         onKeyDown={(e) => keyboardActivate(e, () => {
           if (tableActive) setView("data");
           else void openTableData(table);
+          onNavigate();
         })}
         onClick={(e) => {
           // Ctrl/Cmd-click opens the table in an additional tab.
           if (e.metaKey || e.ctrlKey) {
             void openTableData(table, { newTab: true });
+            onNavigate();
             return;
           }
           const handled = onActivate?.(table, e) ?? false;
@@ -644,9 +688,11 @@ function TableRow({
           // its tab back into view if you'd navigated away to the editor.
           if (tableActive) {
             if (currentView !== "data") setView("data");
+            onNavigate();
             return;
           }
           void openTableData(table);
+          onNavigate();
         }}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -671,9 +717,11 @@ function TableRow({
             onClick={() => {
               if (activeViewId === v.id) {
                 if (currentView !== "data") setView("data");
+                onNavigate();
                 return;
               }
               void openView(v);
+              onNavigate();
             }}
           >
             <span className="bud-table-ic">

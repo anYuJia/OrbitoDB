@@ -171,6 +171,10 @@ select {
   display: none;
 }
 
+.odb-sidebar-scrim {
+  display: none;
+}
+
 .bud-main {
   grid-column: 3;
   grid-row: 1;
@@ -918,6 +922,71 @@ select {
   padding: 0 8px;
 }
 
+.odb-library-search {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 3px 8px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--faint);
+}
+
+.odb-library-search input {
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 11.5px;
+}
+
+.odb-library-search button {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.odb-library-empty {
+  align-items: center;
+  margin: 16px auto;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.odb-library-empty > span {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 2px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.odb-library-empty p {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.odb-library-no-results {
+  align-items: center;
+  text-align: center;
+}
+
 /* Menus ------------------------------------------------------------------ */
 
 .bud-tb-menu,
@@ -999,16 +1068,29 @@ select {
 
 /* Document tabs ---------------------------------------------------------- */
 
-.bud-qtabs {
+.odb-tabbar {
+  position: relative;
+  z-index: 24;
+  min-width: 0;
   min-height: 42px;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.bud-qtabs {
+  min-width: 0;
+  min-height: 42px;
+  flex: 1;
   display: flex;
   align-items: flex-end;
   gap: 2px;
   padding: 5px 8px 0;
   overflow-x: auto;
   overflow-y: hidden;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-2);
+  border-bottom: 0;
+  background: transparent;
 }
 
 .bud-qtabs::-webkit-scrollbar {
@@ -1035,6 +1117,8 @@ select {
   padding: 0;
   cursor: pointer;
 }
+
+.odb-tabbar-actions-loading { width: 81px; flex: none; border-left: 1px solid var(--border); }
 
 .bud-qtab {
   min-width: 112px;
@@ -2308,6 +2392,18 @@ select {
     width: min(82vw, 300px);
     display: flex;
     box-shadow: var(--shadow-modal);
+  }
+
+  .bud-app:not(.sidebar-hidden) .odb-sidebar-scrim {
+    position: fixed;
+    z-index: 60;
+    inset: 46px 0 26px 52px;
+    display: block;
+    padding: 0;
+    border: 0;
+    background: rgba(5, 7, 10, 0.48);
+    backdrop-filter: blur(2px);
+    cursor: default;
   }
 
   .bud-app:not(.sidebar-hidden) .bud-body,

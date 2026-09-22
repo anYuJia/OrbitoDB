@@ -187,6 +187,14 @@ function persistEditors(editors: EditorTab[], activeId: string): void {
     /* ignore */
   }
 }
+
+function nextEditorName(editors: EditorTab[]): string {
+  const highest = editors.reduce((max, editor) => {
+    const match = /^Query\s+(\d+)$/.exec(editor.name);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `Query ${highest + 1}`;
+}
 const INITIAL_EDITORS = loadEditors();
 const INITIAL_ACTIVE_EDITOR = (() => {
   try {
@@ -239,6 +247,7 @@ export interface AppStore {
   setSql: (sql: string) => void;
   newEditor: () => void;
   closeEditor: (id: string) => void;
+  closeEditors: (ids: string[]) => void;
   selectEditor: (id: string) => void;
   setEditorResult: (id: string, result: QueryResult | null, error: AppError | null) => void;
   run: (sqlOverride?: string) => Promise<void>;
@@ -659,8 +668,21 @@ export const useStore = create<AppStore>((set, get) => ({
 
   newEditor: () =>
     set((s) => {
+      const isReusable = (editor: EditorTab) =>
+        !editor.sql.trim() && !s.editorResults[editor.id] && !s.editorErrors[editor.id];
+      const reusable = s.editors.find((editor) => editor.id === s.activeEditorId && isReusable(editor))
+        ?? s.editors.find(isReusable);
+      if (reusable) {
+        persistEditors(s.editors, reusable.id);
+        return {
+          activeEditorId: reusable.id,
+          sql: reusable.sql,
+          view: "sql" as const,
+          topView: "data" as const,
+        };
+      }
       const id = `ed-${Date.now().toString(36)}`;
-      const editor: EditorTab = { id, name: `Query ${s.editors.length + 1}`, sql: "" };
+      const editor: EditorTab = { id, name: nextEditorName(s.editors), sql: "" };
       const editors = [...s.editors, editor];
       persistEditors(editors, id);
       return { editors, activeEditorId: id, sql: "", view: "sql", topView: "data" };
@@ -702,14 +724,20 @@ export const useStore = create<AppStore>((set, get) => ({
     get().setSql(ddl);
   },
 
-  closeEditor: (id) =>
+  closeEditor: (id) => get().closeEditors([id]),
+
+  closeEditors: (ids) =>
     set((s) => {
-      const idx = s.editors.findIndex((e) => e.id === id);
-      let editors = s.editors.filter((e) => e.id !== id);
+      const closing = new Set(ids);
+      if (!s.editors.some((editor) => closing.has(editor.id))) return {};
+      const activeIndex = s.editors.findIndex((editor) => editor.id === s.activeEditorId);
+      let editors = s.editors.filter((editor) => !closing.has(editor.id));
       const editorResults = { ...s.editorResults };
       const editorErrors = { ...s.editorErrors };
-      delete editorResults[id];
-      delete editorErrors[id];
+      closing.forEach((id) => {
+        delete editorResults[id];
+        delete editorErrors[id];
+      });
       if (editors.length === 0) {
         const fresh: EditorTab = { id: `ed-${Date.now().toString(36)}`, name: "Query 1", sql: "" };
         editors = [fresh];
@@ -718,8 +746,8 @@ export const useStore = create<AppStore>((set, get) => ({
       }
       let activeEditorId = s.activeEditorId;
       let sql = s.sql;
-      if (id === s.activeEditorId) {
-        const next = editors[Math.min(idx, editors.length - 1)];
+      if (closing.has(s.activeEditorId)) {
+        const next = editors[Math.min(Math.max(activeIndex, 0), editors.length - 1)];
         activeEditorId = next.id;
         sql = next.sql;
       }

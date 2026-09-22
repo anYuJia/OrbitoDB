@@ -1,10 +1,11 @@
-import { IconFileImport, IconUpload } from "@tabler/icons-react";
+import { IconFileImport, IconUpload, IconX } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { fromCsv, inferColumns } from "../../lib/csv";
 import { backdropV, centeredModalV, MotionButton } from "../../lib/motion";
 import { useStore } from "../../state/store";
 import { toast } from "../../state/toast";
+import "./modal-workspace.css";
 
 interface Parsed {
   fileName: string;
@@ -114,6 +115,10 @@ export function ImportCsvModal({ initialOpen = false }: { initialOpen?: boolean 
           <motion.div
             key="import-modal"
             className="bud-modal bud-import"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-csv-title"
+            aria-describedby="import-csv-description"
             variants={centeredModalV}
             initial="hidden"
             animate="show"
@@ -121,7 +126,14 @@ export function ImportCsvModal({ initialOpen = false }: { initialOpen?: boolean 
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bud-modal-head">
-              <IconFileImport size={16} stroke={1.7} /> Import CSV
+              <div>
+                <span className="bud-modal-eyebrow">Data import</span>
+                <h2 id="import-csv-title"><IconFileImport size={18} stroke={1.7} /> Import CSV</h2>
+                <p id="import-csv-description">Create a table or append rows from a local CSV file.</p>
+              </div>
+              <button type="button" className="bud-modal-close" onClick={close} aria-label="Close CSV import dialog">
+                <IconX size={18} stroke={1.7} />
+              </button>
             </div>
         <div className="bud-modal-body">
           {!parsed ? (

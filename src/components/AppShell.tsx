@@ -148,6 +148,16 @@ export function AppShell() {
     });
   };
 
+  const closeMobileSidebar = () => {
+    if (!window.matchMedia("(max-width: 720px)").matches) return;
+    setSidebarHidden(true);
+    try {
+      localStorage.setItem("orbitodb.sidebarHidden", "true");
+    } catch {
+      /* ignore */
+    }
+  };
+
   const saveSidebarWidth = (width: number) => {
     try {
       localStorage.setItem("orbitodb.sidebarW", String(width));
@@ -213,7 +223,10 @@ export function AppShell() {
           }}
           onSettings={() => setTopView("settings")}
         />
-        <Sources panel={explorerPanel} onAddServer={openAdd} onEditServer={openEdit} />
+        <Sources panel={explorerPanel} onAddServer={openAdd} onEditServer={openEdit} onNavigate={closeMobileSidebar} />
+        {!sidebarHidden && (
+          <button className="odb-sidebar-scrim" aria-label="Close sidebar" onClick={toggleSidebar} />
+        )}
         <AnimatePresence mode="wait" initial={false}>
           {topView === "data" ? (
             <DataView key="data" onAddServer={openAdd} />

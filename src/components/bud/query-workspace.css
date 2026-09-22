@@ -329,6 +329,12 @@
   caret-color: var(--text-strong);
 }
 
+.bud-sql-editor::placeholder {
+  color: var(--faint);
+  opacity: 0.72;
+  -webkit-text-fill-color: var(--faint);
+}
+
 .bud-sql-editor::selection {
   background: rgba(124, 109, 242, 0.28);
 }

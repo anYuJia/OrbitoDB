@@ -7,6 +7,7 @@ import { bridgeHealthy } from "../../ipc/http";
 import type { ConnEnv, ConnectionConfig, Engine } from "../../ipc/types";
 import { promptDialog } from "../../state/dialog";
 import { useStore } from "../../state/store";
+import "./modal-workspace.css";
 import { toast } from "../../state/toast";
 
 const SYSTEM_DBS = new Set([

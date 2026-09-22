@@ -178,6 +178,9 @@ export function CommandPalette({ onAddServer, initialOpen = false }: { onAddServ
         >
           <motion.div
             className="cmdk"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command palette"
             variants={commandV}
             initial="hidden"
             animate="show"
@@ -188,6 +191,12 @@ export function CommandPalette({ onAddServer, initialOpen = false }: { onAddServ
           <IconSearch size={16} stroke={1.8} />
           <input
             ref={inputRef}
+            role="combobox"
+            aria-label="Search commands"
+            aria-expanded="true"
+            aria-controls="command-palette-results"
+            aria-autocomplete="list"
+            aria-activedescendant={filtered[clampedSel] ? `cmdk-option-${filtered[clampedSel].id}` : undefined}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -198,19 +207,22 @@ export function CommandPalette({ onAddServer, initialOpen = false }: { onAddServ
             spellCheck={false}
           />
         </div>
-        <div className="cmdk-list">
+        <div id="command-palette-results" className="cmdk-list" role="listbox" aria-label="Commands">
           {filtered.length === 0 && <div className="cmdk-empty">No matches</div>}
           {GROUPS.map((group) => {
             const items = filtered.filter((c) => c.group === group);
             if (!items.length) return null;
             return (
-              <div className="cmdk-group" key={group}>
+              <div className="cmdk-group" key={group} role="group" aria-label={group}>
                 <div className="cmdk-group-h">{group}</div>
                 {items.map((c) => {
                   const idx = filtered.indexOf(c);
                   return (
                     <button
                       key={c.id}
+                      id={`cmdk-option-${c.id}`}
+                      role="option"
+                      aria-selected={idx === clampedSel}
                       className={`cmdk-item ${idx === clampedSel ? "on" : ""}`}
                       onMouseEnter={() => setSel(idx)}
                       onClick={c.run}

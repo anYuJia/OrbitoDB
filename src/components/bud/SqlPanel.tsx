@@ -530,6 +530,7 @@ export function SqlPanel() {
               ref={taRef}
               className="bud-sql-editor"
               aria-label="SQL editor"
+              placeholder={"Write a query…\nPress ⌘↵ to run · ⌘K to find a table or command"}
               value={sql}
               spellCheck={false}
               wrap="off"

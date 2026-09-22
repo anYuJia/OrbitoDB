@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { backdropV, centeredModalV } from "../../lib/motion";
 import type { FilterOp, ViewFilter } from "../../state/store";
 import { useStore } from "../../state/store";
+import "./modal-workspace.css";
 
 const OPERATORS: Array<{ value: FilterOp; label: string }> = [
   { value: "=", label: "is exactly" },

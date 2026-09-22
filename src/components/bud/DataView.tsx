@@ -17,6 +17,7 @@ import {
 import { motion } from "framer-motion";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { viewV } from "../../lib/motion";
+import { confirmDialog } from "../../state/dialog";
 import { toast } from "../../state/toast";
 import { useStore } from "../../state/store";
 import { DataGrid } from "./DataGrid";
@@ -26,6 +27,9 @@ const ConnectionOverview = lazy(() =>
   import("./ConnectionOverview").then((module) => ({ default: module.ConnectionOverview })),
 );
 const SqlPanel = lazy(() => import("./SqlPanel").then((module) => ({ default: module.SqlPanel })));
+const QueryTabActions = lazy(() =>
+  import("./QueryTabActions").then((module) => ({ default: module.QueryTabActions })),
+);
 
 function WorkspaceFallback({ label }: { label: string }) {
   return (
@@ -34,6 +38,19 @@ function WorkspaceFallback({ label }: { label: string }) {
       <span>{label}</span>
     </div>
   );
+}
+
+function queryTabLabel(editor: { name: string; sql: string }): string {
+  const clean = editor.sql
+    .replace(/--.*$/gm, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return editor.name;
+  const verb = clean.match(/^([a-z]+)/i)?.[1]?.toUpperCase();
+  const relation = clean.match(/\b(?:from|into|update|table)\s+([`"\[\]\w.]+)/i)?.[1]
+    ?.replace(/[`"\[\]]/g, "");
+  if (verb && relation) return `${verb} · ${relation}`;
+  return clean.length > 28 ? `${clean.slice(0, 27)}…` : clean;
 }
 
 export function DataView({ onAddServer }: { onAddServer: () => void }) {
@@ -51,13 +68,28 @@ export function DataView({ onAddServer }: { onAddServer: () => void }) {
   const editors = useStore((s) => s.editors);
   const activeEditorId = useStore((s) => s.activeEditorId);
   const selectEditor = useStore((s) => s.selectEditor);
-  const closeEditor = useStore((s) => s.closeEditor);
-  const newEditor = useStore((s) => s.newEditor);
+  const closeEditors = useStore((s) => s.closeEditors);
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
   const reload = useStore((s) => s.reload);
   const tableResult = useStore((s) => s.result);
   const tableColumns = useStore((s) => editTable ? s.schema.columnsByTable[editTable.table] : undefined);
   const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
+  const requestCloseEditors = async (ids: string[], title: string, actionLabel: string) => {
+    if (!ids.length) return;
+    const closing = editors.filter((editor) => ids.includes(editor.id));
+    const withContent = closing.filter((editor) => editor.sql.trim());
+    if (
+      withContent.length > 0 &&
+      !(await confirmDialog({
+        title,
+        message: `${withContent.length} ${withContent.length === 1 ? "query contains" : "queries contain"} SQL. Closing ${withContent.length === 1 ? "it" : "them"} removes the restored workspace copy.`,
+        confirmLabel: actionLabel,
+        danger: true,
+      }))
+    ) return;
+    closeEditors(ids);
+  };
+
   const moveTabFocus = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
     const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
@@ -75,7 +107,8 @@ export function DataView({ onAddServer }: { onAddServer: () => void }) {
 
   return (
     <motion.main className="bud-main" variants={viewV} initial="hidden" animate="show" exit="exit">
-      <div className="bud-qtabs" role="tablist" aria-label="Open workspace tabs" onKeyDown={moveTabFocus}>
+      <div className="odb-tabbar">
+        <div className="bud-qtabs" role="tablist" aria-label="Open workspace tabs" onKeyDown={moveTabFocus}>
         {activeId && (
           <button
             className={`odb-start-tab ${view === "overview" ? "on" : ""}`}
@@ -89,38 +122,38 @@ export function DataView({ onAddServer }: { onAddServer: () => void }) {
             <IconHome size={15} stroke={1.75} />
           </button>
         )}
-        {editors.map((ed) => (
-          <div
-            key={ed.id}
-            className={`bud-qtab ${view === "sql" && activeEditorId === ed.id ? "on" : ""}`}
-          >
+        {editors.map((ed) => {
+          const label = queryTabLabel(ed);
+          return (
+            <div
+              key={ed.id}
+              className={`bud-qtab ${view === "sql" && activeEditorId === ed.id ? "on" : ""}`}
+            >
             <button
               className="bud-qtab-main"
               role="tab"
               aria-selected={view === "sql" && activeEditorId === ed.id}
               tabIndex={view === "sql" && activeEditorId === ed.id ? 0 : -1}
-              title={ed.name}
+              title={ed.sql.trim() || ed.name}
               onClick={() => selectEditor(ed.id)}
             >
               <IconCode size={14} stroke={1.7} className="bud-qtab-ic sql" />
-              <span>{ed.name}</span>
+              <span>{label}</span>
             </button>
             <button
               type="button"
               className="bud-qtab-x"
-              aria-label={`Close ${ed.name}`}
+              aria-label={`Close ${label}`}
               onClick={(e) => {
                 e.stopPropagation();
-                closeEditor(ed.id);
+                void requestCloseEditors([ed.id], "Close query tab?", "Close tab");
               }}
             >
               <IconX size={12} stroke={2} />
             </button>
           </div>
-        ))}
-        <button className="bud-qtab-new" aria-label="New SQL editor" title="New SQL editor" onClick={newEditor}>
-          <IconPlus size={15} stroke={2} />
-        </button>
+          );
+        })}
         {openTables.map((t) => (
           <div
             key={t}
@@ -164,6 +197,10 @@ export function DataView({ onAddServer }: { onAddServer: () => void }) {
             </button>
           </div>
         )}
+        </div>
+        <Suspense fallback={<div className="odb-tabbar-actions-loading" aria-hidden />}>
+          <QueryTabActions />
+        </Suspense>
       </div>
 
       {error && <div className="bud-error">⚠ {error.message ?? error.kind}</div>}
