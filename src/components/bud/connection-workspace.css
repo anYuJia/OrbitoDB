@@ -1,0 +1,717 @@
+.bud-modal.odb-connection-modal {
+  width: min(820px, calc(100vw - 32px));
+  height: min(780px, calc(100dvh - 32px));
+  max-width: none;
+  max-height: none;
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.odb-connection-head {
+  min-height: 88px;
+  align-items: center;
+}
+
+.odb-connection-body {
+  flex: 1;
+  padding: 0 20px;
+  overflow: auto;
+}
+
+.odb-connection-section {
+  padding: 17px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.odb-connection-section:last-child {
+  border-bottom: 0;
+}
+
+.odb-connection-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 11px;
+}
+
+.odb-connection-section-head > div {
+  min-width: 0;
+}
+
+.odb-connection-section-head > div > span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--faint);
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.odb-connection-section-head h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 660;
+}
+
+.odb-connection-section-head > span {
+  color: var(--faint);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.odb-engine-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.odb-engine-options > button {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-2);
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 130ms ease, background 130ms ease, color 130ms ease;
+}
+
+.odb-engine-options > button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--panel-2);
+}
+
+.odb-engine-options > button.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-2);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.odb-engine-options > button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.odb-engine-options > button > span:first-child {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.odb-engine-options > button > span:nth-child(2) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.odb-engine-options strong,
+.odb-engine-options small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-engine-options strong {
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.odb-engine-options small {
+  color: var(--faint);
+  font-size: 9.5px;
+}
+
+.odb-engine-options > button > svg {
+  justify-self: end;
+}
+
+.odb-engine-bridge {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--muted);
+}
+
+.odb-engine-bridge > svg {
+  flex: none;
+}
+
+.odb-engine-bridge > span {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  gap: 5px;
+  font-size: 10px;
+}
+
+.odb-engine-bridge strong {
+  color: var(--text);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.odb-engine-bridge.is-ready {
+  border-color: color-mix(in srgb, var(--green) 30%, var(--border));
+  background: var(--green-soft);
+}
+
+.odb-engine-bridge.is-ready > svg {
+  color: var(--green-bright);
+}
+
+.odb-engine-bridge.is-offline {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+  background: var(--warning-soft);
+}
+
+.odb-engine-bridge.is-offline > svg {
+  color: var(--warning);
+}
+
+.odb-engine-bridge > button {
+  height: 26px;
+  flex: none;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.odb-connection-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.odb-connection-grid.profile {
+  grid-template-columns: minmax(0, 1.5fr) minmax(180px, 0.7fr);
+}
+
+.odb-connection-grid.endpoint {
+  grid-template-columns: minmax(0, 1fr) 132px;
+}
+
+.odb-connection-grid.credentials {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.odb-connection-modal .bud-field > span small {
+  margin-left: 4px;
+  color: var(--faint);
+  font-size: 9.5px;
+  font-weight: 450;
+}
+
+.odb-connection-modal .bud-field > label {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.odb-connection-modal .bud-field > label small {
+  margin-left: 4px;
+  color: var(--faint);
+  font-size: 9.5px;
+  font-weight: 450;
+}
+
+.odb-connection-modal .bud-field > small {
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 420;
+  line-height: 1.4;
+}
+
+.odb-connection-modal .bud-field.has-error input,
+.odb-connection-modal .bud-field.has-error select {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 2px var(--danger-soft);
+}
+
+.odb-connection-modal .bud-field > .odb-field-error {
+  color: var(--danger);
+}
+
+.odb-connection-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.odb-connection-callout svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.odb-connection-callout span,
+.odb-connection-callout strong {
+  display: block;
+}
+
+.odb-connection-callout strong {
+  margin-bottom: 1px;
+  color: var(--text);
+}
+
+.odb-connection-callout.warning {
+  border-color: color-mix(in srgb, var(--warning) 32%, var(--border));
+  background: var(--warning-soft);
+}
+
+.odb-connection-callout.warning svg {
+  color: var(--warning);
+}
+
+.odb-remote-fields,
+.odb-sqlite-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.odb-localhost-help {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+}
+
+.odb-localhost-help summary {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.odb-localhost-help summary::-webkit-details-marker {
+  display: none;
+}
+
+.odb-localhost-help summary > svg {
+  color: var(--accent-2);
+}
+
+.odb-localhost-help p {
+  margin: 0;
+  padding: 0 9px 9px 30px;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.odb-password-field {
+  position: relative;
+  display: block;
+}
+
+.odb-password-field input {
+  width: 100%;
+  padding-right: 38px;
+}
+
+.odb-password-field > button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.odb-password-field > button:hover:not(:disabled) {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.odb-database-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.odb-database-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.odb-database-actions > button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.odb-database-actions > button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--panel-2);
+}
+
+.odb-database-actions > button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.odb-database-actions > .odb-verify-button {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  color: var(--accent-2);
+}
+
+.odb-create-database {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(180px, 1fr) auto auto;
+  align-items: start;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: 6px;
+  background: var(--accent-soft);
+}
+
+.odb-create-database > div,
+.odb-create-database > label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.odb-create-database strong {
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.odb-create-database span,
+.odb-create-database small {
+  color: var(--faint);
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.odb-create-database input {
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.odb-create-database label.has-error input {
+  border-color: var(--danger);
+}
+
+.odb-create-database label.has-error small {
+  color: var(--danger);
+}
+
+.odb-create-database > button {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.odb-create-database > button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 620;
+}
+
+.odb-create-database > button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.odb-connection-inline-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--faint);
+  font-size: 9.5px;
+}
+
+.odb-connection-inline-note svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.odb-sqlite-fields > .bud-field {
+  max-width: 560px;
+}
+
+.odb-sqlite-summary {
+  min-height: 43px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--accent-2);
+}
+
+.odb-sqlite-summary > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.odb-sqlite-summary strong {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.odb-sqlite-summary span:not(strong) {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+
+.odb-connection-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.odb-connection-status > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.odb-connection-status.ok {
+  border-color: color-mix(in srgb, var(--green) 30%, var(--border));
+  background: var(--green-soft);
+  color: var(--green-bright);
+}
+
+.odb-connection-status.error {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.odb-connection-actions {
+  min-height: 64px;
+  align-items: center;
+}
+
+.odb-connection-endpoint {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: auto;
+  color: var(--faint);
+}
+
+.odb-connection-endpoint > svg {
+  flex: none;
+}
+
+.odb-connection-endpoint > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.odb-connection-endpoint small {
+  color: var(--faint);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.odb-connection-endpoint strong {
+  max-width: 390px;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .bud-modal.odb-connection-modal {
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    transform: none !important;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .odb-connection-head {
+    min-height: 78px;
+    padding-inline: 14px;
+  }
+
+  .odb-connection-body {
+    padding-inline: 12px;
+  }
+
+  .odb-engine-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .odb-engine-options > button {
+    min-height: 54px;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 7px;
+    padding: 6px;
+  }
+
+  .odb-engine-options > button > span:first-child {
+    width: 30px;
+    height: 30px;
+  }
+
+  .odb-engine-options > button > svg {
+    display: none;
+  }
+
+  .odb-engine-options strong {
+    font-size: 10.5px;
+  }
+
+  .odb-engine-options small {
+    display: none;
+  }
+
+  .odb-engine-bridge > span {
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .odb-connection-grid.profile,
+  .odb-connection-grid.credentials {
+    grid-template-columns: 1fr;
+  }
+
+  .odb-database-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .odb-database-actions > button {
+    flex: 1;
+  }
+
+  .odb-create-database {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .odb-create-database > div {
+    grid-column: 1 / -1;
+  }
+
+  .odb-create-database > label {
+    grid-column: 1 / -1;
+  }
+
+  .odb-connection-actions {
+    padding-inline: 12px;
+  }
+
+  .odb-connection-endpoint {
+    display: none;
+  }
+}
+
+@media (max-width: 440px) {
+  .odb-connection-head p,
+  .odb-connection-section-head > span {
+    display: none;
+  }
+
+  .odb-connection-grid.endpoint {
+    grid-template-columns: minmax(0, 1fr) 104px;
+  }
+
+  .odb-database-actions {
+    flex-direction: column;
+  }
+
+  .odb-connection-actions .bud-modal-save {
+    flex: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .odb-engine-options > button {
+    transition: none;
+  }
+}
