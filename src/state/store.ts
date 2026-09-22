@@ -5,8 +5,12 @@ import { resolveParams } from "../lib/params";
 import {
   capQueryResult,
   quoteIdentifier,
+  selectFilteredTableSql,
   selectTableSql,
+  tableFilterConditionSql,
   TABLE_BROWSER_ROW_LIMIT,
+  type TableFilter,
+  type TableFilterOp,
 } from "../lib/sql";
 import { confirmDelete, confirmDialog } from "./dialog";
 import { changesSchema, confirmIfDestructive, confirmProdWrite, isWrite } from "./safety";
@@ -39,18 +43,67 @@ interface SchemaState {
 export type TopView = "data" | "settings";
 export type AppScreen = "dashboard" | "workspace";
 export type DashPage = "home" | "connections" | "logs";
-export type FilterOp = "=" | "!=" | "contains" | ">" | "<";
-export interface ViewFilter {
-  column: string;
-  op: FilterOp;
-  value: string;
-}
+export type FilterOp = TableFilterOp;
+export type ViewFilter = TableFilter;
 export interface ViewDef {
   id: string;
   connectionId: string;
   table: string;
   name: string;
   filter: ViewFilter | null;
+}
+
+const VIEWS_KEY = "orbitodb.views";
+const FILTER_OPS = new Set<FilterOp>(["=", "!=", "contains", ">", "<"]);
+
+function loadViews(): ViewDef[] {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(VIEWS_KEY) ?? "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((candidate): ViewDef[] => {
+      if (!candidate || typeof candidate !== "object") return [];
+      const value = candidate as Record<string, unknown>;
+      if (
+        typeof value.id !== "string" ||
+        typeof value.connectionId !== "string" ||
+        typeof value.table !== "string" ||
+        typeof value.name !== "string"
+      ) return [];
+      let filter: ViewFilter | null = null;
+      if (value.filter != null) {
+        if (!value.filter || typeof value.filter !== "object") return [];
+        const rawFilter = value.filter as Record<string, unknown>;
+        if (
+          typeof rawFilter.column !== "string" ||
+          typeof rawFilter.op !== "string" ||
+          !FILTER_OPS.has(rawFilter.op as FilterOp) ||
+          typeof rawFilter.value !== "string"
+        ) return [];
+        filter = {
+          column: rawFilter.column,
+          op: rawFilter.op as FilterOp,
+          value: rawFilter.value,
+        };
+      }
+      return [{
+        id: value.id,
+        connectionId: value.connectionId,
+        table: value.table,
+        name: value.name,
+        filter,
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function persistViews(views: ViewDef[]): void {
+  try {
+    localStorage.setItem(VIEWS_KEY, JSON.stringify(views));
+  } catch {
+    /* storage unavailable — keep in memory only */
+  }
 }
 
 /** A saved SQL snippet — used for both the Scripts and Favorites panels. */
@@ -144,32 +197,6 @@ const INITIAL_ACTIVE_EDITOR = (() => {
   return INITIAL_EDITORS[0].id;
 })();
 
-/** Apply a saved view's single-condition filter to a row set (client-side). */
-function applyViewFilter(rows: unknown[][], columns: { name: string }[], filter: ViewFilter | null): unknown[][] {
-  if (!filter) return rows;
-  const idx = columns.findIndex((c) => c.name === filter.column);
-  if (idx < 0) return rows;
-  const target = filter.value;
-  const targetNum = Number.parseFloat(target);
-  return rows.filter((r) => {
-    const s = r[idx] == null ? "" : String(r[idx]);
-    switch (filter.op) {
-      case "=":
-        return s === target;
-      case "!=":
-        return s !== target;
-      case "contains":
-        return s.toLowerCase().includes(target.toLowerCase());
-      case ">":
-        return Number.parseFloat(s) > targetNum;
-      case "<":
-        return Number.parseFloat(s) < targetNum;
-      default:
-        return true;
-    }
-  });
-}
-
 export interface AppStore {
   connections: ConnectionConfig[];
   activeConnectionId: string | null;
@@ -253,7 +280,7 @@ export interface AppStore {
   setTopView: (v: TopView) => void;
   setScreen: (s: AppScreen) => void;
   setDashPage: (p: DashPage) => void;
-  addView: (table: string, name: string, filter: ViewFilter | null) => void;
+  addView: (table: string, name: string, filter: ViewFilter | null) => boolean;
   deleteView: (id: string) => void;
   openView: (view: ViewDef) => Promise<void>;
   toggleRow: (i: number) => void;
@@ -325,7 +352,7 @@ export const useStore = create<AppStore>((set, get) => ({
   topView: "data",
   screen: "dashboard",
   dashPage: "home",
-  views: [],
+  views: loadViews(),
   activeViewId: null,
   selection: [],
   scripts: loadSaved(SCRIPTS_KEY),
@@ -875,20 +902,25 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  // Whole-table search: filters EVERY row of the active table on the server (not
-  // just the rows already loaded into the grid), across all columns. Engine-aware
-  // casting/quoting so it works on SQLite, PostgreSQL and MySQL.
+  // Server search scans every row (or every row inside the active saved view),
+  // rather than only the currently loaded grid window. Engine-aware casting and
+  // escaping keep it consistent across SQLite, PostgreSQL and MySQL.
   searchTable: async (query) => {
-    const { activeConnectionId, editTable, result, connections } = get();
+    const { activeConnectionId, editTable, result, connections, activeViewId, views } = get();
     if (!activeConnectionId || !editTable) return;
     const cols = (result?.columns ?? []).map((c) => c.name);
     if (!cols.length) return;
     const requestId = ++dataRequestId;
     const engine = connections.find((c) => c.id === activeConnectionId)?.engine;
     const qid = (name: string) => quoteIdentifier(name, engine);
-    const toText = (e: string) => (engine === "mysql" ? `CAST(${e} AS CHAR)` : `CAST(${e} AS TEXT)`);
-    const lit = `'%${query.replace(/'/g, "''")}%'`;
-    const where = cols.map((c) => `${toText(qid(c))} LIKE ${lit}`).join(" OR ");
+    const searchWhere = cols
+      .map((column) => tableFilterConditionSql({ column, op: "contains", value: query }, engine))
+      .join(" OR ");
+    const activeView = views.find((view) => view.id === activeViewId);
+    const viewWhere = activeView?.filter
+      ? tableFilterConditionSql(activeView.filter, engine)
+      : null;
+    const where = viewWhere ? `(${viewWhere}) AND (${searchWhere})` : searchWhere;
     const from = qid(editTable.table);
     set({ loadingResult: true, error: null });
     try {
@@ -933,6 +965,11 @@ export const useStore = create<AppStore>((set, get) => ({
         get().activeConnectionId !== activeConnectionId ||
         get().editTable?.table !== editTable.table
       ) return;
+      const activeView = get().views.find((view) => view.id === get().activeViewId);
+      if (activeView?.filter?.column === column) {
+        await get().openView(activeView);
+        return;
+      }
       const rows = result.rows.map((r, i) =>
         i === rowIndex ? r.map((c, j) => (j === colIndex ? value : c)) : r,
       );
@@ -1012,7 +1049,7 @@ export const useStore = create<AppStore>((set, get) => ({
         get().activeConnectionId !== activeConnectionId ||
         get().editTable?.table !== editTable.table
       ) return true;
-      await get().openTableData(editTable.table); // refresh to show the new row + its PK
+      await get().refresh(); // preserve a saved view while showing the new row if it matches
       return true;
     } catch (e) {
       const err = normalizeError(e);
@@ -1210,8 +1247,11 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   refresh: async () => {
-    const t = get().editTable?.table;
-    if (t) await get().openTableData(t);
+    const { editTable, activeViewId, views } = get();
+    if (!editTable) return;
+    const activeView = views.find((view) => view.id === activeViewId);
+    if (activeView) await get().openView(activeView);
+    else await get().openTableData(editTable.table);
   },
 
   reload: async (table) => {
@@ -1254,6 +1294,25 @@ export const useStore = create<AppStore>((set, get) => ({
     if (!(await confirmProdWrite(conn, "ALTER TABLE"))) return false;
     try {
       await backend.dropColumn(id, table, column);
+      const removedViews = get().views.filter(
+        (view) =>
+          view.connectionId === id &&
+          view.table === table &&
+          view.filter?.column === column,
+      );
+      if (removedViews.length > 0) {
+        const removedIds = new Set(removedViews.map((view) => view.id));
+        set((state) => ({
+          views: state.views.filter((view) => !removedIds.has(view.id)),
+          activeViewId: state.activeViewId && removedIds.has(state.activeViewId)
+            ? null
+            : state.activeViewId,
+        }));
+        toast(
+          `Removed ${removedViews.length} saved ${removedViews.length === 1 ? "view" : "views"} that used ${column}.`,
+          "info",
+        );
+      }
       if (get().activeConnectionId === id) await get().reload(table);
       return true;
     } catch (e) {
@@ -1275,6 +1334,15 @@ export const useStore = create<AppStore>((set, get) => ({
     if (!(await confirmProdWrite(conn, "ALTER TABLE"))) return false;
     try {
       await backend.renameColumn(id, table, from, to);
+      set((state) => ({
+        views: state.views.map((view) =>
+          view.connectionId === id &&
+          view.table === table &&
+          view.filter?.column === from
+            ? { ...view, filter: { ...view.filter, column: to } }
+            : view,
+        ),
+      }));
       if (get().activeConnectionId === id) await get().reload(table);
       return true;
     } catch (e) {
@@ -1360,23 +1428,42 @@ export const useStore = create<AppStore>((set, get) => ({
 
   addView: (table, name, filter) => {
     const id = get().activeConnectionId;
-    if (!id) return;
+    if (!id) return false;
+    const trimmedName = name.trim();
+    if (!trimmedName) return false;
+    const duplicate = get().views.some(
+      (view) =>
+        view.connectionId === id &&
+        view.table === table &&
+        view.name.toLocaleLowerCase() === trimmedName.toLocaleLowerCase(),
+    );
+    if (duplicate) {
+      toast(`A saved view named “${trimmedName}” already exists for ${table}.`, "error");
+      return false;
+    }
     const view: ViewDef = {
-      id: `view-${id}-${table}-${get().views.length + 1}-${name.replace(/\s+/g, "_")}`,
+      id: `view-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       connectionId: id,
       table,
-      name,
+      name: trimmedName,
       filter,
     };
     set((s) => ({ views: [...s.views, view] }));
+    toast(`Saved view “${trimmedName}”`, "success");
     void get().openView(view);
+    return true;
   },
 
   deleteView: (id) => {
+    const removed = get().views.find((view) => view.id === id);
+    const wasActive = get().activeViewId === id;
     set((s) => ({
       views: s.views.filter((v) => v.id !== id),
-      activeViewId: s.activeViewId === id ? null : s.activeViewId,
+      activeViewId: wasActive ? null : s.activeViewId,
     }));
+    if (wasActive && removed && get().activeConnectionId === removed.connectionId) {
+      void get().openTableData(removed.table);
+    }
   },
 
   openView: async (view) => {
@@ -1384,13 +1471,22 @@ export const useStore = create<AppStore>((set, get) => ({
     if (!id || id !== view.connectionId) return;
     const requestId = ++dataRequestId;
     const engine = get().connections.find((connection) => connection.id === id)?.engine;
-    const sql = selectTableSql(view.table, engine, 200);
+    const sql = selectFilteredTableSql(
+      view.table,
+      view.filter,
+      engine,
+      TABLE_BROWSER_ROW_LIMIT + 1,
+    );
+    const openTables = get().openTables.includes(view.table)
+      ? get().openTables
+      : [...get().openTables, view.table];
     set({
       view: "data",
       topView: "data",
       loadingResult: true,
       error: null,
       editTable: { table: view.table, pkColumn: null },
+      openTables,
       inspectorRow: null,
       activeViewId: view.id,
       selection: [],
@@ -1404,11 +1500,13 @@ export const useStore = create<AppStore>((set, get) => ({
       if (requestId !== dataRequestId || get().activeConnectionId !== id) return;
       const cols = get().schema.columnsByTable[view.table] ?? [];
       const pkColumn = cols.find((c) => c.isPrimaryKey)?.name ?? null;
-      let result = await backend.runQuery(id, sql, { recordHistory: false });
+      let result = capQueryResult(
+        await backend.runQuery(id, sql, { recordHistory: false }),
+        TABLE_BROWSER_ROW_LIMIT,
+      );
       if (result.columns.length === 0 && cols.length > 0) {
         result = { ...result, columns: cols.map((c) => ({ name: c.name, dataType: c.dataType })) };
       }
-      result = { ...result, rows: applyViewFilter(result.rows, result.columns, view.filter) };
       if (requestId !== dataRequestId || get().activeConnectionId !== id) return;
       set({ result, editTable: { table: view.table, pkColumn }, loadingResult: false });
       await get().loadHistory();
@@ -1491,16 +1589,6 @@ export const useStore = create<AppStore>((set, get) => ({
       return;
     }
     const pkIdx = editTable.pkColumn ? result.columns.findIndex((c) => c.name === editTable.pkColumn) : -1;
-    // Compute the next integer id when the PK looks like an auto-increment integer.
-    let nextId = 0;
-    let intPk = false;
-    if (pkIdx >= 0) {
-      const nums = result.rows.map((r) => Number(r[pkIdx]));
-      if (nums.length > 0 && nums.every((n) => Number.isInteger(n))) {
-        intPk = true;
-        nextId = Math.max(0, ...nums) + 1;
-      }
-    }
     try {
       await get().beginTxnIfManual();
       for (const i of selectedRows.sort((a, b) => a - b)) {
@@ -1508,9 +1596,11 @@ export const useStore = create<AppStore>((set, get) => ({
         const columns: string[] = [];
         const values: unknown[] = [];
         result.columns.forEach((c, j) => {
+          // Let the database generate a fresh primary key. Guessing from the
+          // currently loaded window causes collisions on tables over 1,000 rows.
+          if (j === pkIdx) return;
           columns.push(c.name);
-          if (j === pkIdx) values.push(intPk ? nextId++ : `${String(src[j])}-copy`);
-          else values.push(src[j]);
+          values.push(src[j]);
         });
         await backend.insertRow(activeConnectionId, editTable.table, columns, values);
       }
@@ -1520,8 +1610,11 @@ export const useStore = create<AppStore>((set, get) => ({
       ) return;
       set({ selection: [] });
       await get().refresh();
+      toast(`Duplicated ${selectedRows.length} ${selectedRows.length === 1 ? "row" : "rows"}.`, "success");
     } catch (e) {
-      set({ error: normalizeError(e) });
+      const err = normalizeError(e);
+      set({ error: err });
+      toast(err.message ?? "Could not duplicate the selected rows", "error");
     }
   },
 
@@ -1564,6 +1657,12 @@ export const useStore = create<AppStore>((set, get) => ({
       return { favorites };
     }),
 }));
+
+// Saved views are workspace configuration, so every mutation (create, rename,
+// schema cleanup, connection deletion) is persisted through one central path.
+useStore.subscribe((state, previous) => {
+  if (state.views !== previous.views) persistViews(state.views);
+});
 
 function normalizeError(e: unknown): AppError {
   if (e && typeof e === "object" && "kind" in e) return e as AppError;

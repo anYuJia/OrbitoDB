@@ -700,25 +700,29 @@ function TableRow({
         <div
           key={v.id}
           className={`bud-table bud-view ${activeViewId === v.id ? "active" : ""}`}
-          role="button"
-          tabIndex={0}
-          aria-current={activeViewId === v.id ? "page" : undefined}
-          onKeyDown={(e) => keyboardActivate(e, () => openView(v))}
-          onClick={() => {
-            if (activeViewId === v.id) {
-              if (currentView !== "data") setView("data");
-              return;
-            }
-            openView(v);
-          }}
+          title={v.filter ? `${v.filter.column} ${v.filter.op} ${v.filter.value}` : v.name}
         >
-          <span className="bud-table-ic">
-            <IconFilter size={14} stroke={1.7} />
-          </span>
-          <span className="bud-src-name">{v.name}</span>
+          <button
+            className="bud-view-main"
+            aria-current={activeViewId === v.id ? "page" : undefined}
+            aria-label={`Saved view ${v.name}`}
+            onClick={() => {
+              if (activeViewId === v.id) {
+                if (currentView !== "data") setView("data");
+                return;
+              }
+              void openView(v);
+            }}
+          >
+            <span className="bud-table-ic">
+              <IconFilter size={14} stroke={1.7} />
+            </span>
+            <span className="bud-src-name">{v.name}</span>
+          </button>
           <button
             className="bud-view-del"
-            title="Delete view"
+            title="Remove saved view"
+            aria-label={`Remove saved view ${v.name}`}
             onClick={(e) => {
               e.stopPropagation();
               deleteView(v.id);

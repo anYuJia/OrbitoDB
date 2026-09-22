@@ -53,6 +53,7 @@ const mock = vi.hoisted(() => {
         columns[table].map((column) => ({ ...column })),
       ),
       runQuery,
+      insertRow: vi.fn(async () => {}),
       recentHistory: vi.fn(async () => []),
     },
   };
@@ -246,6 +247,108 @@ describe("store", () => {
       "alpha",
       'SELECT * FROM "order details" LIMIT 1001;',
       { recordHistory: false },
+    );
+  });
+
+  it("runs saved-view filters in the database and scopes table search to the view", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    const view = {
+      id: "view-alpha-linus",
+      connectionId: "alpha",
+      table: "customers",
+      name: "Linus only",
+      filter: { column: "name", op: "=" as const, value: "Linus" },
+    };
+    useStore.setState({ views: [view] });
+    mock.backend.runQuery.mockResolvedValueOnce({
+      columns: [
+        { name: "id", dataType: "INTEGER" },
+        { name: "name", dataType: "TEXT" },
+      ],
+      rows: [[2, "Linus"]],
+      rowsAffected: 0,
+      elapsedMs: 1,
+      truncated: false,
+    });
+
+    await useStore.getState().openView(view);
+
+    expect(mock.backend.runQuery).toHaveBeenLastCalledWith(
+      "alpha",
+      'SELECT * FROM "customers" WHERE "name" = \'Linus\' LIMIT 1001;',
+      { recordHistory: false },
+    );
+    expect(useStore.getState().openTables).toContain("customers");
+    expect(useStore.getState().result?.rows).toEqual([[2, "Linus"]]);
+
+    await useStore.getState().searchTable("Linus");
+    const calls = mock.backend.runQuery.mock.calls;
+    const searchSql = String(calls[calls.length - 1]?.[1]);
+    expect(searchSql).toContain('WHERE ("name" = \'Linus\') AND (');
+    expect(searchSql).toContain('LOWER(CAST("name" AS TEXT)) LIKE \'%linus%\' ESCAPE \'!\'');
+    expect(searchSql).toContain("LIMIT 1001;");
+  });
+
+  it("reloads the full table when the active saved view is removed", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    const view = {
+      id: "view-alpha-ada",
+      connectionId: "alpha",
+      table: "customers",
+      name: "Ada only",
+      filter: { column: "name", op: "=" as const, value: "Ada" },
+    };
+    useStore.setState({ views: [view] });
+    await useStore.getState().openView(view);
+    mock.backend.runQuery.mockClear();
+
+    useStore.getState().deleteView(view.id);
+
+    await vi.waitFor(() => expect(mock.backend.runQuery).toHaveBeenCalled());
+    expect(mock.backend.runQuery).toHaveBeenLastCalledWith(
+      "alpha",
+      'SELECT * FROM "customers" LIMIT 1001;',
+      { recordHistory: false },
+    );
+    expect(useStore.getState().activeViewId).toBeNull();
+    expect(useStore.getState().views).toEqual([]);
+  });
+
+  it("persists saved-view definitions when they change", () => {
+    const setItem = vi.fn();
+    vi.stubGlobal("localStorage", { setItem });
+    try {
+      const views = [{
+        id: "view-persisted",
+        connectionId: "alpha",
+        table: "customers",
+        name: "Persisted",
+        filter: { column: "name", op: "contains" as const, value: "a" },
+      }];
+
+      useStore.setState({ views });
+
+      expect(setItem).toHaveBeenCalledWith("orbitodb.views", JSON.stringify(views));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("duplicates rows without copying the primary key", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    await useStore.getState().openTableData("customers");
+    useStore.setState({ selection: [0] });
+
+    await useStore.getState().duplicateSelected();
+
+    expect(mock.backend.insertRow).toHaveBeenCalledWith(
+      "alpha",
+      "customers",
+      ["name"],
+      ["Ada"],
     );
   });
 

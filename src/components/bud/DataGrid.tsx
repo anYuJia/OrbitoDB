@@ -1,5 +1,5 @@
-import { IconArrowUpRight, IconCheck, IconChevronLeft, IconChevronRight, IconCopy, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { IconArrowUpRight, IconBookmarkPlus, IconCheck, IconChevronLeft, IconChevronRight, IconCopy, IconFilter, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { getBackend } from "../../ipc/backend";
 import { displayRows } from "../../lib/cell";
 import { TABLE_BROWSER_ROW_LIMIT } from "../../lib/sql";
@@ -10,6 +10,10 @@ import { useStore } from "../../state/store";
 import { CellViewer, isExpandable } from "./CellViewer";
 import { ColumnEditor, type ColumnEditorAnchor } from "./ColumnEditor";
 import { ExportMenu } from "./ExportMenu";
+
+const SavedViewDialog = lazy(() =>
+  import("./SavedViewDialog").then((module) => ({ default: module.SavedViewDialog })),
+);
 
 function typeIcon(t: string): string {
   const u = t.toUpperCase();
@@ -104,7 +108,10 @@ export function DataGrid() {
   const pendingColFilter = useStore((s) => s.pendingColFilter);
   const setPendingColFilter = useStore((s) => s.setPendingColFilter);
   const openTableData = useStore((s) => s.openTableData);
+  const openView = useStore((s) => s.openView);
   const searchTable = useStore((s) => s.searchTable);
+  const activeViewId = useStore((s) => s.activeViewId);
+  const views = useStore((s) => s.views);
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null);
   const [draft, setDraft] = useState("");
   const [newRow, setNewRow] = useState<string[] | null>(null);
@@ -115,6 +122,7 @@ export function DataGrid() {
   const [cellView, setCellView] = useState<{ value: string; column?: string } | null>(null);
   const [selCell, setSelCell] = useState<{ r: number; c: number } | null>(null);
   const [gridFilter, setGridFilter] = useState("");
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const serverSearched = useRef(false);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
@@ -124,6 +132,10 @@ export function DataGrid() {
   const [showSkel, setShowSkel] = useState(false);
 
   const pkCol = editTable?.pkColumn ?? null;
+  const activeView = useMemo(
+    () => views.find((savedView) => savedView.id === activeViewId) ?? null,
+    [activeViewId, views],
+  );
   const pkIdx = useMemo(
     () => (pkCol && result ? result.columns.findIndex((c) => c.name === pkCol) : -1),
     [pkCol, result],
@@ -171,18 +183,18 @@ export function DataGrid() {
     });
   }, [result, sort]);
 
-  useEffect(() => setSort(null), [editTable?.table]);
+  useEffect(() => setSort(null), [editTable?.table, activeViewId]);
 
   // Reset filters/paging when the table changes.
   useEffect(() => {
     setGridFilter("");
     setPage(0);
     serverSearched.current = false;
-  }, [editTable?.table]);
+  }, [editTable?.table, activeViewId]);
 
-  // Whole-table search: debounce the filter and run it on the server so matches
-  // beyond the loaded window are found too (the client-side filter above still
-  // gives instant feedback while this resolves). Clearing it reloads the table.
+  // Debounce search and run it on the server so matches beyond the loaded window
+  // are found too. Saved views stay scoped to their database-side rule; clearing
+  // search restores that view instead of silently switching back to all rows.
   useEffect(() => {
     if (!editTable) return;
     const q = gridFilter.trim();
@@ -192,12 +204,13 @@ export function DataGrid() {
         void searchTable(q);
       } else if (serverSearched.current) {
         serverSearched.current = false;
-        void openTableData(editTable.table);
+        if (activeView) void openView(activeView);
+        else void openTableData(editTable.table);
       }
     }, 300);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gridFilter, editTable?.table]);
+  }, [gridFilter, editTable?.table, activeView?.id]);
 
   // Foreign keys are per-connection, so fetch them once (not on every table
   // switch) and derive the current table's map below.
@@ -371,8 +384,24 @@ export function DataGrid() {
         {hasFilters && (
           <span className="bud-grid-toolbar-info">
             {filteredOrder.length.toLocaleString()} match{filteredOrder.length === 1 ? "" : "es"}
-            {result.rows.length >= 1000 ? " (first 1,000)" : ""}
+            {result.truncated ? " (first 1,000)" : ""}
           </span>
+        )}
+        {activeView && (
+          <div className="bud-grid-active-view" role="status" aria-label={`Saved view ${activeView.name}`}>
+            <IconFilter size={13} stroke={1.9} />
+            <strong>{activeView.name}</strong>
+            {activeView.filter && (
+              <span>{activeView.filter.column} {activeView.filter.op} “{activeView.filter.value}”</span>
+            )}
+            <button
+              title="Show all rows"
+              aria-label={`Close saved view ${activeView.name} and show all rows`}
+              onClick={() => void openTableData(table)}
+            >
+              <IconX size={12} stroke={2} />
+            </button>
+          </div>
         )}
         {validSelection.length > 0 && (
           <div className="bud-grid-selection" role="status" aria-label={`${validSelection.length} rows selected`}>
@@ -389,6 +418,9 @@ export function DataGrid() {
           </div>
         )}
         <span className="bud-grid-foot-spacer" />
+        <button className="bud-grid-action" onClick={() => setViewDialogOpen(true)}>
+          <IconBookmarkPlus size={14} stroke={1.8} /> Save view
+        </button>
         <ExportMenu result={result} rows={exportOrder.map((index) => result.rows[index])} table={table} />
       </div>
       <div className="bud-grid-wrap">
@@ -624,6 +656,16 @@ export function DataGrid() {
       )}
       {colEditor && <ColumnEditor anchor={colEditor} table={table} onClose={() => setColEditor(null)} />}
       {cellView && <CellViewer value={cellView.value} column={cellView.column} onClose={() => setCellView(null)} />}
+      {viewDialogOpen && (
+        <Suspense fallback={null}>
+          <SavedViewDialog
+            table={table}
+            columns={result.columns}
+            initialFilter={activeView?.filter}
+            onClose={() => setViewDialogOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

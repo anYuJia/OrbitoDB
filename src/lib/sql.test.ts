@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { capQueryResult, quoteIdentifier, selectTableSql } from "./sql";
+import {
+  capQueryResult,
+  quoteIdentifier,
+  quoteSqlString,
+  selectFilteredTableSql,
+  selectTableSql,
+  tableFilterConditionSql,
+} from "./sql";
 
 describe("SQL identifier helpers", () => {
   it("quotes reserved words, spaces, and embedded quote characters", () => {
@@ -9,6 +16,26 @@ describe("SQL identifier helpers", () => {
 
   it("builds a safe table-browser query", () => {
     expect(selectTableSql("select", "postgres", 200)).toBe('SELECT * FROM "select" LIMIT 200;');
+  });
+
+  it("builds escaped server-side contains filters", () => {
+    expect(
+      selectFilteredTableSql(
+        'order "details"',
+        { column: "select", op: "contains", value: "50%_O'Brien!" },
+        "sqlite",
+        101,
+      ),
+    ).toBe(
+      'SELECT * FROM "order ""details""" WHERE LOWER(CAST("select" AS TEXT)) LIKE \'%50!%!_o\'\'brien!!%\' ESCAPE \'!\' LIMIT 101;',
+    );
+  });
+
+  it("quotes MySQL backslashes and quote characters safely", () => {
+    expect(quoteSqlString("a\\'b", "mysql")).toBe("'a\\\\''b'");
+    expect(
+      tableFilterConditionSql({ column: "user`name", op: "!=", value: "root" }, "mysql"),
+    ).toBe("`user``name` <> 'root'");
   });
 
   it("uses a look-ahead row to mark capped table results", () => {
