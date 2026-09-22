@@ -1,0 +1,536 @@
+.odb-source-explorer {
+  background: var(--tree-bg);
+}
+
+.odb-source-explorer .bud-sources-head {
+  min-height: 68px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.odb-source-heading-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.odb-source-heading-row > small {
+  min-width: 20px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-2);
+  color: var(--faint);
+  font-size: 9px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.odb-source-explorer .bud-sources-head .bud-sources-add {
+  height: 32px;
+  padding-inline: 9px;
+}
+
+.odb-source-toolbar-wrap {
+  border-bottom: 1px solid var(--border);
+  background: var(--tree-bg);
+}
+
+.odb-source-explorer .bud-source-controls {
+  grid-template-columns: minmax(0, 1fr) 30px 32px;
+  padding: 9px 9px 5px;
+  border-bottom: 0;
+}
+
+.odb-source-explorer .bud-src-search {
+  height: 34px;
+}
+
+.odb-source-explorer .bud-src-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.odb-source-explorer .bud-src-search kbd {
+  min-width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-bottom-color: var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--faint);
+  font-family: var(--font);
+  font-size: 9px;
+}
+
+.odb-source-explorer .bud-source-refresh,
+.odb-source-explorer .bud-source-tools > summary {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.odb-source-explorer .bud-source-tools > summary span {
+  display: none;
+}
+
+.odb-source-explorer .bud-source-refresh:disabled,
+.odb-source-explorer .bud-source-tools-menu button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.odb-source-summary {
+  min-height: 25px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 11px 6px;
+  color: var(--faint);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.odb-source-summary > svg {
+  flex: none;
+}
+
+.odb-source-summary > i {
+  width: 2px;
+  height: 2px;
+  margin-inline: 2px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.odb-source-explorer .bud-sources-list {
+  padding: 8px 7px 20px;
+}
+
+.odb-source-explorer .bud-ds {
+  margin-bottom: 3px;
+}
+
+.odb-source-explorer .bud-src.ds.odb-source-row {
+  position: relative;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 1px;
+  padding: 0 3px 0 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.odb-source-explorer .bud-src.ds.odb-source-row::before {
+  content: none;
+}
+
+.odb-source-explorer .bud-src.ds.odb-source-row:hover {
+  border-color: var(--border);
+  background: var(--panel-2);
+}
+
+.odb-source-explorer .bud-ds.connected > .odb-source-row {
+  border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.odb-source-main {
+  min-width: 0;
+  min-height: 50px;
+  display: grid;
+  grid-template-columns: 13px 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 3px 5px 8px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.odb-source-main:focus-visible {
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.odb-source-explorer .bud-src-ic.ds-engine {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.odb-source-explorer .bud-ds.connected .bud-src-ic.ds-engine {
+  border-color: color-mix(in srgb, var(--green) 32%, var(--border));
+  background: var(--green-soft);
+  color: var(--green-bright);
+}
+
+.odb-source-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.odb-source-copy strong,
+.odb-source-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-source-copy strong {
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 620;
+}
+
+.odb-source-copy small {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 450;
+}
+
+.odb-source-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.odb-source-explorer .bud-ds-env {
+  width: auto;
+  height: 17px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  box-shadow: none;
+  background: transparent;
+  font-size: 7px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.odb-source-explorer .bud-ds-env.dev {
+  color: var(--green-bright);
+}
+
+.odb-source-explorer .bud-ds-env.staging {
+  color: var(--warning);
+}
+
+.odb-source-explorer .bud-ds-env.prod {
+  color: var(--danger);
+}
+
+.odb-source-lock,
+.odb-source-state {
+  width: 19px;
+  height: 19px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 5px;
+}
+
+.odb-source-lock {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.odb-source-state.ready {
+  background: var(--green-soft);
+  color: var(--green-bright);
+}
+
+.odb-source-state.pending {
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.odb-source-more {
+  width: 26px;
+  height: 28px;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  outline: none;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.odb-source-row:hover .odb-source-more,
+.odb-source-row:focus-within .odb-source-more {
+  opacity: 1;
+}
+
+.odb-source-more:hover,
+.odb-source-more:focus-visible {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.odb-source-explorer .bud-ds-tables {
+  padding: 4px 0 7px 16px;
+}
+
+.odb-source-explorer .bud-objgroup {
+  margin-top: 2px;
+}
+
+.odb-source-explorer .bud-objgroup-head {
+  width: 100%;
+  min-height: 30px;
+  gap: 6px;
+  padding: 0 7px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  text-align: left;
+}
+
+.odb-source-explorer .bud-objgroup-head:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.odb-source-explorer .bud-objgroup-ic {
+  color: var(--warning);
+}
+
+.odb-source-explorer .bud-objgroup-count {
+  min-width: 20px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--bg-2);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.odb-source-explorer .bud-objgroup-body {
+  margin-left: 13px;
+  padding: 1px 0 2px 8px;
+  border-left-color: var(--border);
+}
+
+.odb-source-explorer button.bud-table {
+  width: 100%;
+  min-height: 30px;
+  gap: 7px;
+  padding: 0 7px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+}
+
+.odb-source-explorer button.bud-table:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.odb-source-explorer button.bud-table.multi {
+  background: color-mix(in srgb, var(--accent-soft) 78%, var(--panel));
+  color: var(--text-strong);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.odb-source-explorer button.bud-table.multi .bud-table-ic {
+  color: var(--accent-2);
+}
+
+.odb-source-schema-loading {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.odb-source-schema-loading .bud-loading-spinner {
+  width: 13px;
+  height: 13px;
+}
+
+.odb-table-selection {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 4px 5px 0;
+  padding: 4px 5px 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 6px;
+  background: var(--accent-soft);
+}
+
+.odb-table-selection strong {
+  min-width: 0;
+  flex: 1;
+  color: var(--accent-2);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.odb-table-selection button {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.odb-table-selection button.danger {
+  color: var(--danger);
+}
+
+.odb-table-selection button.icon {
+  width: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.odb-source-no-results {
+  align-items: center;
+  margin: 14px auto;
+  text-align: center;
+}
+
+.odb-source-explorer .bud-saved-row {
+  min-height: 40px;
+  padding: 0 6px 0 0;
+  border: 1px solid transparent;
+}
+
+.odb-source-explorer .bud-saved-row:hover,
+.odb-source-explorer .bud-saved-row:focus-within {
+  border-color: var(--border);
+}
+
+.odb-source-explorer .odb-saved-main {
+  min-width: 0;
+  min-height: 38px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.odb-source-explorer .odb-saved-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 5px;
+}
+
+.odb-source-explorer .bud-saved-ic {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--bg-2);
+  color: var(--accent-2);
+}
+
+.odb-source-explorer .bud-view-del:focus-visible,
+.odb-source-explorer .bud-saved-del:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.odb-source-explorer .bud-saved-row:focus-within .bud-saved-del {
+  opacity: 1;
+}
+
+.odb-source-explorer.compact .odb-source-row {
+  min-height: 36px;
+}
+
+.odb-source-explorer.compact .odb-source-main {
+  min-height: 34px;
+  grid-template-columns: 13px 24px minmax(0, 1fr) auto;
+  padding-block: 2px;
+}
+
+.odb-source-explorer.compact .bud-src-ic.ds-engine {
+  width: 24px;
+  height: 24px;
+}
+
+.odb-source-explorer.compact .odb-source-copy small,
+.odb-source-explorer.compact .bud-ds-env {
+  display: none;
+}
+
+.odb-source-explorer.compact .bud-ds-tables {
+  padding-left: 12px;
+}
+
+.odb-source-loading {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .odb-source-more {
+    opacity: 1;
+  }
+
+  .odb-source-explorer .bud-source-controls {
+    padding-inline: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .odb-source-explorer .bud-source-refresh svg,
+  .odb-source-state svg {
+    animation-duration: 1ms !important;
+  }
+}

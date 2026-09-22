@@ -288,6 +288,7 @@ class LocalBackend implements Backend {
         const parts = [q(c.name), c.dataType || "TEXT"];
         if (c.primaryKey) parts.push("PRIMARY KEY");
         else if (!c.nullable) parts.push("NOT NULL");
+        if (c.autoIncrement) parts.push("AUTOINCREMENT");
         return parts.join(" ");
       })
       .join(", ");

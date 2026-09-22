@@ -214,6 +214,42 @@ describe("store", () => {
     expect(mock.backend.listTables).toHaveBeenCalledTimes(introspections + 1);
   });
 
+  it("preserves active-table metadata when the resource explorer refreshes", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    await useStore.getState().openTableData("customers");
+    useStore.setState((state) => ({
+      schema: { ...state.schema, columnsByTable: {} },
+    }));
+    mock.backend.listColumns.mockClear();
+
+    await useStore.getState().refreshSchema();
+
+    expect(mock.backend.listColumns).toHaveBeenCalledWith("alpha", "customers");
+    expect(useStore.getState().schema.columnsByTable.customers).toHaveLength(2);
+  });
+
+  it("reports whether creating a table succeeded", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    const columns = [
+      {
+        name: "id",
+        dataType: "INTEGER",
+        nullable: false,
+        primaryKey: true,
+        autoIncrement: true,
+      },
+    ];
+
+    await expect(useStore.getState().createTable("events", columns)).resolves.toBe(true);
+    expect(mock.backend.createTable).toHaveBeenCalledWith("alpha", "events", columns);
+
+    mock.backend.createTable.mockRejectedValueOnce(new Error("already exists"));
+    await expect(useStore.getState().createTable("events", columns)).resolves.toBe(false);
+    expect(useStore.getState().error?.message).toContain("already exists");
+  });
+
   it("stores typed query errors per editor", async () => {
     await useStore.getState().loadConnections();
     await useStore.getState().openAndIntrospect("alpha");

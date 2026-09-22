@@ -1,5 +1,6 @@
 import {
   IconBrandMysql,
+  IconCheck,
   IconChevronDown,
   IconChevronRight,
   IconCode,
@@ -24,6 +25,7 @@ import {
   IconGitCompare,
   IconSchema,
   IconSearch,
+  IconServer,
   IconSettings,
   IconStar,
   IconTable,
@@ -36,8 +38,10 @@ import { confirmDialog, promptDialog } from "../../state/dialog";
 import type { ConnectionConfig, Engine } from "../../ipc/types";
 import { quoteIdentifier } from "../../lib/sql";
 import { useStore } from "../../state/store";
+import { toast } from "../../state/toast";
 import { ContextMenu, type CtxAnchor, type MenuItem } from "./ContextMenu";
 import type { ExplorerPanel } from "./WorkspaceRail";
+import "./source-explorer.css";
 
 function initialCompact(): boolean {
   try {
@@ -47,13 +51,6 @@ function initialCompact(): boolean {
   }
 }
 
-function keyboardActivate(e: React.KeyboardEvent, action: () => void) {
-  if (e.target !== e.currentTarget) return;
-  if (e.key !== "Enter" && e.key !== " ") return;
-  e.preventDefault();
-  action();
-}
-
 function closeDetailsMenu(event: React.MouseEvent<HTMLButtonElement>) {
   event.currentTarget.closest("details")?.removeAttribute("open");
 }
@@ -61,6 +58,32 @@ function closeDetailsMenu(event: React.MouseEvent<HTMLButtonElement>) {
 function EngineIcon({ engine }: { engine: Engine }) {
   if (engine === "mysql") return <IconBrandMysql size={15} stroke={1.7} />;
   return <IconDatabase size={14} stroke={1.7} />;
+}
+
+function engineLabel(engine: Engine): string {
+  if (engine === "postgres") return "PostgreSQL";
+  if (engine === "mysql") return "MySQL";
+  return "SQLite";
+}
+
+function connectionMeta(connection: ConnectionConfig): string {
+  if (connection.engine === "sqlite") {
+    return connection.database.split(/[\\/]/).pop()?.replace(/\.sqlite$/i, "") || "Local database";
+  }
+  const port = connection.port ?? (connection.engine === "postgres" ? 5432 : 3306);
+  return `${connection.host ?? "localhost"}:${port} / ${connection.database}`;
+}
+
+function connectionMatches(connection: ConnectionConfig, query: string): boolean {
+  if (!query) return true;
+  return [
+    connection.name,
+    connection.engine,
+    engineLabel(connection.engine),
+    connection.host,
+    connection.database,
+    connection.env,
+  ].some((value) => value?.toLocaleLowerCase().includes(query));
 }
 
 function connString(c: ConnectionConfig): string {
@@ -90,13 +113,11 @@ function ObjectGroup({
   const [ctx, setCtx] = useState<CtxAnchor | null>(null);
   return (
     <div className="bud-objgroup">
-      <div
+      <button
+        type="button"
         className="bud-objgroup-head"
         onClick={() => setOpen((v) => !v)}
-        role="button"
-        tabIndex={0}
         aria-expanded={open}
-        onKeyDown={(e) => keyboardActivate(e, () => setOpen((v) => !v))}
         onContextMenu={
           menu
             ? (e) => {
@@ -112,7 +133,7 @@ function ObjectGroup({
         <IconFolderOpen size={14} stroke={1.7} className="bud-objgroup-ic" />
         <span className="bud-objgroup-label">{label}</span>
         <span className="bud-objgroup-count">{count}</span>
-      </div>
+      </button>
       {open && children && <div className="bud-objgroup-body">{children}</div>}
       {ctx && <ContextMenu anchor={ctx} onClose={() => setCtx(null)} />}
     </div>
@@ -131,23 +152,73 @@ export function Sources({
   onNavigate: () => void;
 }) {
   const connections = useStore((s) => s.connections);
+  const activeId = useStore((s) => s.activeConnectionId);
+  const tables = useStore((s) => s.schema.tables);
+  const scriptsCount = useStore((s) => s.scripts.length);
+  const favoritesCount = useStore((s) => s.favorites.length);
   const loadConnections = useStore((s) => s.loadConnections);
   const scanLocal = useStore((s) => s.scanLocal);
+  const refreshSchema = useStore((s) => s.refreshSchema);
   const newEditor = useStore((s) => s.newEditor);
   const [filter, setFilter] = useState("");
   const [compact, setCompact] = useState(initialCompact);
+  const [refreshing, setRefreshing] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadConnections();
-    scanLocal();
+    void Promise.all([loadConnections(), scanLocal()]);
   }, [loadConnections, scanLocal]);
 
+  useEffect(() => {
+    if (panel !== "Databases") return;
+    const focusSearch = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (event.key === "/" && !typing) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, [panel]);
+
+  const normalizedFilter = filter.trim().toLocaleLowerCase();
+  const activeObjectMatches = tables.filter((table) => table.name.toLocaleLowerCase().includes(normalizedFilter));
+  const matchingConnections = connections.filter((connection) => connectionMatches(connection, normalizedFilter));
+  const visibleConnections = connections.filter((connection) => (
+    connectionMatches(connection, normalizedFilter) || (
+      connection.id === activeId && activeObjectMatches.length > 0
+    )
+  ));
+  const searchMatches = matchingConnections.length + activeObjectMatches.length;
+
+  const refreshExplorer = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        loadConnections(),
+        scanLocal(),
+        activeId ? refreshSchema() : Promise.resolve(),
+      ]);
+      toast(activeId ? "Connections and schema refreshed." : "Connections refreshed.", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not refresh the explorer.", "error");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
-    <aside className={`bud-sources ${compact ? "compact" : ""}`}>
+    <aside className={`bud-sources odb-source-explorer ${compact ? "compact" : ""}`} aria-label="Resource explorer">
       <div className="bud-sources-head">
         <div>
           <span className="bud-sources-eyebrow">{panel === "Databases" ? "Workspace" : "Library"}</span>
-          <strong>{panel === "Databases" ? "Explorer" : panel === "Scripts" ? "Saved queries" : "Favorites"}</strong>
+          <span className="odb-source-heading-row">
+            <strong>{panel === "Databases" ? "Explorer" : panel === "Scripts" ? "Saved queries" : "Favorites"}</strong>
+            <small>{panel === "Databases" ? connections.length : panel === "Scripts" ? scriptsCount : favoritesCount}</small>
+          </span>
         </div>
         <button
           className="bud-sources-add"
@@ -160,63 +231,73 @@ export function Sources({
       </div>
 
       {panel === "Databases" && (
-        <div className="bud-source-controls">
-          <div className="bud-src-search">
-          <IconSearch size={14} stroke={1.7} />
-          <input
-            aria-label="Filter database objects"
-            placeholder="Filter schema…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-          {filter && (
-            <button className="bud-src-search-x" title="Clear" onClick={() => setFilter("")}>
-              <IconX size={13} stroke={1.9} />
-            </button>
-          )}
-          </div>
-          <button
-            className="bud-source-refresh"
-            title="Refresh connections and schema"
-            aria-label="Refresh connections and schema"
-            onClick={() => {
-              void loadConnections();
-              void scanLocal();
-            }}
-          >
-            <IconRefresh size={15} stroke={1.7} />
-          </button>
-          <details className="bud-source-tools">
-            <summary title="Database tools"><IconDots size={17} stroke={1.8} /><span>Tools</span></summary>
-            <div className="bud-source-tools-menu">
-              <button onClick={(event) => { closeDetailsMenu(event); window.dispatchEvent(new Event("orbitodb:erd")); }}>
-                <IconSchema size={15} /> Schema diagram
-              </button>
-              <button onClick={(event) => { closeDetailsMenu(event); window.dispatchEvent(new Event("orbitodb:import-csv")); }}>
-                <IconFileImport size={15} /> Import CSV
-              </button>
-              <button onClick={(event) => { closeDetailsMenu(event); window.dispatchEvent(new Event("orbitodb:schema-diff")); }}>
-                <IconGitCompare size={15} /> Compare schemas
-              </button>
-              <button
-                aria-pressed={compact}
-                onClick={(event) => {
-                  closeDetailsMenu(event);
-                  setCompact((value) => {
-                    const next = !value;
-                    try {
-                      localStorage.setItem("orbitodb.sidebarCompact", String(next));
-                    } catch {
-                      /* ignore */
-                    }
-                    return next;
-                  });
-                }}
-              >
-                <IconLayoutSidebar size={15} /> {compact ? "Comfortable density" : "Compact density"}
-              </button>
+        <div className="odb-source-toolbar-wrap">
+          <div className="bud-source-controls">
+            <div className="bud-src-search">
+              <IconSearch size={14} stroke={1.7} />
+              <input
+                ref={searchRef}
+                aria-label="Search data sources and schema"
+                placeholder="Search resources…"
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+              />
+              {filter ? (
+                <button className="bud-src-search-x" aria-label="Clear explorer search" title="Clear search" onClick={() => setFilter("")}>
+                  <IconX size={13} stroke={1.9} />
+                </button>
+              ) : (
+                <kbd>/</kbd>
+              )}
             </div>
-          </details>
+            <button
+              className="bud-source-refresh"
+              title="Refresh connections and schema"
+              aria-label="Refresh connections and schema"
+              onClick={() => void refreshExplorer()}
+              disabled={refreshing}
+            >
+              <IconRefresh size={15} stroke={1.7} className={refreshing ? "bud-spin" : ""} />
+            </button>
+            <details className="bud-source-tools">
+              <summary title="Database tools"><IconDots size={17} stroke={1.8} /><span>Tools</span></summary>
+              <div className="bud-source-tools-menu">
+                <button onClick={(event) => { closeDetailsMenu(event); window.dispatchEvent(new Event("orbitodb:erd")); }}>
+                  <IconSchema size={15} /> Schema diagram
+                </button>
+                <button onClick={(event) => { closeDetailsMenu(event); window.dispatchEvent(new Event("orbitodb:import-csv")); }} disabled={!activeId}>
+                  <IconFileImport size={15} /> Import CSV
+                </button>
+                <button onClick={(event) => { closeDetailsMenu(event); window.dispatchEvent(new Event("orbitodb:schema-diff")); }} disabled={connections.length < 2}>
+                  <IconGitCompare size={15} /> Compare schemas
+                </button>
+                <button
+                  aria-pressed={compact}
+                  onClick={(event) => {
+                    closeDetailsMenu(event);
+                    setCompact((value) => {
+                      const next = !value;
+                      try {
+                        localStorage.setItem("orbitodb.sidebarCompact", String(next));
+                      } catch {
+                        /* ignore */
+                      }
+                      return next;
+                    });
+                  }}
+                >
+                  <IconLayoutSidebar size={15} /> {compact ? "Comfortable density" : "Compact density"}
+                </button>
+              </div>
+            </details>
+          </div>
+          <div className="odb-source-summary" role="status">
+            {normalizedFilter ? (
+              <><IconSearch size={11} stroke={1.8} /><span>{searchMatches} {searchMatches === 1 ? "match" : "matches"}</span></>
+            ) : (
+              <><IconServer size={11} stroke={1.8} /><span>{connections.length} {connections.length === 1 ? "source" : "sources"}</span><i /><span>{tables.length} active objects</span></>
+            )}
+          </div>
         </div>
       )}
 
@@ -233,10 +314,20 @@ export function Sources({
                 <IconPlus size={14} stroke={2} /> Add data source
               </button>
             </div>
+          ) : visibleConnections.length === 0 ? (
+            <div className="bud-sidebar-empty odb-source-no-results">
+              <span className="bud-sidebar-empty-icon"><IconSearch size={19} stroke={1.6} /></span>
+              <strong>No explorer matches</strong>
+              <span>Try a data source, engine, database, table, or view name.</span>
+              <button onClick={() => setFilter("")}>Clear search</button>
+            </div>
           ) : (
-            connections.map((c) => (
-              <Datasource key={c.id} conn={c} onEditServer={onEditServer} onNavigate={onNavigate} filter={filter} />
-            ))
+            visibleConnections.map((connection) => {
+              const filterObjects = normalizedFilter && connectionMatches(connection, normalizedFilter) ? "" : filter;
+              return (
+                <Datasource key={connection.id} conn={connection} onEditServer={onEditServer} onNavigate={onNavigate} filter={filterObjects} />
+              );
+            })
           )
         ) : (
           <SavedList kind={panel} onNavigate={onNavigate} />
@@ -265,6 +356,14 @@ function SavedList({ kind, onNavigate }: { kind: "Scripts" | "Favorites"; onNavi
   const openItem = (sql: string) => {
     loadSql(sql);
     onNavigate();
+  };
+  const removeItem = async (id: string, name: string) => {
+    if (await confirmDialog({
+      title: kind === "Scripts" ? "Delete saved query?" : "Remove favorite?",
+      message: `Remove “${name}” from ${kind === "Scripts" ? "saved queries" : "favorites"}?`,
+      confirmLabel: kind === "Scripts" ? "Delete query" : "Remove favorite",
+      danger: true,
+    })) del(id);
   };
 
   if (items.length === 0) {
@@ -299,23 +398,26 @@ function SavedList({ kind, onNavigate }: { kind: "Scripts" | "Favorites"; onNavi
         <div
           key={it.id}
           className="bud-saved-row"
-          onClick={() => openItem(it.sql)}
-          onKeyDown={(e) => keyboardActivate(e, () => openItem(it.sql))}
-          role="button"
-          tabIndex={0}
           title={it.sql}
         >
-          <span className="bud-saved-ic">
-            <Icon size={14} stroke={1.7} />
-          </span>
-          <span className="bud-saved-name">{it.name}</span>
           <button
+            type="button"
+            className="odb-saved-main"
+            onClick={() => openItem(it.sql)}
+          >
+            <span className="bud-saved-ic">
+              <Icon size={14} stroke={1.7} />
+            </span>
+            <span className="bud-saved-name">{it.name}</span>
+          </button>
+          <button
+            type="button"
             className="bud-saved-del"
             title="Delete"
             aria-label={`Delete ${it.name}`}
             onClick={(e) => {
               e.stopPropagation();
-              del(it.id);
+              void removeItem(it.id, it.name);
             }}
           >
             <IconTrash size={13} stroke={1.7} />
@@ -347,19 +449,20 @@ function Datasource({
   const [open, setOpen] = useState(true);
   const [ctx, setCtx] = useState<CtxAnchor | null>(null);
   const activeId = useStore((s) => s.activeConnectionId);
+  const connectingId = useStore((s) => s.connectingConnectionId);
   const tables = useStore((s) => s.schema.tables);
   const loadingTables = useStore((s) => s.loadingTables);
   const refreshSchema = useStore((s) => s.refreshSchema);
   const openAndIntrospect = useStore((s) => s.openAndIntrospect);
   const deleteConnection = useStore((s) => s.deleteConnection);
   const saveConnection = useStore((s) => s.saveConnection);
-  const createTable = useStore((s) => s.createTable);
   const dropTables = useStore((s) => s.dropTables);
   const clearTables = useStore((s) => s.clearTables);
   const setTopView = useStore((s) => s.setTopView);
   const toggleReadOnly = useStore((s) => s.toggleReadOnly);
   const isReadOnly = useStore((s) => s.readOnlyConns.includes(conn.id));
   const isActive = activeId === conn.id;
+  const isConnecting = connectingId === conn.id;
   const shownObjects = filter
     ? tables.filter((t) => t.name.toLowerCase().includes(filter.toLowerCase()))
     : tables;
@@ -374,9 +477,9 @@ function Datasource({
   useEffect(() => {
     setSelTables([]);
     anchorRef.current = null;
-  }, [conn.id, tables]);
+  }, [conn.id, filter, tables]);
   const activateTable = (name: string, e: React.MouseEvent): boolean => {
-    if (e.altKey) {
+    if (e.metaKey || e.ctrlKey) {
       setSelTables((s) => (s.includes(name) ? s.filter((x) => x !== name) : [...s, name]));
       anchorRef.current = name;
       return true;
@@ -405,11 +508,9 @@ function Datasource({
   };
 
   const newTable = async () => {
-    const name = await promptDialog({ title: "New table", label: "Table name", placeholder: "e.g. invoices" });
-    if (!name?.trim()) return;
     if (!isActive && !(await openAndIntrospect(conn.id))) return;
-    await createTable(name.trim(), [{ name: "id", dataType: "INTEGER", nullable: false, primaryKey: true }]);
     setOpen(true);
+    window.dispatchEvent(new Event("orbitodb:create-table"));
   };
   const openProperties = async () => {
     if (!isActive && !(await openAndIntrospect(conn.id))) return;
@@ -420,7 +521,11 @@ function Datasource({
     if (!name?.trim() || name.trim() === conn.name) return;
     await saveConnection({ ...conn, name: name.trim() }, null);
   };
-  const copyString = () => void navigator.clipboard?.writeText(connString(conn)).catch(() => {});
+  const copyString = () => {
+    void navigator.clipboard?.writeText(connString(conn))
+      .then(() => toast("Connection string copied.", "success"))
+      .catch(() => toast("Could not copy the connection string.", "error"));
+  };
   const remove = async () => {
     if (
       await confirmDialog({
@@ -442,7 +547,7 @@ function Datasource({
       onClick: () => void openAndIntrospect(conn.id),
     },
     { label: "Refresh", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: () => void openAndIntrospect(conn.id) },
-    { label: "New table", icon: (<IconTablePlus size={15} stroke={1.7} />), onClick: () => void newTable() },
+    { label: "Design new table…", icon: (<IconTablePlus size={15} stroke={1.7} />), onClick: () => void newTable() },
     { divider: true },
     { label: "Rename", icon: (<IconPencil size={15} stroke={1.7} />), onClick: () => void rename() },
     { label: "Edit connection…", icon: (<IconDatabaseCog size={15} stroke={1.7} />), onClick: () => onEditServer(conn) },
@@ -490,35 +595,63 @@ function Datasource({
 
   return (
     <div className={`bud-ds ${isActive ? "connected" : ""}`}>
-      <div
-        className="bud-src ds"
-        onClick={toggle}
-        role="button"
-        tabIndex={0}
-        aria-expanded={isActive && open}
-        aria-current={isActive ? "true" : undefined}
-        onKeyDown={(e) => keyboardActivate(e, () => void toggle())}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setCtx({ x: e.clientX, y: e.clientY, items });
-        }}
-      >
-        <span className="bud-ds-arrow">
-          {isActive && open ? <IconChevronDown size={13} stroke={2} /> : <IconChevronRight size={13} stroke={2} />}
-        </span>
-        <span className="bud-src-ic ds-engine">
-          <EngineIcon engine={conn.engine} />
-        </span>
-        {conn.env && <span className={`bud-ds-env ${conn.env}`} title={`${conn.env} environment`} />}
-        <span className="bud-src-name">{conn.name}</span>
-        {isReadOnly && <IconLock size={12} stroke={1.9} className="bud-ds-ro" />}
+      <div className={`bud-src ds odb-source-row ${isConnecting ? "is-connecting" : ""}`}>
+        <button
+          type="button"
+          className="odb-source-main"
+          onClick={() => void toggle()}
+          aria-expanded={isActive && open}
+          aria-current={isActive ? "page" : undefined}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setCtx({ x: event.clientX, y: event.clientY, items });
+          }}
+        >
+          <span className="bud-ds-arrow">
+            {isActive && open ? <IconChevronDown size={13} stroke={2} /> : <IconChevronRight size={13} stroke={2} />}
+          </span>
+          <span className="bud-src-ic ds-engine"><EngineIcon engine={conn.engine} /></span>
+          <span className="odb-source-copy">
+            <strong>{conn.name}</strong>
+            <small>{engineLabel(conn.engine)} · {connectionMeta(conn)}</small>
+          </span>
+          <span className="odb-source-badges">
+            {conn.env && <span className={`bud-ds-env ${conn.env}`}>{conn.env}</span>}
+            {isReadOnly && <span className="odb-source-lock" title="Read-only"><IconLock size={11} stroke={1.9} /></span>}
+            {isConnecting ? (
+              <span className="odb-source-state pending" title="Connecting"><IconRefresh size={12} stroke={1.8} className="bud-spin" /></span>
+            ) : isActive ? (
+              <span className="odb-source-state ready" title="Connected"><IconCheck size={12} stroke={2.1} /></span>
+            ) : null}
+          </span>
+        </button>
+        <button
+          type="button"
+          className="odb-source-more"
+          aria-label={`Actions for ${conn.name}`}
+          aria-haspopup="menu"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setCtx({ x: rect.right, y: rect.bottom + 3, items });
+          }}
+        >
+          <IconDots size={15} stroke={1.8} />
+        </button>
       </div>
       {isActive && (open || !!filter) && (
         <div className="bud-ds-tables">
           {loadingTables ? (
-            <div className="bud-ds-empty">Loading…</div>
+            <div className="odb-source-schema-loading" role="status"><span className="bud-loading-spinner" /> Loading schema…</div>
           ) : (
             <>
+              {selTables.length > 0 && (
+                <div className="odb-table-selection" role="status">
+                  <strong>{selTables.length} selected</strong>
+                  <button type="button" onClick={() => void clearTables(selTables)}>Clear rows</button>
+                  <button type="button" className="danger" onClick={() => void dropTables(selTables)}>Drop</button>
+                  <button type="button" className="icon" aria-label="Clear table selection" onClick={() => setSelTables([])}><IconX size={12} /></button>
+                </div>
+              )}
               <ObjectGroup label="Tables" count={shownTables.length} defaultOpen menu={tablesMenu}>
                 {shownTables.length === 0 ? (
                   <div className="bud-ds-empty">{filter ? "No matching tables" : "No tables yet"}</div>
@@ -620,7 +753,19 @@ function TableRow({
       "TEXT";
     void addColumn(table, { name: name.trim(), dataType, nullable: true, primaryKey: false });
   };
-  const copyName = () => void navigator.clipboard?.writeText(table).catch(() => {});
+  const copyName = () => {
+    void navigator.clipboard?.writeText(table)
+      .then(() => toast("Object name copied.", "success"))
+      .catch(() => toast("Could not copy the object name.", "error"));
+  };
+  const removeSavedView = async (id: string, name: string) => {
+    if (await confirmDialog({
+      title: "Remove saved view?",
+      message: `Remove “${name}”? The database table or view will not be changed.`,
+      confirmLabel: "Remove view",
+      danger: true,
+    })) deleteView(id);
+  };
   const tableSql = quoteIdentifier(table, engine);
 
   const items: MenuItem[] = [
@@ -664,26 +809,22 @@ function TableRow({
 
   return (
     <>
-      <div
+      <button
+        type="button"
         className={`bud-table ${tableActive ? "active" : ""} ${selected ? "multi" : ""}`}
-        role="button"
-        tabIndex={0}
         aria-current={tableActive ? "page" : undefined}
+        aria-pressed={selectedNames.length ? selected : undefined}
         aria-label={`${isDatabaseView ? "View" : "Table"} ${table}`}
-        onKeyDown={(e) => keyboardActivate(e, () => {
-          if (tableActive) setView("data");
-          else void openTableData(table);
-          onNavigate();
-        })}
         onClick={(e) => {
-          // Ctrl/Cmd-click opens the table in an additional tab.
-          if (e.metaKey || e.ctrlKey) {
+          const handled = onActivate?.(table, e) ?? false;
+          if (handled) return;
+          // Views do not participate in table multi-selection, so Ctrl/Cmd-click
+          // keeps its familiar open-in-new-tab behavior there.
+          if (!onActivate && (e.metaKey || e.ctrlKey)) {
             void openTableData(table, { newTab: true });
             onNavigate();
             return;
           }
-          const handled = onActivate?.(table, e) ?? false;
-          if (handled) return;
           // Clicking the already-selected table shouldn't reload it — just bring
           // its tab back into view if you'd navigated away to the editor.
           if (tableActive) {
@@ -702,8 +843,8 @@ function TableRow({
         <span className="bud-table-ic">
           {isDatabaseView ? <IconEye size={14} stroke={1.7} /> : <IconTable size={14} stroke={1.7} />}
         </span>
-        {table}
-      </div>
+        <span className="bud-src-name">{table}</span>
+      </button>
       {myViews.map((v) => (
         <div
           key={v.id}
@@ -735,7 +876,7 @@ function TableRow({
             aria-label={`Remove saved view ${v.name}`}
             onClick={(e) => {
               e.stopPropagation();
-              deleteView(v.id);
+              void removeSavedView(v.id, v.name);
             }}
           >
             <IconX size={13} stroke={1.8} />

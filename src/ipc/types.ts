@@ -55,6 +55,7 @@ export interface ColumnDef {
   dataType: string;
   nullable: boolean;
   primaryKey: boolean;
+  autoIncrement?: boolean;
 }
 
 export interface HistoryEntry {

@@ -273,7 +273,7 @@ export interface AppStore {
   dropTable: (table: string) => Promise<void>;
   dropTables: (tables: string[]) => Promise<void>;
   clearTables: (tables: string[]) => Promise<void>;
-  createTable: (name: string, columns: ColumnDef[]) => Promise<void>;
+  createTable: (name: string, columns: ColumnDef[]) => Promise<boolean>;
   createLocalDatabase: (name: string) => Promise<void>;
   scanLocal: () => Promise<void>;
   addDetected: (cfg: ConnectionConfig) => Promise<void>;
@@ -1256,17 +1256,25 @@ export const useStore = create<AppStore>((set, get) => ({
 
   createTable: async (name, columns) => {
     const id = get().activeConnectionId;
-    if (!id) return;
-    if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
     const conn = get().connections.find((connection) => connection.id === id);
-    if (!(await confirmProdWrite(conn, "CREATE TABLE"))) return;
+    if (!(await confirmProdWrite(conn, "CREATE TABLE"))) return false;
     try {
       await backend.createTable(id, name, columns);
       const tables = await backend.listTables(id);
-      if (get().activeConnectionId !== id) return;
+      if (get().activeConnectionId !== id) return false;
       set({ schema: { tables, columnsByTable: {} }, error: null });
+      toast(`Created table “${name}”.`, "success");
+      return true;
     } catch (e) {
-      set({ error: normalizeError(e) });
+      const error = normalizeError(e);
+      set({ error });
+      toast(error.message ?? "Could not create the table.", "error");
+      return false;
     }
   },
 
@@ -1314,8 +1322,18 @@ export const useStore = create<AppStore>((set, get) => ({
     const requestId = connectionRequestId;
     try {
       const tables = await backend.listTables(id);
+      const activeTable = get().editTable?.table;
+      const columnsByTable: Record<string, ColumnInfo[]> = {};
+      if (activeTable && tables.some((table) => table.name === activeTable)) {
+        try {
+          columnsByTable[activeTable] = await backend.listColumns(id, activeTable);
+        } catch {
+          // Keep the refreshed object list useful even if one table's columns
+          // changed or became temporarily unavailable.
+        }
+      }
       if (requestId !== connectionRequestId || get().activeConnectionId !== id) return;
-      set({ schema: { tables, columnsByTable: {} }, error: null });
+      set({ schema: { tables, columnsByTable }, error: null });
     } catch (e) {
       if (requestId !== connectionRequestId || get().activeConnectionId !== id) return;
       set({ error: normalizeError(e) });

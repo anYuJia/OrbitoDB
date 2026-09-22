@@ -5,12 +5,12 @@ import { installSmoothScroll } from "../lib/smoothScroll";
 import { useStore } from "../state/store";
 import { DataView } from "./bud/DataView";
 import { DialogHost } from "./bud/DialogHost";
-import { Sources } from "./bud/Sources";
 import { StatusBar } from "./bud/StatusBar";
 import { ToastHost } from "./bud/ToastHost";
 import { TopNav } from "./bud/TopNav";
 import { WorkspaceRail, type ExplorerPanel } from "./bud/WorkspaceRail";
 
+const Sources = lazy(() => import("./bud/Sources").then((mod) => ({ default: mod.Sources })));
 const ServerModal = lazy(() => import("./bud/ServerModal").then((mod) => ({ default: mod.ServerModal })));
 const WorkspacePanel = lazy(() => import("./bud/WorkspacePanel").then((mod) => ({ default: mod.WorkspacePanel })));
 const CommandPalette = lazy(() => import("./dash/CommandPalette").then((mod) => ({ default: mod.CommandPalette })));
@@ -18,14 +18,16 @@ const ShortcutsOverlay = lazy(() => import("./bud/ShortcutsOverlay").then((mod) 
 const ErDiagram = lazy(() => import("./bud/ErDiagram").then((mod) => ({ default: mod.ErDiagram })));
 const ImportCsvModal = lazy(() => import("./bud/ImportCsvModal").then((mod) => ({ default: mod.ImportCsvModal })));
 const SchemaDiff = lazy(() => import("./bud/SchemaDiff").then((mod) => ({ default: mod.SchemaDiff })));
+const CreateTableModal = lazy(() => import("./bud/CreateTableModal").then((mod) => ({ default: mod.CreateTableModal })));
 
-type DeferredOverlay = "command" | "shortcuts" | "erd" | "importCsv" | "schemaDiff";
+type DeferredOverlay = "command" | "shortcuts" | "erd" | "importCsv" | "schemaDiff" | "createTable";
 const EMPTY_OVERLAYS: Record<DeferredOverlay, boolean> = {
   command: false,
   shortcuts: false,
   erd: false,
   importCsv: false,
   schemaDiff: false,
+  createTable: false,
 };
 
 function initialWidth(): number {
@@ -97,6 +99,7 @@ export function AppShell() {
     const onErd = () => load("erd");
     const onImport = () => load("importCsv");
     const onSchemaDiff = () => load("schemaDiff");
+    const onCreateTable = () => load("createTable");
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -115,6 +118,7 @@ export function AppShell() {
     window.addEventListener("orbitodb:erd", onErd);
     window.addEventListener("orbitodb:import-csv", onImport);
     window.addEventListener("orbitodb:schema-diff", onSchemaDiff);
+    window.addEventListener("orbitodb:create-table", onCreateTable);
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("orbitodb:cmdk", onCommand);
@@ -122,6 +126,7 @@ export function AppShell() {
       window.removeEventListener("orbitodb:erd", onErd);
       window.removeEventListener("orbitodb:import-csv", onImport);
       window.removeEventListener("orbitodb:schema-diff", onSchemaDiff);
+      window.removeEventListener("orbitodb:create-table", onCreateTable);
       window.removeEventListener("keydown", onKey);
     };
   }, []);
@@ -223,7 +228,15 @@ export function AppShell() {
           }}
           onSettings={() => setTopView("settings")}
         />
-        <Sources panel={explorerPanel} onAddServer={openAdd} onEditServer={openEdit} onNavigate={closeMobileSidebar} />
+        <Suspense
+          fallback={
+            <aside className="bud-sources odb-source-loading" aria-busy="true" aria-label="Loading resource explorer">
+              <span className="bud-loading-spinner" /> Loading explorer…
+            </aside>
+          }
+        >
+          <Sources panel={explorerPanel} onAddServer={openAdd} onEditServer={openEdit} onNavigate={closeMobileSidebar} />
+        </Suspense>
         {!sidebarHidden && (
           <button className="odb-sidebar-scrim" aria-label="Close sidebar" onClick={toggleSidebar} />
         )}
@@ -305,6 +318,11 @@ export function AppShell() {
       {overlays.schemaDiff && (
         <Suspense fallback={<div className="bud-modal-backdrop bud-modal-loading"><span className="bud-loading-spinner" /></div>}>
           <SchemaDiff initialOpen />
+        </Suspense>
+      )}
+      {overlays.createTable && (
+        <Suspense fallback={<div className="bud-modal-backdrop bud-modal-loading"><span className="bud-loading-spinner" /></div>}>
+          <CreateTableModal initialOpen />
         </Suspense>
       )}
       <ToastHost />

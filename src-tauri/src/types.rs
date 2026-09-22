@@ -98,6 +98,8 @@ pub struct ColumnDef {
     pub data_type: String,
     pub nullable: bool,
     pub primary_key: bool,
+    #[serde(default)]
+    pub auto_increment: bool,
 }
 
 #[cfg(test)]

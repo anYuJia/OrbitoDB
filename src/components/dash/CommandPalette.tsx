@@ -11,6 +11,7 @@ import {
   IconSettings,
   IconStar,
   IconTable,
+  IconTablePlus,
   IconTerminal2,
 } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -84,6 +85,14 @@ export function CommandPalette({ onAddServer, initialOpen = false }: { onAddServ
     const list: Cmd[] = [
       { id: "a-query", group: "Actions", label: "New query tab", hint: "SQL", Icon: IconBolt, run: act(newEditor) },
       { id: "a-conn", group: "Actions", label: "New connection", Icon: IconPlus, run: act(onAddServer) },
+      ...(activeId ? [{
+        id: "a-table",
+        group: "Actions",
+        label: "Create table",
+        hint: "Schema",
+        Icon: IconTablePlus,
+        run: act(() => window.dispatchEvent(new Event("orbitodb:create-table"))),
+      }] : []),
       {
         id: "a-run",
         group: "Actions",
