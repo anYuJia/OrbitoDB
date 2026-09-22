@@ -9,6 +9,7 @@ import { Sources } from "./bud/Sources";
 import { StatusBar } from "./bud/StatusBar";
 import { ToastHost } from "./bud/ToastHost";
 import { TopNav } from "./bud/TopNav";
+import { WorkspaceRail, type ExplorerPanel } from "./bud/WorkspaceRail";
 
 const ServerModal = lazy(() => import("./bud/ServerModal").then((mod) => ({ default: mod.ServerModal })));
 const WorkspacePanel = lazy(() => import("./bud/WorkspacePanel").then((mod) => ({ default: mod.WorkspacePanel })));
@@ -29,9 +30,19 @@ const EMPTY_OVERLAYS: Record<DeferredOverlay, boolean> = {
 
 function initialWidth(): number {
   try {
-    return Number(localStorage.getItem("orbitodb.sidebarW")) || 292;
+    return Number(localStorage.getItem("orbitodb.sidebarW")) || 256;
   } catch {
-    return 292;
+    return 256;
+  }
+}
+
+type Theme = "dark" | "light";
+
+function initialTheme(): Theme {
+  try {
+    return localStorage.getItem("orbitodb.theme") === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
   }
 }
 
@@ -49,9 +60,14 @@ export function AppShell() {
   const [serverModal, setServerModal] = useState<ConnectionConfig | "new" | null>(null);
   const [sidebarHidden, setSidebarHidden] = useState(initialSidebarHidden);
   const [sidebarWidth, setSidebarWidth] = useState(initialWidth);
+  const [explorerPanel, setExplorerPanel] = useState<ExplorerPanel>("Databases");
+  const [theme, setTheme] = useState<Theme>(initialTheme);
   const [overlays, setOverlays] = useState(EMPTY_OVERLAYS);
   const shellRef = useRef<HTMLDivElement>(null);
   const topView = useStore((s) => s.topView);
+  const view = useStore((s) => s.view);
+  const setTopView = useStore((s) => s.setTopView);
+  const setView = useStore((s) => s.setView);
   const restoreSession = useStore((s) => s.restoreSession);
 
   // Restore the last connection + editor contents on load.
@@ -61,6 +77,15 @@ export function AppShell() {
 
   // Smooth (eased) mouse-wheel scrolling across every scroll container.
   useEffect(() => installSmoothScroll(), []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("orbitodb.theme", theme);
+    } catch {
+      /* keep the in-memory preference */
+    }
+  }, [theme]);
 
   // Keep feature-heavy overlays out of the startup bundle. This tiny event
   // gate catches their first invocation; once mounted, each overlay continues
@@ -104,6 +129,13 @@ export function AppShell() {
   const openAdd = () => setServerModal("new");
   const openEdit = (c: ConnectionConfig) => setServerModal(c);
 
+  const showExplorerPanel = (panel: ExplorerPanel) => {
+    setExplorerPanel(panel);
+    setTopView("data");
+    if (view === "history") setView("overview");
+    if (sidebarHidden) toggleSidebar();
+  };
+
   const toggleSidebar = () => {
     setSidebarHidden((hidden) => {
       const next = !hidden;
@@ -125,7 +157,7 @@ export function AppShell() {
   };
 
   const resizeSidebar = (width: number) => {
-    const next = Math.max(240, Math.min(width, 480));
+    const next = Math.max(224, Math.min(width, 360));
     setSidebarWidth(next);
     return next;
   };
@@ -151,7 +183,7 @@ export function AppShell() {
   const onResizeKey = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home") return;
     e.preventDefault();
-    const next = e.key === "Home" ? 292 : resizeSidebar(sidebarWidth + (e.key === "ArrowLeft" ? -16 : 16));
+    const next = e.key === "Home" ? 256 : resizeSidebar(sidebarWidth + (e.key === "ArrowLeft" ? -16 : 16));
     setSidebarWidth(next);
     saveSidebarWidth(next);
   };
@@ -162,9 +194,26 @@ export function AppShell() {
       className={`bud-app ${sidebarHidden ? "sidebar-hidden" : ""}`}
       style={{ ["--sidebar-w" as string]: `${sidebarWidth}px` }}
     >
-      <TopNav onAddServer={openAdd} onToggleSidebar={toggleSidebar} sidebarHidden={sidebarHidden} />
+      <TopNav
+        onAddServer={openAdd}
+        onToggleSidebar={toggleSidebar}
+        sidebarHidden={sidebarHidden}
+        theme={theme}
+        onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+      />
       <div className="bud-body">
-        <Sources onAddServer={openAdd} onEditServer={openEdit} />
+        <WorkspaceRail
+          panel={explorerPanel}
+          historyActive={topView === "data" && view === "history"}
+          settingsActive={topView === "settings"}
+          onPanel={showExplorerPanel}
+          onHistory={() => {
+            setTopView("data");
+            setView("history");
+          }}
+          onSettings={() => setTopView("settings")}
+        />
+        <Sources panel={explorerPanel} onAddServer={openAdd} onEditServer={openEdit} />
         <AnimatePresence mode="wait" initial={false}>
           {topView === "data" ? (
             <DataView key="data" onAddServer={openAdd} />
@@ -189,15 +238,15 @@ export function AppShell() {
           role="separator"
           aria-label="Resize data sources sidebar"
           aria-orientation="vertical"
-          aria-valuemin={240}
-          aria-valuemax={480}
+          aria-valuemin={224}
+          aria-valuemax={360}
           aria-valuenow={sidebarWidth}
           tabIndex={0}
           onPointerDown={onResize}
           onKeyDown={onResizeKey}
           onDoubleClick={() => {
-            setSidebarWidth(292);
-            saveSidebarWidth(292);
+            setSidebarWidth(256);
+            saveSidebarWidth(256);
           }}
           title="Drag to resize · Double-click to reset"
         />

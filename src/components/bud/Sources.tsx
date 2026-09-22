@@ -37,8 +37,7 @@ import type { ConnectionConfig, Engine } from "../../ipc/types";
 import { quoteIdentifier } from "../../lib/sql";
 import { useStore } from "../../state/store";
 import { ContextMenu, type CtxAnchor, type MenuItem } from "./ContextMenu";
-
-const PANELS = ["Databases", "Scripts", "Favorites"] as const;
+import type { ExplorerPanel } from "./WorkspaceRail";
 
 function initialCompact(): boolean {
   try {
@@ -121,25 +120,20 @@ function ObjectGroup({
 }
 
 export function Sources({
+  panel,
   onAddServer,
   onEditServer,
 }: {
+  panel: ExplorerPanel;
   onAddServer: () => void;
   onEditServer: (conn: ConnectionConfig) => void;
 }) {
   const connections = useStore((s) => s.connections);
   const loadConnections = useStore((s) => s.loadConnections);
   const scanLocal = useStore((s) => s.scanLocal);
+  const newEditor = useStore((s) => s.newEditor);
   const [filter, setFilter] = useState("");
-  const [panel, setPanel] = useState<(typeof PANELS)[number]>("Databases");
-  const [rootOpen, setRootOpen] = useState(true);
-  const [rootCtx, setRootCtx] = useState<CtxAnchor | null>(null);
   const [compact, setCompact] = useState(initialCompact);
-
-  const rootMenu: MenuItem[] = [
-    { label: "New connection…", icon: (<IconPlus size={15} stroke={1.7} />), onClick: onAddServer },
-    { label: "Refresh all", icon: (<IconRefresh size={15} stroke={1.7} />), onClick: () => { void loadConnections(); void scanLocal(); } },
-  ];
 
   useEffect(() => {
     loadConnections();
@@ -150,29 +144,18 @@ export function Sources({
     <aside className={`bud-sources ${compact ? "compact" : ""}`}>
       <div className="bud-sources-head">
         <div>
-          <span className="bud-sources-eyebrow">Workspace</span>
-          <strong>Data sources</strong>
+          <span className="bud-sources-eyebrow">{panel === "Databases" ? "Workspace" : "Library"}</span>
+          <strong>{panel === "Databases" ? "Explorer" : panel === "Scripts" ? "Saved queries" : "Favorites"}</strong>
         </div>
-        <button className="bud-sources-add" onClick={onAddServer} title="Add data source">
+        <button
+          className="bud-sources-add"
+          onClick={panel === "Databases" ? onAddServer : newEditor}
+          title={panel === "Databases" ? "Add data source" : "New query"}
+        >
           <IconPlus size={15} stroke={2} />
-          <span>Add</span>
+          <span>{panel === "Databases" ? "Connect" : "New"}</span>
         </button>
       </div>
-
-      <nav className="bud-panel-tabs" role="tablist" aria-label="Data source panels">
-        {PANELS.map((p) => (
-          <button
-            key={p}
-            className={`bud-panel-tab ${panel === p ? "on" : ""}`}
-            role="tab"
-            aria-selected={panel === p}
-            onClick={() => setPanel(p)}
-          >
-            {p === "Databases" ? <IconDatabase size={14} /> : p === "Scripts" ? <IconFileText size={14} /> : <IconStar size={14} />}
-            <span>{p}</span>
-          </button>
-        ))}
-      </nav>
 
       {panel === "Databases" && (
         <div className="bud-source-controls">
@@ -237,48 +220,22 @@ export function Sources({
 
       <div className="bud-sources-list">
         {panel === "Databases" ? (
-          <>
-            <div
-              className="bud-tnode root"
-              onClick={() => setRootOpen((v) => !v)}
-              role="button"
-              tabIndex={0}
-              aria-expanded={rootOpen}
-              onKeyDown={(e) => keyboardActivate(e, () => setRootOpen((v) => !v))}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setRootCtx({ x: e.clientX, y: e.clientY, items: rootMenu });
-              }}
-            >
-              <span className="bud-tnode-arrow">
-                {rootOpen ? <IconChevronDown size={13} stroke={2} /> : <IconChevronRight size={13} stroke={2} />}
+          connections.length === 0 ? (
+            <div className="bud-sidebar-empty">
+              <span className="bud-sidebar-empty-icon">
+                <IconDatabase size={20} stroke={1.55} />
               </span>
-              <IconFolderOpen size={14} stroke={1.7} className="bud-tnode-ic" />
-              <span className="bud-tnode-label">Saved connections</span>
-              <span className="bud-tree-count">{connections.length}</span>
+              <strong>No data sources yet</strong>
+              <span>Connect SQLite, PostgreSQL, or MySQL to get started.</span>
+              <button onClick={onAddServer}>
+                <IconPlus size={14} stroke={2} /> Add data source
+              </button>
             </div>
-            {rootCtx && <ContextMenu anchor={rootCtx} onClose={() => setRootCtx(null)} />}
-            {rootOpen && (
-              <div className="bud-tree-children">
-                {connections.length === 0 ? (
-                  <div className="bud-sidebar-empty">
-                    <span className="bud-sidebar-empty-icon">
-                      <IconDatabase size={20} stroke={1.55} />
-                    </span>
-                    <strong>No data sources yet</strong>
-                    <span>Connect SQLite, PostgreSQL, or MySQL to get started.</span>
-                    <button onClick={onAddServer}>
-                      <IconPlus size={14} stroke={2} /> Add data source
-                    </button>
-                  </div>
-                ) : (
-                  connections.map((c) => (
-                    <Datasource key={c.id} conn={c} onEditServer={onEditServer} filter={filter} />
-                  ))
-                )}
-              </div>
-            )}
-          </>
+          ) : (
+            connections.map((c) => (
+              <Datasource key={c.id} conn={c} onEditServer={onEditServer} filter={filter} />
+            ))
+          )
         ) : (
           <SavedList kind={panel} />
         )}

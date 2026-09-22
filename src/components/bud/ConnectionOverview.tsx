@@ -1,13 +1,11 @@
 import {
   IconArrowRight,
-  IconBolt,
   IconClock,
   IconCode,
   IconDatabase,
   IconEye,
   IconFileImport,
   IconLock,
-  IconPlus,
   IconRefresh,
   IconSchema,
   IconSearch,
@@ -46,7 +44,6 @@ export function ConnectionOverview() {
   const tables = useStore((state) => state.schema.tables);
   const columnsByTable = useStore((state) => state.schema.columnsByTable);
   const history = useStore((state) => state.history);
-  const savedViews = useStore((state) => state.views);
   const loading = useStore((state) => state.loadingTables);
   const readOnly = useStore((state) =>
     state.readOnlyConns.includes(state.activeConnectionId ?? ""),
@@ -66,197 +63,133 @@ export function ConnectionOverview() {
     () => tables.filter((item) => item.kind.toLowerCase() !== "view"),
     [tables],
   );
-  const databaseViews = useMemo(
-    () => tables.filter((item) => item.kind.toLowerCase() === "view"),
-    [tables],
-  );
   const shownTables = useMemo(() => {
     const query = filter.trim().toLocaleLowerCase();
     if (!query) return tables;
     return tables.filter((item) => item.name.toLocaleLowerCase().includes(query));
   }, [filter, tables]);
   const recent = useMemo(
-    () => history.filter((item) => item.connectionId === connection?.id).slice(0, 5),
+    () => history.filter((item) => item.connectionId === connection?.id).slice(0, 6),
     [connection?.id, history],
   );
-  const schemaNames = new Set(tables.map((item) => item.name));
-  const viewCount = savedViews.filter(
-    (item) => item.connectionId === connection?.id && schemaNames.has(item.table),
-  ).length;
-  const knownColumns = Object.values(columnsByTable).reduce((sum, columns) => sum + columns.length, 0);
 
   if (!connection) return null;
 
   const openResource = (item: TableInfo) => void openTableData(item.name);
+  const endpoint = connection.engine === "sqlite"
+    ? connection.database
+    : `${connection.host ?? "localhost"}${connection.port ? `:${connection.port}` : ""}`;
 
   return (
-    <div className="bud-overview">
-      <header className="bud-overview-hero">
-        <div className="bud-overview-copy">
-          <div className="bud-overview-kicker">
-            <span className="bud-live-dot" /> Connected workspace
-            <span className="bud-overview-engine">{engineName(connection.engine)}</span>
+    <div className="odb-start-center">
+      <header className="odb-start-header">
+        <div>
+          <div className="odb-start-status">
+            <span className="odb-live-dot" /> Connected
+            <span>{engineName(connection.engine)}</span>
+            {connection.env && <em className={`odb-env ${connection.env}`}>{connection.env}</em>}
+            {readOnly && <em className="odb-readonly"><IconLock size={12} /> Read-only</em>}
           </div>
           <h1>{connection.name}</h1>
-          <p>
-            {connection.engine === "sqlite"
-              ? connection.database
-              : `${connection.host ?? "localhost"}${connection.port ? `:${connection.port}` : ""} / ${connection.database}`}
-          </p>
-          <div className="bud-overview-badges">
-            {connection.env && <span className={`bud-overview-badge ${connection.env}`}>{connection.env}</span>}
-            {readOnly && <span className="bud-overview-badge readonly"><IconLock size={12} /> Read-only</span>}
-          </div>
+          <p>{endpoint}</p>
         </div>
-        <div className="bud-overview-actions">
-          <button className="secondary" onClick={() => void refreshSchema()} disabled={loading}>
+        <div className="odb-start-actions">
+          <button onClick={() => void refreshSchema()} disabled={loading}>
             <IconRefresh size={16} className={loading ? "spin" : ""} />
-            {loading ? "Refreshing…" : "Refresh schema"}
+            {loading ? "Refreshing" : "Refresh"}
           </button>
           <button className="primary" onClick={newEditor}>
-            <IconCode size={17} /> New query
+            <IconCode size={16} /> New query
           </button>
         </div>
       </header>
 
-      <section className="bud-overview-metrics" aria-label="Database summary">
-        <div>
-          <span>Tables</span>
-          <strong>{connectionTables.length.toLocaleString()}</strong>
-          <small>Browsable resources</small>
-        </div>
-        <div>
-          <span>Database views</span>
-          <strong>{databaseViews.length.toLocaleString()}</strong>
-          <small>Defined in schema</small>
-        </div>
-        <div>
-          <span>Known columns</span>
-          <strong>{knownColumns.toLocaleString()}</strong>
-          <small>{knownColumns ? "Schema indexed" : tables.length ? "Indexing schema" : "No columns found"}</small>
-        </div>
-        <div>
-          <span>Saved views</span>
-          <strong>{viewCount.toLocaleString()}</strong>
-          <small>Reusable filters</small>
-        </div>
-      </section>
-
-      <div className="bud-overview-layout">
-        <section className="bud-overview-panel bud-overview-schema">
-          <div className="bud-overview-panel-head">
+      <div className="odb-start-layout">
+        <section className="odb-object-browser">
+          <div className="odb-section-heading">
             <div>
-              <span className="bud-section-icon"><IconDatabase size={16} /></span>
-              <div>
-                <h2>Schema</h2>
-                <p>{tables.length.toLocaleString()} resources available</p>
-              </div>
+              <span>Database objects</span>
+              <small>{tables.length.toLocaleString()} tables and views</small>
             </div>
-            <label className="bud-overview-search">
+            <label className="odb-object-search">
               <IconSearch size={14} />
               <input
                 aria-label="Filter schema resources"
-                placeholder="Filter schema…"
+                placeholder="Find a table or view…"
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
               />
             </label>
           </div>
 
-          <div className="bud-overview-resource-head" aria-hidden>
-            <span>Resource</span>
-            <span>Type</span>
-            <span>Columns</span>
-            <span />
+          <div className="odb-object-head" aria-hidden>
+            <span>Name</span><span>Type</span><span>Columns</span><span />
           </div>
-          <div className="bud-overview-resources">
+          <div className="odb-object-list">
             {loading ? (
-              Array.from({ length: 6 }, (_, index) => <div className="bud-resource-skeleton" key={index} />)
-            ) : shownTables.length === 0 && filter.trim() ? (
-              <div className="bud-overview-empty">
-                <IconSearch size={20} />
-                <strong>No matching resources</strong>
-                <span>Try a different table or view name.</span>
-              </div>
+              Array.from({ length: 7 }, (_, index) => <div className="odb-object-skeleton" key={index} />)
             ) : shownTables.length === 0 ? (
-              <div className="bud-overview-empty">
-                <IconDatabase size={20} />
-                <strong>This database is empty</strong>
-                <span>Import a CSV or create a table from the sidebar to begin.</span>
-                <button onClick={() => window.dispatchEvent(new Event("orbitodb:import-csv"))}>
-                  <IconPlus size={14} /> Import CSV
-                </button>
-              </div>
-            ) : (
-              shownTables.slice(0, 12).map((item) => {
-                const isView = item.kind.toLowerCase() === "view";
-                const columnCount = columnsByTable[item.name]?.length;
-                return (
-                  <button key={`${item.kind}-${item.name}`} className="bud-resource-row" onClick={() => openResource(item)}>
-                    <span className={`bud-resource-icon ${isView ? "view" : "table"}`}>
-                      {isView ? <IconEye size={15} /> : <IconTable size={15} />}
-                    </span>
-                    <span className="bud-resource-name">{item.name}</span>
-                    <span className="bud-resource-kind">{isView ? "View" : "Table"}</span>
-                    <span className="bud-resource-columns">{columnCount ?? "—"}</span>
-                    <IconArrowRight size={14} className="bud-resource-arrow" />
+              <div className="odb-object-empty">
+                {filter.trim() ? <IconSearch size={20} /> : <IconDatabase size={20} />}
+                <strong>{filter.trim() ? "No matching objects" : "This database is empty"}</strong>
+                <span>{filter.trim() ? "Try another name." : "Import a CSV or create your first table."}</span>
+                {!filter.trim() && (
+                  <button onClick={() => window.dispatchEvent(new Event("orbitodb:import-csv"))}>
+                    <IconFileImport size={14} /> Import CSV
                   </button>
-                );
-              })
-            )}
+                )}
+              </div>
+            ) : shownTables.slice(0, 18).map((item) => {
+              const isView = item.kind.toLowerCase() === "view";
+              return (
+                <button key={`${item.kind}-${item.name}`} className="odb-object-row" onClick={() => openResource(item)}>
+                  <span className={`odb-resource-icon ${isView ? "view" : ""}`}>
+                    {isView ? <IconEye size={15} /> : <IconTable size={15} />}
+                  </span>
+                  <strong>{item.name}</strong>
+                  <span>{isView ? "View" : "Table"}</span>
+                  <span>{columnsByTable[item.name]?.length ?? "—"}</span>
+                  <IconArrowRight size={14} />
+                </button>
+              );
+            })}
           </div>
-          {shownTables.length > 12 && (
-            <div className="bud-overview-panel-foot">
-              Showing 12 of {shownTables.length.toLocaleString()} resources. Use the sidebar for the full schema.
-            </div>
-          )}
+          {shownTables.length > 18 && <div className="odb-object-foot">Showing 18 of {shownTables.length.toLocaleString()} objects</div>}
         </section>
 
-        <aside className="bud-overview-aside">
-          <section className="bud-overview-panel">
-            <div className="bud-overview-panel-head compact">
-              <div>
-                <span className="bud-section-icon"><IconBolt size={16} /></span>
-                <div><h2>Quick actions</h2><p>Common workspace tasks</p></div>
-              </div>
+        <aside className="odb-start-aside">
+          <section className="odb-continue-panel">
+            <div className="odb-section-heading">
+              <div><span>Continue working</span><small>Recent statements</small></div>
+              <IconClock size={16} />
             </div>
-            <div className="bud-quick-actions">
-              <button onClick={newEditor}>
-                <span><IconCode size={16} /></span><div><strong>Write a query</strong><small>Open a fresh SQL editor</small></div><IconArrowRight size={14} />
-              </button>
-              <button onClick={() => connectionTables[0] && void openTableData(connectionTables[0].name)} disabled={!connectionTables.length}>
-                <span><IconTable size={16} /></span><div><strong>Browse data</strong><small>{connectionTables[0]?.name ?? "No tables available"}</small></div><IconArrowRight size={14} />
-              </button>
-              <button onClick={() => window.dispatchEvent(new Event("orbitodb:import-csv"))}>
-                <span><IconFileImport size={16} /></span><div><strong>Import CSV</strong><small>Create or append a table</small></div><IconArrowRight size={14} />
-              </button>
-              <button onClick={() => window.dispatchEvent(new Event("orbitodb:erd"))}>
-                <span><IconSchema size={16} /></span><div><strong>Explore relations</strong><small>Open schema diagram</small></div><IconArrowRight size={14} />
-              </button>
-            </div>
-          </section>
-
-          <section className="bud-overview-panel bud-recent-panel">
-            <div className="bud-overview-panel-head compact">
-              <div>
-                <span className="bud-section-icon"><IconClock size={16} /></span>
-                <div><h2>Recent activity</h2><p>Queries on this connection</p></div>
-              </div>
-            </div>
-            <div className="bud-overview-recent">
+            <div className="odb-recent-list">
               {recent.length === 0 ? (
-                <div className="bud-overview-empty small">
-                  <IconClock size={18} />
-                  <strong>No query history yet</strong>
-                  <span>Your recent statements will appear here.</span>
-                </div>
+                <div className="odb-inline-empty">Run a query and it will appear here.</div>
               ) : recent.map((item) => (
                 <button key={item.id} onClick={() => loadSql(item.sql)} title={compactSql(item.sql)}>
-                  <span className="bud-recent-sql">{compactSql(item.sql)}</span>
-                  <span className="bud-recent-time">{relativeTime(item.ranAt)}</span>
+                  <code>{compactSql(item.sql)}</code>
+                  <span>{relativeTime(item.ranAt)}</span>
                 </button>
               ))}
             </div>
+          </section>
+
+          <section className="odb-quick-panel">
+            <div className="odb-section-heading"><div><span>Quick actions</span><small>Common tasks</small></div></div>
+            <button onClick={newEditor}><IconCode size={16} /><span><strong>Write a query</strong><small>Open a blank SQL document</small></span><IconArrowRight size={14} /></button>
+            <button onClick={() => connectionTables[0] && void openTableData(connectionTables[0].name)} disabled={!connectionTables.length}><IconTable size={16} /><span><strong>Browse data</strong><small>{connectionTables[0]?.name ?? "No tables available"}</small></span><IconArrowRight size={14} /></button>
+            <button onClick={() => window.dispatchEvent(new Event("orbitodb:import-csv"))}><IconFileImport size={16} /><span><strong>Import CSV</strong><small>Create or append a table</small></span><IconArrowRight size={14} /></button>
+            <button onClick={() => window.dispatchEvent(new Event("orbitodb:erd"))}><IconSchema size={16} /><span><strong>Schema diagram</strong><small>Explore table relations</small></span><IconArrowRight size={14} /></button>
+          </section>
+
+          <section className="odb-connection-details">
+            <span>Connection</span>
+            <dl>
+              <div><dt>Engine</dt><dd>{engineName(connection.engine)}</dd></div>
+              <div><dt>Database</dt><dd>{connection.database}</dd></div>
+              <div><dt>Access</dt><dd>{readOnly ? "Read-only" : "Read and write"}</dd></div>
+            </dl>
           </section>
         </aside>
       </div>

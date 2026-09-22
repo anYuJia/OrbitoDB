@@ -1,3 +1,4 @@
+import { IconDeviceFloppy, IconLock, IconTable, IconTrash, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { useStore } from "../../state/store";
 
@@ -121,10 +122,6 @@ export function RowInspector() {
     }
     return d;
   });
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const [tab, setTab] = useState<"settings" | "styles">("settings");
-  const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
-  const [labelLeft, setLabelLeft] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -132,6 +129,9 @@ export function RowInspector() {
   const row = result.rows[inspectorRow];
   const canEdit = !!pkCol && pkIdx >= 0;
   const pkValue = pkIdx >= 0 ? row[pkIdx] : null;
+  const changedCount = result.columns.reduce((count, column, index) => (
+    index !== pkIdx && String(draft[column.name] ?? "") !== String(row[index] ?? "") ? count + 1 : count
+  ), 0);
 
   const set = (name: string, v: unknown) => {
     setDraft((d) => ({ ...d, [name]: v }));
@@ -159,7 +159,6 @@ export function RowInspector() {
   const fieldsBlock = (
     <div className="insp-fields">
       {result.columns.map((col, ci) => {
-        if (hidden.has(col.name)) return null;
         const isPk = ci === pkIdx;
         return (
           <label className="insp-field" key={col.name}>
@@ -181,99 +180,31 @@ export function RowInspector() {
   );
 
   return (
-    <aside className={`bud-inspector dens-${density} ${labelLeft ? "label-left" : ""}`}>
+    <aside className="bud-inspector" aria-label="Record details">
       <div className="insp-head">
-        <span className="insp-title">
-          <span className="insp-ic">▤</span> Edit row
-        </span>
-        <button className="insp-close" title="Close" onClick={closeInspector}>
-          ✕
+        <span className="insp-title"><strong>Record details</strong><small>{editTable.table}</small></span>
+        <button className="insp-close" title="Close inspector" aria-label="Close inspector" onClick={closeInspector}>
+          <IconX size={17} stroke={1.8} />
         </button>
       </div>
+      <div className="insp-body">
+        <div className="insp-meta">
+          <span className="insp-table"><IconTable size={14} stroke={1.7} /> {editTable.table}</span>
+          {pkValue != null && <span className="insp-pk">{pkCol} = {String(pkValue)}</span>}
+        </div>
 
-      <div className="insp-tabs">
-        <button className={tab === "settings" ? "active" : ""} onClick={() => setTab("settings")}>
-          Settings
-        </button>
-        <button className={tab === "styles" ? "active" : ""} onClick={() => setTab("styles")}>
-          Styles
-        </button>
+        {!canEdit && <div className="insp-warn"><IconLock size={14} /> No primary key — this record is read-only.</div>}
+        {fieldsBlock}
       </div>
-
-      {tab === "settings" ? (
-        <div className="insp-body">
-          <div className="insp-meta">
-            <span className="insp-table">
-              <span className="bud-bc-ic">▦</span>
-              {editTable.table}
-            </span>
-            {pkValue != null && (
-              <span className="insp-pk">
-                {pkCol} = {String(pkValue)}
-              </span>
-            )}
-          </div>
-
-          {!canEdit && <div className="insp-warn">⚠ No primary key — this table is read-only.</div>}
-
-          {fieldsBlock}
-
-          <div className="insp-section">Fields</div>
-          <div className="insp-toggles">
-            {result.columns.map((col) => (
-              <label className="insp-toggle" key={col.name}>
-                <span className="insp-grip">⠿</span>
-                <span className="insp-toggle-name">{col.name}</span>
-                <input
-                  type="checkbox"
-                  checked={!hidden.has(col.name)}
-                  onChange={(e) =>
-                    setHidden((h) => {
-                      const n = new Set(h);
-                      if (e.target.checked) n.delete(col.name);
-                      else n.add(col.name);
-                      return n;
-                    })
-                  }
-                />
-                <span className="bud-switch" />
-              </label>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="insp-body">
-          <div className="insp-section">Density</div>
-          <div className="insp-seg">
-            <button className={density === "comfortable" ? "active" : ""} onClick={() => setDensity("comfortable")}>
-              Comfortable
-            </button>
-            <button className={density === "compact" ? "active" : ""} onClick={() => setDensity("compact")}>
-              Compact
-            </button>
-          </div>
-          <div className="insp-section">Label position</div>
-          <div className="insp-seg">
-            <button className={!labelLeft ? "active" : ""} onClick={() => setLabelLeft(false)}>
-              Top
-            </button>
-            <button className={labelLeft ? "active" : ""} onClick={() => setLabelLeft(true)}>
-              Left
-            </button>
-          </div>
-          <div className="insp-section">Preview</div>
-          {fieldsBlock}
-        </div>
-      )}
 
       <div className="insp-actions">
         <button className="insp-del" onClick={del} disabled={!canEdit}>
-          Delete
+          <IconTrash size={15} stroke={1.7} /> Delete
         </button>
         <div className="spacer" />
-        {saved && <span className="insp-saved">✓ Saved</span>}
-        <button className="insp-save" onClick={save} disabled={!canEdit || busy}>
-          {busy ? "Saving…" : "Save"}
+        {saved && changedCount === 0 ? <span className="insp-saved">Saved</span> : changedCount > 0 && <span className="insp-unsaved">{changedCount} unsaved</span>}
+        <button className="insp-save" onClick={save} disabled={!canEdit || busy || changedCount === 0}>
+          <IconDeviceFloppy size={15} stroke={1.8} /> {busy ? "Saving…" : "Save changes"}
         </button>
       </div>
     </aside>

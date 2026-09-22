@@ -536,7 +536,12 @@ export function DataGrid() {
                 </td>
                 <td className="bud-rownum">
                   <span className="rn-num">{curPage * pageSize + pos + 1}</span>
-                  <button className="rn-expand" title="Edit row in panel" onClick={() => openInspector(ri)}>
+                  <button
+                    className="rn-expand"
+                    title="Edit row in panel"
+                    aria-label={`Open row ${curPage * pageSize + pos + 1} details`}
+                    onClick={() => openInspector(ri)}
+                  >
                     ⤢
                   </button>
                 </td>

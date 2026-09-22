@@ -1,17 +1,20 @@
 import {
+  IconChevronDown,
   IconDatabase,
   IconDeviceFloppy,
   IconDots,
   IconFilePlus,
   IconFolderOpen,
   IconHistory,
+  IconHome,
   IconKeyboard,
   IconLayoutSidebar,
-  IconLayoutDashboard,
+  IconMoon,
   IconPlugConnected,
   IconRefresh,
   IconSearch,
   IconSettings,
+  IconSun,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import { MotionButton } from "../../lib/motion";
@@ -22,11 +25,16 @@ export function TopNav({
   onAddServer,
   onToggleSidebar,
   sidebarHidden,
+  theme,
+  onToggleTheme,
 }: {
   onAddServer: () => void;
   onToggleSidebar: () => void;
   sidebarHidden: boolean;
+  theme: "dark" | "light";
+  onToggleTheme: () => void;
 }) {
+  const connections = useStore((state) => state.connections);
   const active = useStore((state) => state.connections.find((item) => item.id === state.activeConnectionId));
   const activeId = useStore((state) => state.activeConnectionId);
   const connectingId = useStore((state) => state.connectingConnectionId);
@@ -98,24 +106,35 @@ export function TopNav({
         </button>
       </div>
 
-      {active ? (
-        <button
-          className={`bud-tb-context ${connectingId ? "pending" : ""}`}
-          onClick={goOverview}
-          title="Open connection overview"
-        >
+      <span className="odb-appbar-divider" />
+
+      {connections.length > 0 ? (
+        <div className={`odb-connection-switcher ${connectingId ? "pending" : ""}`}>
           <span className="bud-tb-conn-dot" />
-          <span className="bud-tb-context-copy">
-            <strong>{active.name}</strong>
-            <small>{active.engine} · {active.database}</small>
-          </span>
-          {active.env && <span className={`bud-tb-env ${active.env}`}>{active.env}</span>}
-          <IconLayoutDashboard size={14} stroke={1.7} />
-        </button>
+          <select
+            aria-label="Active database"
+            value={activeId ?? ""}
+            disabled={!!connectingId || running}
+            onChange={(event) => {
+              if (event.target.value) void openAndIntrospect(event.target.value);
+            }}
+          >
+            {!activeId && <option value="">Select database</option>}
+            {connections.map((connection) => (
+              <option key={connection.id} value={connection.id}>{connection.name}</option>
+            ))}
+          </select>
+          <IconChevronDown size={13} stroke={1.8} aria-hidden />
+          {active?.env && <span className={`bud-tb-env ${active.env}`}>{active.env}</span>}
+          {active && (
+            <button className="odb-connection-home" title="Open start center" aria-label="Open start center" onClick={goOverview}>
+              <IconHome size={15} stroke={1.7} />
+            </button>
+          )}
+        </div>
       ) : (
-        <button className="bud-tb-context empty" onClick={onAddServer}>
-          <span className="bud-tb-context-icon"><IconDatabase size={15} /></span>
-          <span className="bud-tb-context-copy"><strong>Select a database</strong><small>Connect to start working</small></span>
+        <button className="odb-connect-button" onClick={onAddServer}>
+          <IconDatabase size={15} stroke={1.8} /> Connect database
         </button>
       )}
 
@@ -134,6 +153,15 @@ export function TopNav({
       <button className="bud-tb-new-query" onClick={newEditor}>
         <IconFilePlus size={16} stroke={1.8} />
         <span>New query</span>
+      </button>
+
+      <button
+        className="bud-tb-icon odb-theme-toggle"
+        title={`Use ${theme === "dark" ? "light" : "dark"} theme`}
+        aria-label={`Use ${theme === "dark" ? "light" : "dark"} theme`}
+        onClick={onToggleTheme}
+      >
+        {theme === "dark" ? <IconSun size={17} stroke={1.7} /> : <IconMoon size={17} stroke={1.7} />}
       </button>
 
       <button

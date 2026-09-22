@@ -1,16 +1,76 @@
-/* Query workspace hierarchy */
+.bud-sqlpanel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg);
+}
 
 .bud-ide-toolbar {
-  min-height: 48px;
-  gap: 7px;
-  padding: 6px 12px;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  flex: none;
+  border-bottom: 1px solid var(--border);
   background: var(--bg-2);
 }
 
-.bud-ide-toolbar button {
-  height: 34px;
-  width: 34px;
-  border-radius: 7px !important;
+.bud-query-connection {
+  min-width: 120px;
+  max-width: 220px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+}
+
+.bud-query-connection-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--green-bright);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+
+.bud-query-connection select {
+  min-width: 0;
+  flex: 1;
+  appearance: none;
+  padding: 0 !important;
+  border: 0 !important;
+  outline: 0;
+  background: transparent !important;
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bud-query-context-separator {
+  color: var(--border-strong);
+  font-size: 16px;
+}
+
+.bud-query-schema {
+  max-width: 160px;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bud-ide-spacer {
+  flex: 1;
 }
 
 .bud-query-run-group,
@@ -19,58 +79,45 @@
   align-items: center;
 }
 
-.bud-query-run-group {
-  border-radius: 8px;
-  box-shadow: 0 5px 16px rgba(35, 121, 78, 0.14);
-}
-
-.bud-ide-toolbar .bud-query-run {
-  width: auto;
-  min-width: 112px;
-  gap: 7px;
-  padding: 0 10px;
-  border: 1px solid rgba(112, 228, 173, 0.2);
-  border-radius: 8px 0 0 8px !important;
-  background: rgba(61, 214, 140, 0.14);
-  color: var(--green-bright);
-  font-size: 11.5px;
-  font-weight: 680;
-}
-
-.bud-query-run kbd {
-  color: rgba(180, 247, 215, 0.52);
-  font-family: var(--mono);
-  font-size: 8.5px;
-}
-
-.bud-ide-toolbar .bud-query-run-alt {
-  width: 34px;
-  border: 1px solid rgba(112, 228, 173, 0.2);
-  border-left: 0;
-  border-radius: 0 8px 8px 0 !important;
-  background: rgba(61, 214, 140, 0.1);
-  color: var(--green-bright);
-}
-
-.bud-ide-toolbar .bud-query-run:hover:not(:disabled),
-.bud-ide-toolbar .bud-query-run-alt:hover:not(:disabled) {
-  background: rgba(61, 214, 140, 0.21);
-}
-
-.bud-ide-toolbar .bud-query-stop {
-  color: var(--danger);
-}
-
 .bud-query-transaction {
-  gap: 2px;
+  gap: 1px;
   padding: 2px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.018);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.bud-ide-toolbar button,
+.bud-query-more > summary,
+.bud-query-settings > summary {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 5px !important;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.bud-ide-toolbar button:hover:not(:disabled),
+.bud-query-more[open] > summary,
+.bud-query-more > summary:hover,
+.bud-query-settings[open] > summary,
+.bud-query-settings > summary:hover {
+  border-color: var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.bud-ide-toolbar button:disabled {
+  opacity: 0.36;
+  cursor: default;
 }
 
 .bud-ide-toolbar .bud-query-transaction button {
-  height: 28px;
+  height: 26px;
   border: 0;
 }
 
@@ -78,19 +125,30 @@
   width: auto;
   padding: 0 8px;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 10px;
+  font-weight: 620;
 }
 
-.bud-ide-spacer,
-.bud-connbar-spacer {
-  flex: 1;
+.bud-query-transaction .bud-tb-toggle.on {
+  background: var(--warning-soft);
+  color: var(--warning);
 }
+
+.bud-query-transaction .bud-tb-commit,
+.bud-query-transaction .bud-tb-rollback,
+.bud-query-stop {
+  width: 30px;
+  padding: 0;
+}
+
+.bud-query-transaction .bud-tb-commit.live { color: var(--green-bright); }
+.bud-query-transaction .bud-tb-rollback.live,
+.bud-query-stop:not(:disabled) { color: var(--danger); }
 
 .bud-ide-toolbar .bud-query-text-action {
   width: auto;
   gap: 6px;
-  padding: 0 8px;
-  color: var(--muted);
+  padding: 0 7px;
   font-size: 10.5px;
 }
 
@@ -102,27 +160,15 @@
 
 .bud-query-more > summary,
 .bud-query-settings > summary {
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 9px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  color: var(--muted);
+  gap: 5px;
+  padding: 0 7px;
   font-size: 10.5px;
-  cursor: pointer;
   list-style: none;
 }
 
-.bud-query-more[open] > summary,
-.bud-query-more > summary:hover,
-.bud-query-settings[open] > summary,
-.bud-query-settings > summary:hover {
-  border-color: var(--border);
-  background: var(--panel-2);
-  color: var(--text);
+.bud-query-settings > summary {
+  width: 30px;
+  padding: 0;
 }
 
 .bud-query-menu {
@@ -131,46 +177,37 @@
   width: 205px;
 }
 
-.bud-query-menu .danger {
-  color: #fda4af;
-}
-
-.bud-connbar {
-  min-height: 54px;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 14px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(13, 16, 21, 0.94);
-}
-
-.bud-connbar .bud-cb-field {
-  min-width: 150px;
-  max-width: 270px;
-}
-
-.bud-connbar .bud-cb-label {
-  font-size: 9px;
-}
+.bud-query-menu .danger { color: var(--danger); }
 
 .bud-query-settings-menu {
   top: calc(100% + 6px);
   right: 0;
   width: 240px;
-  gap: 11px;
-  padding: 13px;
+  gap: 10px;
+  padding: 12px;
+}
+
+.bud-query-settings-menu > strong {
+  color: var(--text);
+  font-size: 12px;
 }
 
 .bud-query-settings-menu label {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   color: var(--muted);
   font-size: 10.5px;
 }
 
 .bud-query-settings-menu .bud-cb-input {
   width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px !important;
+  background: var(--input-bg);
+  color: var(--text);
 }
 
 .bud-query-settings-menu small {
@@ -178,7 +215,385 @@
   font-size: 9.5px;
 }
 
-@media (max-width: 900px) {
+.bud-query-run-group {
+  border-radius: 6px;
+}
+
+.bud-ide-toolbar .bud-query-run {
+  width: auto;
+  min-width: 92px;
+  gap: 6px;
+  padding: 0 9px;
+  border-color: var(--green);
+  border-radius: 6px 0 0 6px !important;
+  background: var(--green);
+  color: white;
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.bud-query-run kbd {
+  color: rgba(255, 255, 255, 0.62);
+  font-family: var(--mono);
+  font-size: 8.5px;
+}
+
+.bud-ide-toolbar .bud-query-run-alt {
+  width: 30px;
+  padding: 0;
+  border-color: var(--green);
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0 6px 6px 0 !important;
+  background: var(--green);
+  color: white;
+}
+
+.bud-ide-toolbar .bud-query-run:hover:not(:disabled),
+.bud-ide-toolbar .bud-query-run-alt:hover:not(:disabled) {
+  border-color: var(--green-bright);
+  background: var(--green-bright);
+  color: #082116;
+}
+
+.bud-sql-editor-wrap {
+  min-height: 120px;
+  display: flex;
+  flex: 1.25 1 0;
+  flex-direction: column;
+  margin: 0 !important;
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: var(--bg);
+}
+
+.bud-sql-code {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.bud-sql-gutter {
+  min-width: 49px;
+  padding: 15px 10px 18px 0;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  background: var(--gutter);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.62;
+  text-align: right;
+}
+
+.bud-sql-gutter .cur { color: var(--text); }
+
+.bud-sql-edit {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  background: var(--bg);
+}
+
+.bud-sql-hl,
+.bud-sql-editor {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 15px 18px 40px;
+  overflow: auto;
+  border: 0 !important;
+  outline: 0;
+  background: transparent !important;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.62;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.bud-sql-hl {
+  pointer-events: none;
+  color: var(--text);
+}
+
+.bud-sql-editor {
+  z-index: 1;
+  resize: none;
+  color: transparent;
+  caret-color: var(--text-strong);
+}
+
+.bud-sql-editor::selection {
+  background: rgba(124, 109, 242, 0.28);
+}
+
+.bud-sql-hl .t-kw { color: #8fb9ff; font-weight: 600; }
+.bud-sql-hl .t-str { color: #8bd7a8; }
+.bud-sql-hl .t-num { color: #e8b86a; }
+.bud-sql-hl .t-com { color: var(--faint); font-style: italic; }
+
+:root[data-theme="light"] .bud-sql-hl .t-kw { color: #245fb4; }
+:root[data-theme="light"] .bud-sql-hl .t-str { color: #177349; }
+:root[data-theme="light"] .bud-sql-hl .t-num { color: #995e13; }
+
+.bud-sql-bar {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  flex: none;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+
+.bud-ed-status { color: var(--muted); }
+.bud-ed-spacer { flex: 1; }
+.bud-ed-running { color: var(--green-bright); }
+.bud-ed-uncommitted { color: var(--warning); }
+
+.bud-vsplit {
+  position: relative;
+  height: 7px;
+  flex: none;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+  cursor: row-resize;
+}
+
+.bud-vsplit::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 42px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+
+.bud-vsplit:hover::after { background: var(--accent); }
+
+.bud-sql-results {
+  min-height: 150px;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  margin: 0 !important;
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: var(--bg);
+}
+
+.bud-results-tabs {
+  min-height: 38px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 0 8px;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.bud-results-tabs button {
+  height: 37px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.bud-results-tabs button:hover { color: var(--text); }
+.bud-results-tabs button.on {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.bud-results-body {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+  background: var(--bg);
+}
+
+.bud-res-toolbar {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.bud-res-toolbar > button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-2);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.bud-res-seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.bud-res-seg button {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.bud-res-seg button.on {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.bud-res-filter {
+  width: min(230px, 28vw);
+  height: 30px;
+}
+
+.bud-res-meta {
+  margin-left: auto;
+}
+
+.bud-logs {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.bud-logs-bar {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.bud-logs-search { width: min(280px, 40vw); height: 30px; }
+.bud-logs-count { color: var(--faint); font-size: 10.5px; }
+
+.bud-logs-head,
+.bud-log-row {
+  display: grid;
+  grid-template-columns: 150px 16px minmax(0, 1fr);
+  gap: 4px;
+  padding-inline: 12px;
+}
+
+.bud-logs-head {
+  min-height: 34px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  color: var(--faint);
+  font-size: 9.5px;
+  text-transform: uppercase;
+}
+
+.bud-logs-body {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  font-family: var(--mono);
+}
+
+.bud-log-row {
+  padding-block: 5px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.bud-log-row:hover { background: var(--panel-2); }
+.bud-log-row.err .bud-logs-msg { color: var(--danger); }
+.bud-logs-date,
+.bud-logs-chev { color: var(--faint); }
+
+.bud-ac {
+  position: fixed;
+  z-index: 110;
+  min-width: 230px;
+  max-width: 390px;
+  max-height: 250px;
+  overflow: auto;
+  padding: 4px;
+}
+
+.bud-ac-item {
+  width: 100%;
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bud-ac-item.on { background: var(--accent); color: white; }
+.bud-ac-kind {
+  width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  background: var(--panel-3);
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 750;
+}
+.bud-ac-label { flex: 1; font-family: var(--mono); }
+.bud-ac-detail { color: var(--faint); font-size: 10px; }
+
+@media (max-width: 1050px) {
+  .bud-query-schema,
+  .bud-query-context-separator,
   .bud-query-text-action span,
   .bud-query-more > summary span {
     display: none;
@@ -186,38 +601,22 @@
 
   .bud-ide-toolbar .bud-query-text-action,
   .bud-query-more > summary {
-    width: 34px;
+    width: 30px;
     padding: 0;
   }
 }
 
-@media (max-width: 720px) {
-  .bud-query-transaction {
+@media (max-width: 760px) {
+  .bud-query-transaction,
+  .bud-query-run kbd {
     display: none;
   }
 
-  .bud-query-run kbd,
-  .bud-query-settings > summary {
-    display: none;
+  .bud-query-connection {
+    max-width: 160px;
   }
 
-  .bud-connbar {
-    overflow-x: auto;
+  .bud-ide-toolbar .bud-query-run {
+    min-width: 70px;
   }
-}
-
-.bud-sql-editor-wrap,
-.bud-sql-results,
-.bud-grid-area {
-  border-radius: 10px;
-  box-shadow: none;
-}
-
-.bud-sql-editor-wrap {
-  margin: 12px 14px 0;
-}
-
-.bud-sql-results,
-.bud-grid-area {
-  margin: 0 14px 14px;
 }

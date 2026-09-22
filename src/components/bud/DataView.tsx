@@ -1,11 +1,14 @@
 import {
+  IconArrowRight,
   IconBolt,
   IconClock,
   IconCode,
   IconDatabase,
-  IconLayoutDashboard,
+  IconHome,
+  IconLock,
   IconPlayerPlay,
   IconPlus,
+  IconRefresh,
   IconSearch,
   IconStar,
   IconTable,
@@ -35,7 +38,9 @@ function WorkspaceFallback({ label }: { label: string }) {
 
 export function DataView({ onAddServer }: { onAddServer: () => void }) {
   const editTable = useStore((s) => s.editTable);
+  const connections = useStore((s) => s.connections);
   const activeId = useStore((s) => s.activeConnectionId);
+  const activeConnection = useStore((s) => s.connections.find((connection) => connection.id === s.activeConnectionId));
   const inspectorRow = useStore((s) => s.inspectorRow);
   const error = useStore((s) => s.error);
   const view = useStore((s) => s.view);
@@ -48,6 +53,11 @@ export function DataView({ onAddServer }: { onAddServer: () => void }) {
   const selectEditor = useStore((s) => s.selectEditor);
   const closeEditor = useStore((s) => s.closeEditor);
   const newEditor = useStore((s) => s.newEditor);
+  const openAndIntrospect = useStore((s) => s.openAndIntrospect);
+  const reload = useStore((s) => s.reload);
+  const tableResult = useStore((s) => s.result);
+  const tableColumns = useStore((s) => editTable ? s.schema.columnsByTable[editTable.table] : undefined);
+  const readOnly = useStore((s) => s.readOnlyConns.includes(s.activeConnectionId ?? ""));
   const moveTabFocus = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
     const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
@@ -67,18 +77,17 @@ export function DataView({ onAddServer }: { onAddServer: () => void }) {
     <motion.main className="bud-main" variants={viewV} initial="hidden" animate="show" exit="exit">
       <div className="bud-qtabs" role="tablist" aria-label="Open workspace tabs" onKeyDown={moveTabFocus}>
         {activeId && (
-          <div className={`bud-qtab bud-qtab-overview ${view === "overview" ? "on" : ""}`}>
-            <button
-              className="bud-qtab-main"
-              role="tab"
-              aria-selected={view === "overview"}
-              tabIndex={view === "overview" ? 0 : -1}
-              onClick={() => setView("overview")}
-            >
-              <IconLayoutDashboard size={14} stroke={1.7} className="bud-qtab-ic" />
-              <span>Overview</span>
-            </button>
-          </div>
+          <button
+            className={`odb-start-tab ${view === "overview" ? "on" : ""}`}
+            role="tab"
+            aria-label="Start center"
+            aria-selected={view === "overview"}
+            tabIndex={view === "overview" ? 0 : -1}
+            title="Start center"
+            onClick={() => setView("overview")}
+          >
+            <IconHome size={15} stroke={1.75} />
+          </button>
         )}
         {editors.map((ed) => (
           <div
@@ -160,26 +169,43 @@ export function DataView({ onAddServer }: { onAddServer: () => void }) {
       {error && <div className="bud-error">⚠ {error.message ?? error.kind}</div>}
 
       {!activeId ? (
-        <div className="bud-welcome">
-          <div className="bud-welcome-glow" aria-hidden />
-          <div className="bud-welcome-mark">
-            <img src="/orbitodb-logo.svg" alt="" />
-          </div>
-          <span className="bud-welcome-kicker">LOCAL-FIRST DATABASE WORKSPACE</span>
-          <h1>Bring your data into focus.</h1>
-          <p>Explore schemas, edit records, and run SQL across SQLite, PostgreSQL, and MySQL from one calm workspace.</p>
-          <div className="bud-welcome-actions">
-            <button className="primary" onClick={onAddServer}>
-              <IconDatabase size={17} stroke={1.8} /> Add data source
-            </button>
-            <button onClick={() => window.dispatchEvent(new Event("orbitodb:cmdk"))}>
-              <IconSearch size={17} stroke={1.8} /> Explore commands <kbd>⌘K</kbd>
-            </button>
-          </div>
-          <div className="bud-welcome-features">
-            <span><IconCode size={15} stroke={1.7} /> Fast SQL workflow</span>
-            <span><IconBolt size={15} stroke={1.7} /> Direct data editing</span>
-            <span><IconTable size={15} stroke={1.7} /> Schema-aware tools</span>
+        <div className="odb-empty-start">
+          <section className="odb-empty-start-main">
+            <div className="odb-empty-start-mark"><img src="/orbitodb-logo.svg" alt="" /></div>
+            <p className="odb-eyebrow">ORBITODB WORKSPACE</p>
+            <h1>Open a database to begin</h1>
+            <p className="odb-empty-start-copy">Browse data, edit records, and run SQL without leaving your local workspace.</p>
+            <div className="odb-empty-start-actions">
+              <button className="primary" onClick={onAddServer}>
+                <IconDatabase size={17} stroke={1.8} /> Connect database
+              </button>
+              <button onClick={() => window.dispatchEvent(new Event("orbitodb:cmdk"))}>
+                <IconSearch size={16} stroke={1.8} /> Open command menu <kbd>⌘K</kbd>
+              </button>
+            </div>
+          </section>
+
+          <aside className="odb-recent-connections" aria-label="Saved connections">
+            <div className="odb-section-heading">
+              <div><span>Saved connections</span><small>{connections.length} available</small></div>
+              <button onClick={onAddServer}><IconPlus size={14} /> Add</button>
+            </div>
+            {connections.length === 0 ? (
+              <div className="odb-inline-empty">Your saved databases will appear here.</div>
+            ) : connections.slice(0, 6).map((connection) => (
+              <button key={connection.id} className="odb-connection-row" onClick={() => void openAndIntrospect(connection.id)}>
+                <span className="odb-resource-icon"><IconDatabase size={15} stroke={1.7} /></span>
+                <span><strong>{connection.name}</strong><small>{connection.engine} · {connection.database}</small></span>
+                {connection.env && <em className={`odb-env ${connection.env}`}>{connection.env}</em>}
+                <IconArrowRight size={14} />
+              </button>
+            ))}
+          </aside>
+
+          <div className="odb-empty-start-hints">
+            <span><IconCode size={15} stroke={1.7} /> SQL autocomplete and history</span>
+            <span><IconBolt size={15} stroke={1.7} /> Direct, guarded data editing</span>
+            <span><IconTable size={15} stroke={1.7} /> SQLite, PostgreSQL, and MySQL</span>
           </div>
         </div>
       ) : view === "overview" ? (
@@ -199,9 +225,29 @@ export function DataView({ onAddServer }: { onAddServer: () => void }) {
           <span>Choose a table from the sidebar to browse and edit its rows.</span>
         </div>
       ) : (
-        <div className="bud-data-row">
-          <DataGrid />
-          <RowInspector key={inspectorRow ?? "none"} />
+        <div className="odb-table-workspace">
+          <header className="odb-document-header">
+            <div className="odb-document-title">
+              <span className="odb-document-breadcrumb">{activeConnection?.name} / Tables</span>
+              <div>
+                <IconTable size={18} stroke={1.7} />
+                <h1>{editTable.table}</h1>
+                {readOnly && <span className="odb-readonly"><IconLock size={12} /> Read-only</span>}
+              </div>
+            </div>
+            <div className="odb-document-meta">
+              <span>{tableResult?.rows.length.toLocaleString() ?? "—"} loaded rows</span>
+              <span>{tableColumns?.length.toLocaleString() ?? "—"} columns</span>
+              {editTable.pkColumn && <span>Primary key: {editTable.pkColumn}</span>}
+            </div>
+            <button className="odb-icon-action" title="Refresh table" aria-label="Refresh table" onClick={() => void reload(editTable.table)}>
+              <IconRefresh size={16} stroke={1.8} />
+            </button>
+          </header>
+          <div className="bud-data-row">
+            <DataGrid />
+            <RowInspector key={inspectorRow ?? "none"} />
+          </div>
         </div>
       )}
 
@@ -242,15 +288,25 @@ function HistoryView() {
 
   return (
     <div className="bud-history">
-      <div className="bud-hist-bar">
-        <IconSearch size={13} stroke={1.7} />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${connectionName ?? "connection"} history…`} />
-        {q && (
-          <button className="bud-hist-bar-x" title="Clear" onClick={() => setQ("")}>
-            <IconX size={13} stroke={1.9} />
-          </button>
-        )}
-        <span className="bud-hist-count">{shown.length}</span>
+      <header className="odb-history-header">
+        <div>
+          <span className="odb-document-breadcrumb">{connectionName ?? "Workspace"}</span>
+          <h1>Query history</h1>
+          <p>Review, reuse, and save statements executed on this connection.</p>
+        </div>
+        <div className="bud-hist-bar">
+          <IconSearch size={14} stroke={1.7} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${connectionName ?? "connection"} history…`} />
+          {q && (
+            <button className="bud-hist-bar-x" title="Clear" onClick={() => setQ("")}>
+              <IconX size={13} stroke={1.9} />
+            </button>
+          )}
+          <span className="bud-hist-count">{shown.length}</span>
+        </div>
+      </header>
+      <div className="odb-history-columns" aria-hidden>
+        <span>Statement</span><span>Executed</span><span>Actions</span>
       </div>
       {shown.length === 0 ? (
         <div className="bud-empty">{connectionHistory.length === 0 ? `No SQL has been run on ${connectionName ?? "this connection"}.` : "No matching history."}</div>

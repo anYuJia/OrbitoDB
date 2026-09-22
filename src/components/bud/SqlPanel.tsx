@@ -422,25 +422,25 @@ export function SqlPanel() {
   return (
     <div className="bud-sqlpanel" ref={panelRef}>
       <div className="bud-ide-toolbar">
-        <div className="bud-query-run-group">
-          <button
-            className="bud-query-run"
-            title="Execute — runs the selection if any (⌘↵)"
-            onClick={() => void exec(selectedOrAll())}
-            disabled={running || !connId}
+        <label className="bud-query-connection">
+          <span className="bud-query-connection-dot" />
+          <select
+            aria-label="Query connection"
+            value={connId ?? ""}
+            disabled={running || txnDirty}
+            title={txnDirty ? "Commit or roll back before switching connections" : undefined}
+            onChange={(event) => {
+              if (event.target.value && event.target.value !== connId) void openAndIntrospect(event.target.value);
+            }}
           >
-            <IconPlayerPlay size={15} stroke={2} />
-            <span>{running ? "Running…" : "Run query"}</span>
-            <kbd>⌘↵</kbd>
-          </button>
-          <button className="bud-query-run-alt" title="Execute the full editor as a script" onClick={() => void exec()} disabled={running || !connId}>
-            <IconPlayerSkipForward size={15} stroke={1.9} />
-          </button>
-        </div>
-        <button className="bud-query-stop" title="Stop waiting for the current query result" onClick={stop} disabled={!running}>
-          <IconPlayerStop size={15} stroke={1.8} />
-        </button>
-        <span className="bud-tb-sep" />
+            {!connId && <option value="">No connection</option>}
+            {connections.map((connection) => (
+              <option key={connection.id} value={connection.id}>{connection.name}</option>
+            ))}
+          </select>
+        </label>
+        <span className="bud-query-context-separator">/</span>
+        <span className="bud-query-schema" title="Active schema">{schemaName}</span>
         <div className="bud-query-transaction" aria-label="Transaction controls">
           <button
             className={`bud-tb-toggle ${autoCommit ? "" : "on"}`}
@@ -463,6 +463,21 @@ export function SqlPanel() {
         <button className="bud-query-text-action" title="Explain query plan" onClick={() => void exec(explainPrefix + selectedOrAll())} disabled={!sql.trim() || !connId}>
           <IconFileCode size={15} stroke={1.8} /><span>Explain</span>
         </button>
+        <details className="bud-query-settings">
+          <summary title="Query limits" aria-label="Query limits"><IconSettings size={16} stroke={1.8} /></summary>
+          <div className="bud-query-settings-menu">
+            <strong>Query limits</strong>
+            <label>
+              <span>Maximum rows</span>
+              <input type="number" min="1" inputMode="numeric" className="bud-cb-input" value={maxRows} onChange={(event) => setMaxRows(event.target.value)} />
+            </label>
+            <label>
+              <span>Maximum characters</span>
+              <input type="number" min="-1" inputMode="numeric" title="Use -1 for unlimited" className="bud-cb-input" value={maxChars} onChange={(event) => setMaxChars(event.target.value)} />
+              <small>Use −1 for unlimited cell content.</small>
+            </label>
+          </div>
+        </details>
         <details className="bud-query-more">
           <summary title="More query actions"><IconDots size={17} stroke={1.8} /><span>More</span></summary>
           <div className="bud-query-menu">
@@ -474,47 +489,24 @@ export function SqlPanel() {
             <button className="danger" onClick={(event) => { closeDetailsMenu(event); setSql(""); }} disabled={!sql}><IconEraser size={15} /> Clear editor</button>
           </div>
         </details>
-      </div>
-
-      <div className="bud-connbar">
-        <label className="bud-cb-field grow">
-          <span className="bud-cb-label">Connection</span>
-          <select
-            className="bud-cb-select"
-            value={connId ?? ""}
-            disabled={running || txnDirty}
-            title={txnDirty ? "Commit or roll back before switching connections" : undefined}
-            onChange={(e) => {
-              if (e.target.value && e.target.value !== connId) void openAndIntrospect(e.target.value);
-            }}
+        <button className="bud-query-stop" title="Stop waiting for the current query result" onClick={stop} disabled={!running}>
+          <IconPlayerStop size={15} stroke={1.8} />
+        </button>
+        <div className="bud-query-run-group">
+          <button
+            className="bud-query-run"
+            title="Execute — runs the selection if any (⌘↵)"
+            onClick={() => void exec(selectedOrAll())}
+            disabled={running || !connId}
           >
-            {!connId && <option value="">No connection</option>}
-            {connections.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="bud-cb-field grow">
-          <span className="bud-cb-label">Schema</span>
-          <span className="bud-cb-static" title="Active schema">{schemaName}</span>
+            <IconPlayerPlay size={15} stroke={2} />
+            <span>{running ? "Running…" : "Run"}</span>
+            <kbd>⌘↵</kbd>
+          </button>
+          <button className="bud-query-run-alt" title="Execute the full editor as a script" onClick={() => void exec()} disabled={running || !connId}>
+            <IconPlayerSkipForward size={15} stroke={1.9} />
+          </button>
         </div>
-        <span className="bud-connbar-spacer" />
-        <details className="bud-query-settings">
-          <summary><IconSettings size={15} stroke={1.8} /> Query limits</summary>
-          <div className="bud-query-settings-menu">
-            <label>
-              <span>Maximum rows</span>
-              <input type="number" min="1" inputMode="numeric" className="bud-cb-input" value={maxRows} onChange={(e) => setMaxRows(e.target.value)} />
-            </label>
-            <label>
-              <span>Maximum characters</span>
-              <input type="number" min="-1" inputMode="numeric" title="Use -1 for unlimited" className="bud-cb-input" value={maxChars} onChange={(e) => setMaxChars(e.target.value)} />
-              <small>Use −1 for unlimited cell content.</small>
-            </label>
-          </div>
-        </details>
       </div>
 
       <div className="bud-sql-editor-wrap" ref={wrapRef} style={editorH != null ? { flex: "none", height: editorH } : undefined}>
@@ -537,6 +529,7 @@ export function SqlPanel() {
             <textarea
               ref={taRef}
               className="bud-sql-editor"
+              aria-label="SQL editor"
               value={sql}
               spellCheck={false}
               wrap="off"
