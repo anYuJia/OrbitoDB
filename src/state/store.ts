@@ -285,7 +285,12 @@ export interface AppStore {
   dropColumn: (table: string, column: string) => Promise<boolean>;
   renameColumn: (table: string, from: string, to: string) => Promise<boolean>;
   renameTable: (from: string, to: string) => Promise<void>;
-  importCsv: (table: string, headers: string[], rows: string[][], opts?: { create?: boolean }) => Promise<void>;
+  importCsv: (
+    table: string,
+    headers: string[],
+    rows: string[][],
+    opts?: { create?: boolean; onProgress?: (completed: number, total: number) => void },
+  ) => Promise<boolean>;
   openInspector: (rowIndex: number) => Promise<void>;
   closeInspector: () => Promise<void>;
   setInspectorDirty: (dirty: boolean) => void;
@@ -1458,20 +1463,80 @@ export const useStore = create<AppStore>((set, get) => ({
 
   importCsv: async (table, headers, rows, opts) => {
     const id = get().activeConnectionId;
-    if (!id) return;
-    if (get().readOnlyConns.includes(id)) return toast("Read-only — writes are blocked.", "error");
+    if (!id) return false;
+    if (get().readOnlyConns.includes(id)) {
+      toast("Read-only — writes are blocked.", "error");
+      return false;
+    }
     const conn = get().connections.find((c) => c.id === id);
-    if (!(await confirmProdWrite(conn, "INSERT"))) return;
+    if (!(await confirmProdWrite(conn, "INSERT"))) return false;
+    if (get().inspectorDirty && !(await confirmDiscardInspectorChanges())) return false;
+    set({ inspectorRow: null, inspectorDirty: false });
+    const ownTransaction = get().autoCommit;
+    const createBeforeTransaction = !!opts?.create && conn?.engine === "mysql";
+    let transactionStarted = false;
+    let tableCreated = false;
+    let commitAttempted = false;
+    opts?.onProgress?.(0, rows.length);
     try {
+      if (ownTransaction && !createBeforeTransaction) {
+        await backend.runQuery(id, "BEGIN", { recordHistory: false });
+        transactionStarted = true;
+      } else if (!ownTransaction) {
+        await get().beginTxnIfManual();
+      }
       if (opts?.create) {
         await backend.createTable(id, table, inferColumns(headers, rows));
+        tableCreated = true;
         if (get().activeConnectionId !== id) {
-          toast("Import stopped because the active connection changed.", "error");
-          return;
+          throw { kind: "notConnected", message: "Import stopped because the active connection changed." };
         }
       }
-      await get().beginTxnIfManual();
-      for (const r of rows) await backend.insertRow(id, table, headers, r);
+      if (ownTransaction && createBeforeTransaction) {
+        await backend.runQuery(id, "BEGIN", { recordHistory: false });
+        transactionStarted = true;
+      }
+      const progressInterval = Math.max(1, Math.min(25, Math.ceil(rows.length / 100)));
+      for (let index = 0; index < rows.length; index++) {
+        if (get().activeConnectionId !== id) {
+          throw { kind: "notConnected", message: "Import stopped because the active connection changed." };
+        }
+        await backend.insertRow(id, table, headers, rows[index]);
+        if ((index + 1) % progressInterval === 0 || index === rows.length - 1) {
+          opts?.onProgress?.(index + 1, rows.length);
+        }
+      }
+      if (transactionStarted) {
+        commitAttempted = true;
+        await backend.runQuery(id, "COMMIT", { recordHistory: false });
+        transactionStarted = false;
+      }
+    } catch (e) {
+      if (transactionStarted) {
+        try {
+          await backend.runQuery(id, "ROLLBACK", { recordHistory: false });
+        } catch {
+          /* preserve the original import error */
+        }
+      }
+      // A failed COMMIT can have an ambiguous outcome after a network break.
+      // Never drop a MySQL table that may already contain committed data.
+      if (tableCreated && createBeforeTransaction && !commitAttempted) {
+        try {
+          await backend.dropTable(id, table);
+          if (get().activeConnectionId === id) await get().refreshSchema();
+        } catch {
+          /* the original import error is more useful than cleanup failure */
+        }
+      }
+      const err = normalizeError(e);
+      set({ error: err });
+      toast(err.message ?? "Import failed", "error");
+      return false;
+    }
+
+    const successMessage = `Imported ${rows.length.toLocaleString()} ${rows.length === 1 ? "row" : "rows"} into ${table}`;
+    try {
       if (get().activeConnectionId === id) {
         if (opts?.create) {
           await get().refreshSchema();
@@ -1480,12 +1545,14 @@ export const useStore = create<AppStore>((set, get) => ({
           await get().reload(table);
         }
       }
-      toast(`Imported ${rows.length.toLocaleString()} ${rows.length === 1 ? "row" : "rows"} into ${table}`, "success");
     } catch (e) {
       const err = normalizeError(e);
       set({ error: err });
-      toast(err.message ?? "Import failed", "error");
+      toast(`${successMessage}, but the workspace could not refresh. Refresh it manually.`, "info");
+      return true;
     }
+    toast(successMessage, "success");
+    return true;
   },
 
   openInspector: async (rowIndex) => {

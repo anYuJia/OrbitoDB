@@ -1,0 +1,765 @@
+.bud-modal.odb-import-modal {
+  width: min(860px, calc(100vw - 32px));
+  height: min(820px, calc(100vh - 32px));
+  max-width: none;
+  max-height: none;
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.odb-import-head {
+  min-height: 92px;
+  align-items: center;
+}
+
+.odb-import-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.odb-import-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  color: var(--faint);
+  font-size: 9.5px;
+  font-weight: 650;
+  list-style: none;
+}
+
+.odb-import-steps li {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 28px;
+  white-space: nowrap;
+}
+
+.odb-import-steps li:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  width: 14px;
+  height: 1px;
+  background: var(--border-strong);
+  content: "";
+}
+
+.odb-import-steps li:last-child {
+  padding-right: 0;
+}
+
+.odb-import-steps li > span {
+  width: 19px;
+  height: 19px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg-2);
+  font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.odb-import-steps li.current {
+  color: var(--text);
+}
+
+.odb-import-steps li.current > span {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.odb-import-steps li.done {
+  color: var(--muted);
+}
+
+.odb-import-steps li.done > span {
+  border-color: color-mix(in srgb, var(--green) 48%, var(--border));
+  background: var(--green-soft);
+  color: var(--green-bright);
+}
+
+.odb-import-body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 18px;
+  overflow: auto;
+}
+
+.odb-import-drop {
+  min-height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  padding: 48px 24px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 8px;
+  background:
+    linear-gradient(var(--panel), var(--panel)) padding-box,
+    radial-gradient(circle at 50% 0%, var(--accent-soft), transparent 46%) border-box;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.odb-import-drop:hover,
+.odb-import-drop.is-dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.odb-import-drop-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-2);
+  color: var(--accent-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.odb-import-drop strong {
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 670;
+}
+
+.odb-import-drop > span:not(.odb-import-drop-icon) {
+  font-size: 11.5px;
+}
+
+.odb-import-drop small {
+  margin-top: 3px;
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.odb-import-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.odb-import-filebar {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-2);
+}
+
+.odb-import-file-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.odb-import-filebar > div {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.odb-import-filebar > div strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-import-filebar > div span {
+  color: var(--faint);
+  font-size: 9.5px;
+}
+
+.odb-import-filebar dl {
+  display: flex;
+  gap: 0;
+  margin: 0;
+}
+
+.odb-import-filebar dl > div {
+  min-width: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 12px;
+  border-left: 1px solid var(--border);
+}
+
+.odb-import-filebar dt {
+  color: var(--faint);
+  font-size: 8.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.odb-import-filebar dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.odb-import-filebar > button {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.odb-import-filebar > button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.odb-import-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.odb-import-callout > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.odb-import-callout > span {
+  display: block;
+}
+
+.odb-import-callout strong {
+  display: block;
+  margin-bottom: 1px;
+  color: var(--text);
+  font-size: 10.5px;
+}
+
+.odb-import-callout.info {
+  border-color: color-mix(in srgb, var(--blue) 25%, var(--border));
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
+}
+
+.odb-import-callout.info > svg {
+  color: var(--blue);
+}
+
+.odb-import-callout.warning {
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--border));
+  background: var(--warning-soft);
+}
+
+.odb-import-callout.warning > svg {
+  color: var(--warning);
+}
+
+.odb-import-callout.danger {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
+  background: var(--danger-soft);
+}
+
+.odb-import-callout.danger > svg {
+  color: var(--danger);
+}
+
+.odb-import-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.odb-import-mode label {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-2);
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.odb-import-mode label:hover:not(.is-disabled) {
+  border-color: var(--border-strong);
+}
+
+.odb-import-mode label.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-2);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.odb-import-mode label.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.odb-import-mode input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.odb-import-mode label > svg {
+  flex: none;
+}
+
+.odb-import-mode label > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.odb-import-mode strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.odb-import-mode small {
+  color: var(--faint);
+  font-size: 9.5px;
+}
+
+.odb-import-destination,
+.odb-import-preview {
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.odb-import-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 11px;
+}
+
+.odb-import-section-head > div {
+  min-width: 0;
+}
+
+.odb-import-section-head > div > span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--faint);
+  font-size: 8.5px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.odb-import-section-head h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 660;
+}
+
+.odb-import-section-count {
+  color: var(--faint);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.odb-import-destination .bud-field {
+  max-width: 440px;
+}
+
+.odb-import-destination .bud-field > small {
+  color: var(--faint);
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.odb-import-destination .bud-field.has-error input {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 2px var(--danger-soft);
+}
+
+.odb-import-destination .bud-field > .odb-import-field-error {
+  color: var(--danger);
+}
+
+.odb-import-target {
+  margin-bottom: 11px;
+}
+
+.odb-import-mapping-loading {
+  min-height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.odb-import-mapping {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.odb-import-mapping-head,
+.odb-import-mapping > label {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.8fr) 18px minmax(170px, 1fr) minmax(90px, 0.8fr);
+  align-items: center;
+  gap: 7px;
+}
+
+.odb-import-mapping-head {
+  min-height: 28px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--faint);
+  font-size: 8.5px;
+  font-weight: 680;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.odb-import-mapping-head span:nth-child(2) {
+  grid-column: 3;
+}
+
+.odb-import-mapping-head span:nth-child(3) {
+  grid-column: 4;
+}
+
+.odb-import-mapping > label {
+  min-height: 39px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.odb-import-mapping > label.is-skipped {
+  background: color-mix(in srgb, var(--bg-2) 74%, transparent);
+  opacity: 0.66;
+}
+
+.odb-import-mapping > label > span:first-child {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 580;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-import-map-arrow {
+  color: var(--faint);
+}
+
+.odb-import-mapping select {
+  width: 100%;
+  height: 29px;
+  min-width: 0;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 10px;
+}
+
+.odb-import-mapping code {
+  overflow: hidden;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-import-mapping-summary {
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  background: var(--bg-2);
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+.odb-import-mapping-summary svg {
+  color: var(--green-bright);
+}
+
+.odb-import-preview {
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
+.odb-import-table-wrap {
+  overflow: auto;
+  margin: 0 -13px;
+  border-top: 1px solid var(--border);
+}
+
+.odb-import-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10.5px;
+}
+
+.odb-import-table-wrap th,
+.odb-import-table-wrap td {
+  min-width: 112px;
+  max-width: 240px;
+  padding: 6px 9px;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odb-import-table-wrap th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 9.5px;
+  font-weight: 650;
+}
+
+.odb-import-table-wrap th > span,
+.odb-import-table-wrap th > small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.odb-import-table-wrap th > small {
+  margin-top: 2px;
+  color: var(--accent-2);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.odb-import-table-wrap td {
+  color: var(--muted);
+}
+
+.odb-import-table-wrap tr:last-child td {
+  border-bottom: 0;
+}
+
+.odb-import-table-wrap .odb-import-rownum {
+  width: 38px;
+  min-width: 38px;
+  max-width: 38px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.odb-import-table-wrap .is-skipped {
+  color: var(--faint);
+  opacity: 0.4;
+}
+
+.odb-import-empty-value {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.odb-import-more {
+  min-height: 29px;
+  display: flex;
+  align-items: center;
+  margin: 0 -13px;
+  padding: 0 13px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--faint);
+  font-size: 9.5px;
+}
+
+.odb-import-actions {
+  min-height: 64px;
+  align-items: center;
+}
+
+.odb-import-footer-note {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: auto;
+  color: var(--faint);
+  font-size: 9.5px;
+}
+
+.odb-import-progress {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  margin-right: 10px;
+}
+
+.odb-import-progress > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+.odb-import-progress > div strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.odb-import-progress > span {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--border);
+}
+
+.odb-import-progress > span i {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 100ms linear;
+}
+
+@media (max-width: 760px) {
+  .bud-modal.odb-import-modal {
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    transform: none !important;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .odb-import-head {
+    min-height: 78px;
+    padding-inline: 14px;
+  }
+
+  .odb-import-steps {
+    display: none;
+  }
+
+  .odb-import-body {
+    padding: 12px;
+  }
+
+  .odb-import-filebar dl {
+    display: none;
+  }
+
+  .odb-import-mode {
+    grid-template-columns: 1fr;
+  }
+
+  .odb-import-mapping-head,
+  .odb-import-mapping > label {
+    grid-template-columns: minmax(82px, 0.8fr) 14px minmax(140px, 1fr);
+  }
+
+  .odb-import-mapping-head span:nth-child(3),
+  .odb-import-mapping code {
+    display: none;
+  }
+
+  .odb-import-actions {
+    padding-inline: 12px;
+  }
+
+  .odb-import-footer-note {
+    display: none;
+  }
+}
+
+@media (max-width: 440px) {
+  .odb-import-head p {
+    display: none;
+  }
+
+  .odb-import-filebar > button {
+    width: 30px;
+    justify-content: center;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .odb-import-actions .bud-modal-cancel {
+    padding-inline: 10px;
+  }
+
+  .odb-import-actions .bud-modal-save {
+    flex: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .odb-import-progress > span i,
+  .odb-import-drop {
+    transition: none;
+  }
+}

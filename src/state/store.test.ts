@@ -55,6 +55,8 @@ const mock = vi.hoisted(() => {
       runQuery,
       insertRow: vi.fn(async () => {}),
       updateCell: vi.fn(async () => {}),
+      createTable: vi.fn(async () => {}),
+      dropTable: vi.fn(async () => {}),
       recentHistory: vi.fn(async () => []),
     },
   };
@@ -439,6 +441,65 @@ describe("store", () => {
     useStore.setState({ readOnlyConns: ["alpha"] });
     await expect(useStore.getState().editCell(0, 1, "Blocked")).resolves.toBe(false);
     expect(mock.backend.updateCell).toHaveBeenCalledTimes(1);
+  });
+
+  it("imports rows atomically and reports progress to the caller", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    const progress = vi.fn();
+
+    const imported = await useStore.getState().importCsv(
+      "people",
+      ["name", "score"],
+      [["Ada", "10"], ["Grace", "20"]],
+      { create: true, onProgress: progress },
+    );
+
+    expect(imported).toBe(true);
+    expect(mock.backend.createTable).toHaveBeenCalledWith("alpha", "people", [
+      { name: "name", dataType: "TEXT", nullable: true, primaryKey: false },
+      { name: "score", dataType: "INTEGER", nullable: true, primaryKey: false },
+    ]);
+    expect(mock.backend.insertRow.mock.calls.slice(-2)).toEqual([
+      ["alpha", "people", ["name", "score"], ["Ada", "10"]],
+      ["alpha", "people", ["name", "score"], ["Grace", "20"]],
+    ]);
+    expect(mock.backend.runQuery.mock.calls).toContainEqual(["alpha", "BEGIN", { recordHistory: false }]);
+    expect(mock.backend.runQuery.mock.calls).toContainEqual(["alpha", "COMMIT", { recordHistory: false }]);
+    expect(progress).toHaveBeenNthCalledWith(1, 0, 2);
+    expect(progress).toHaveBeenLastCalledWith(2, 2);
+  });
+
+  it("rolls back a failed import and keeps the workflow open for recovery", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    mock.backend.insertRow.mockRejectedValueOnce({ kind: "queryError", message: "invalid value" });
+
+    const imported = await useStore.getState().importCsv(
+      "customers",
+      ["name"],
+      [["Ada"]],
+    );
+
+    expect(imported).toBe(false);
+    expect(mock.backend.runQuery.mock.calls).toContainEqual(["alpha", "ROLLBACK", { recordHistory: false }]);
+    expect(useStore.getState().error?.message).toBe("invalid value");
+  });
+
+  it("does not report a committed import as failed when the workspace refresh fails", async () => {
+    await useStore.getState().loadConnections();
+    await useStore.getState().openAndIntrospect("alpha");
+    mock.backend.listTables.mockRejectedValueOnce({ kind: "queryError", message: "refresh unavailable" });
+
+    const imported = await useStore.getState().importCsv(
+      "customers",
+      ["name"],
+      [["Ada"]],
+    );
+
+    expect(imported).toBe(true);
+    expect(mock.backend.runQuery.mock.calls).toContainEqual(["alpha", "COMMIT", { recordHistory: false }]);
+    expect(mock.backend.runQuery.mock.calls).not.toContainEqual(["alpha", "ROLLBACK", { recordHistory: false }]);
   });
 
   it("deduplicates concurrent query runs", async () => {
