@@ -1629,7 +1629,7 @@ select {
   position: sticky;
   z-index: 4;
   top: 0;
-  height: 40px;
+  height: var(--bud-grid-header-height, 40px);
   padding: 0 11px;
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border-strong);
@@ -1642,9 +1642,9 @@ select {
 }
 
 .bud-grid tbody td {
-  height: 40px;
+  height: var(--bud-grid-row-height, 40px);
   max-width: 440px;
-  padding: 8px 11px;
+  padding: var(--bud-grid-cell-padding, 8px 11px);
   overflow: hidden;
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
@@ -1673,6 +1673,18 @@ select {
   color: var(--faint) !important;
   text-align: center !important;
 }
+
+.bud-grid .bud-checkcol,
+.bud-grid .bud-rownum {
+  position: sticky;
+  z-index: 3;
+  background: var(--bg-2) !important;
+}
+
+.bud-grid .bud-checkcol { left: 0; }
+.bud-grid .bud-rownum { left: 38px; }
+.bud-grid thead .bud-checkcol,
+.bud-grid thead .bud-rownum { z-index: 6; }
 
 .bud-null-label,
 .bud-null {
@@ -2422,6 +2434,34 @@ select {
   .odb-document-meta {
     display: none;
   }
+
+  .bud-grid-toolbar {
+    gap: 4px;
+    padding-inline: 6px;
+    overflow-x: auto;
+  }
+
+  .bud-grid-toolbar .bud-grid-search {
+    width: auto;
+    flex: 1;
+  }
+
+  .bud-grid-toolbar .bud-grid-foot-spacer,
+  .bud-grid-toolbar-info,
+  .bud-grid-action-label,
+  .bud-export-label {
+    display: none;
+  }
+
+  .bud-grid-toolbar .bud-grid-action,
+  .bud-grid-toolbar .bud-export-btn {
+    width: 30px;
+    flex: none;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .bud-grid-toolbar .bud-export { gap: 4px; }
 
   .odb-history-header {
     align-items: stretch;

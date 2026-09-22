@@ -30,8 +30,8 @@ export function ExportMenu({ result, rows, table }: { result: QueryResult; rows?
 
   return (
     <span className="bud-export">
-      <button className="bud-export-btn" title="Export to a file" onClick={() => setOpen(open === "export" ? null : "export")}>
-        <IconDownload size={14} stroke={1.7} /> Export ▾
+      <button className="bud-export-btn" title="Export to a file" aria-label="Export to a file" onClick={() => setOpen(open === "export" ? null : "export")}>
+        <IconDownload size={14} stroke={1.7} /> <span className="bud-export-label">Export ▾</span>
       </button>
       {open === "export" && (
         <>
@@ -44,8 +44,8 @@ export function ExportMenu({ result, rows, table }: { result: QueryResult; rows?
           </div>
         </>
       )}
-      <button className="bud-export-btn" title="Copy to clipboard" onClick={() => setOpen(open === "copy" ? null : "copy")}>
-        <IconCopy size={14} stroke={1.7} /> Copy ▾
+      <button className="bud-export-btn" title="Copy to clipboard" aria-label="Copy to clipboard" onClick={() => setOpen(open === "copy" ? null : "copy")}>
+        <IconCopy size={14} stroke={1.7} /> <span className="bud-export-label">Copy ▾</span>
       </button>
       {open === "copy" && (
         <>

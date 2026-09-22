@@ -1,0 +1,227 @@
+.bud-grid-display-backdrop {
+  position: fixed;
+  z-index: 88;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.bud-grid-display-menu {
+  position: fixed;
+  z-index: 96;
+  width: min(310px, calc(100vw - 16px));
+  max-height: min(470px, calc(100vh - 16px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-menu);
+}
+
+.bud-grid-display-menu header {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bud-grid-display-menu header > span:nth-child(2) {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bud-grid-display-menu header strong {
+  color: var(--text-strong);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.bud-grid-display-menu header small,
+.bud-grid-display-menu footer {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.bud-grid-display-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.bud-grid-display-close,
+.bud-grid-column-search button {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.bud-grid-display-close:hover,
+.bud-grid-column-search button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.bud-grid-display-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 11px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bud-grid-display-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.bud-grid-density {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+}
+
+.bud-grid-density button {
+  min-height: 25px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.bud-grid-density button[aria-pressed="true"] {
+  background: var(--panel-2);
+  color: var(--text-strong);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.bud-grid-display-columns-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 11px 6px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.bud-grid-display-columns-head button {
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--accent-2);
+  font-size: 10.5px;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.bud-grid-display-columns-head button:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.bud-grid-column-search {
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 6px;
+  padding: 0 5px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--faint);
+}
+
+.bud-grid-column-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.bud-grid-column-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.bud-grid-column-list {
+  min-height: 44px;
+  overflow-y: auto;
+  padding: 0 6px 6px;
+}
+
+.bud-grid-column-list label {
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 7px;
+  border-radius: 5px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.bud-grid-column-list label:hover {
+  background: var(--panel-2);
+}
+
+.bud-grid-column-list input {
+  accent-color: var(--accent);
+}
+
+.bud-grid-column-list label:has(input:disabled) {
+  opacity: .55;
+  cursor: default;
+}
+
+.bud-grid-column-empty {
+  min-height: 52px;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.bud-grid-display-menu footer {
+  padding: 8px 11px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+}

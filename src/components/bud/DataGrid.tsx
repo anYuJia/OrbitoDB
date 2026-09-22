@@ -1,7 +1,16 @@
-import { IconArrowUpRight, IconBookmarkPlus, IconCheck, IconChevronLeft, IconChevronRight, IconCopy, IconFilter, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { IconAdjustmentsHorizontal, IconArrowUpRight, IconBookmarkPlus, IconCheck, IconChevronLeft, IconChevronRight, IconCopy, IconFilter, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { getBackend } from "../../ipc/backend";
 import { displayRows } from "../../lib/cell";
+import {
+  normalizeHiddenColumns,
+  readGridDensity,
+  readHiddenColumns,
+  writeGridDensity,
+  writeHiddenColumns,
+  type GridDensity,
+} from "../../lib/gridPreferences";
 import { TABLE_BROWSER_ROW_LIMIT } from "../../lib/sql";
 import { promptDialog } from "../../state/dialog";
 import { toast } from "../../state/toast";
@@ -10,10 +19,22 @@ import { useStore } from "../../state/store";
 import { CellViewer, isExpandable } from "./CellViewer";
 import { ColumnEditor, type ColumnEditorAnchor } from "./ColumnEditor";
 import { ExportMenu } from "./ExportMenu";
+import type { GridDisplayAnchor } from "./GridDisplayMenu";
 
 const SavedViewDialog = lazy(() =>
   import("./SavedViewDialog").then((module) => ({ default: module.SavedViewDialog })),
 );
+const GridDisplayMenu = lazy(() =>
+  import("./GridDisplayMenu").then((module) => ({ default: module.GridDisplayMenu })),
+);
+
+function localStorageOrNull(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
 
 function typeIcon(t: string): string {
   const u = t.toUpperCase();
@@ -126,6 +147,11 @@ export function DataGrid() {
   const serverSearched = useRef(false);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
+  const [density, setDensity] = useState<GridDensity>(() => readGridDensity(localStorageOrNull()));
+  const [displayAnchor, setDisplayAnchor] = useState<GridDisplayAnchor | null>(null);
+  const displayButtonRef = useRef<HTMLButtonElement>(null);
+  const gridWrapRef = useRef<HTMLDivElement>(null);
+  const [columnPrefs, setColumnPrefs] = useState<{ id: string; hidden: string[] }>({ id: "", hidden: [] });
   const [allFks, setAllFks] = useState<{ table: string; column: string; refTable: string; refColumn: string }[]>([]);
   // Only show the skeleton if loading actually lingers — avoids a flash on the
   // near-instant in-browser SQLite loads.
@@ -139,6 +165,22 @@ export function DataGrid() {
   const pkIdx = useMemo(
     () => (pkCol && result ? result.columns.findIndex((c) => c.name === pkCol) : -1),
     [pkCol, result],
+  );
+  const columnNames = useMemo(() => result?.columns.map((column) => column.name) ?? [], [result?.columns]);
+  const columnSignature = columnNames.join("\u0000");
+  const gridPreferenceId = activeId && editTable ? `${activeId}\u0000${editTable.table}` : "";
+  const hiddenColumnNames = useMemo(
+    () => columnPrefs.id === gridPreferenceId
+      ? normalizeHiddenColumns(columnPrefs.hidden, columnNames)
+      : [],
+    [columnNames, columnPrefs, gridPreferenceId],
+  );
+  const hiddenColumnSet = useMemo(() => new Set(hiddenColumnNames), [hiddenColumnNames]);
+  const visibleColumns = useMemo(
+    () => (result?.columns ?? [])
+      .map((column, index) => ({ column, index }))
+      .filter(({ column }) => !hiddenColumnSet.has(column.name)),
+    [hiddenColumnSet, result?.columns],
   );
 
   // Columns rendered as colored option pills (few distinct short text values).
@@ -184,6 +226,20 @@ export function DataGrid() {
   }, [result, sort]);
 
   useEffect(() => setSort(null), [editTable?.table, activeViewId]);
+
+  // Column visibility belongs to a specific database table. Refresh the saved
+  // preference only after the newly selected table has finished loading so a
+  // briefly retained previous result cannot leak its columns into the new key.
+  useEffect(() => {
+    if (!activeId || !editTable || loadingResult || columnNames.length === 0) return;
+    const id = `${activeId}\u0000${editTable.table}`;
+    const hidden = readHiddenColumns(localStorageOrNull(), activeId, editTable.table, columnNames);
+    setColumnPrefs((current) => (
+      current.id === id && current.hidden.join("\u0000") === hidden.join("\u0000")
+        ? current
+        : { id, hidden }
+    ));
+  }, [activeId, columnSignature, editTable, loadingResult]);
 
   // Reset filters/paging when the table changes.
   useEffect(() => {
@@ -286,6 +342,11 @@ export function DataGrid() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editTable, newRow, readOnly, result]);
 
+  const closeDisplayMenu = useCallback(() => {
+    setDisplayAnchor(null);
+    requestAnimationFrame(() => displayButtonRef.current?.focus());
+  }, []);
+
   // While loading we keep the current grid on screen, so switching tables doesn't
   // flash to black (local queries finish well under the skeleton delay). Only show
   // a skeleton when there's genuinely nothing yet (the first load).
@@ -307,12 +368,79 @@ export function DataGrid() {
   const pagedOrder = filteredOrder.slice(curPage * pageSize, curPage * pageSize + pageSize);
   const validSelection = selection.filter((index) => index >= 0 && index < result.rows.length);
   const exportOrder = validSelection.length > 0 ? validSelection : filteredOrder;
+  const densityStyle = (density === "compact" ? {
+    "--bud-grid-header-height": "32px",
+    "--bud-grid-row-height": "32px",
+    "--bud-grid-cell-padding": "5px 9px",
+  } : undefined) as CSSProperties | undefined;
 
   const colInfo = (name: string): ColumnInfo =>
     columns?.find((c) => c.name === name) ?? { name, dataType: "TEXT", nullable: true, isPrimaryKey: false };
 
   const toggleSort = (col: number) =>
     setSort((s) => (!s || s.col !== col ? { col, dir: 1 } : s.dir === 1 ? { col, dir: -1 } : null));
+
+  const changeHiddenColumns = (next: string[]) => {
+    if (!activeId) return;
+    const hidden = normalizeHiddenColumns(next, columnNames);
+    setColumnPrefs({ id: gridPreferenceId, hidden });
+    writeHiddenColumns(localStorageOrNull(), activeId, table, hidden);
+    const hiddenSet = new Set(hidden);
+    if (sort && hiddenSet.has(result.columns[sort.col]?.name)) setSort(null);
+    if (selCell && hiddenSet.has(result.columns[selCell.c]?.name)) setSelCell(null);
+    if (editing && hiddenSet.has(result.columns[editing.col]?.name)) setEditing(null);
+  };
+
+  const changeDensity = (next: GridDensity) => {
+    setDensity(next);
+    writeGridDensity(localStorageOrNull(), next);
+  };
+
+  const focusGridCell = (row: number, col: number) => {
+    requestAnimationFrame(() => {
+      const scroller = gridWrapRef.current;
+      const cell = scroller?.querySelector<HTMLElement>(`[data-grid-cell="${row}:${col}"]`);
+      if (!cell) return;
+      cell.focus({ preventScroll: true });
+      if (!scroller) return;
+      if (col === visibleColumns[0]?.index) {
+        scroller.scrollLeft = 0;
+        return;
+      }
+      const leftEdge = scroller.scrollLeft + 76;
+      const rightEdge = scroller.scrollLeft + scroller.clientWidth;
+      if (cell.offsetLeft < leftEdge) scroller.scrollLeft = Math.max(0, cell.offsetLeft - 76);
+      else if (cell.offsetLeft + cell.offsetWidth > rightEdge) {
+        scroller.scrollLeft = cell.offsetLeft + cell.offsetWidth - scroller.clientWidth + 8;
+      }
+    });
+  };
+
+  const moveGridCell = (event: ReactKeyboardEvent<HTMLTableCellElement>, row: number, col: number) => {
+    if (editing) return;
+    const rowPosition = pagedOrder.indexOf(row);
+    const columnPosition = visibleColumns.findIndex(({ index }) => index === col);
+    if (rowPosition < 0 || columnPosition < 0) return;
+
+    let nextRow = rowPosition;
+    let nextColumn = columnPosition;
+    if (event.key === "ArrowUp") nextRow = Math.max(0, rowPosition - 1);
+    else if (event.key === "ArrowDown") nextRow = Math.min(pagedOrder.length - 1, rowPosition + 1);
+    else if (event.key === "ArrowLeft") nextColumn = Math.max(0, columnPosition - 1);
+    else if (event.key === "ArrowRight") nextColumn = Math.min(visibleColumns.length - 1, columnPosition + 1);
+    else if (event.key === "Home") nextColumn = 0;
+    else if (event.key === "End") nextColumn = visibleColumns.length - 1;
+    else if (event.key === "Enter" || event.key === "F2") {
+      event.preventDefault();
+      startEdit(row, col);
+      return;
+    } else return;
+
+    event.preventDefault();
+    const next = { r: pagedOrder[nextRow], c: visibleColumns[nextColumn].index };
+    setSelCell(next);
+    focusGridCell(next.r, next.c);
+  };
 
   const startEdit = (row: number, col: number) => {
     if (!pkCol || col === pkIdx || readOnly) return;
@@ -362,7 +490,7 @@ export function DataGrid() {
   };
 
   return (
-    <div className="bud-grid-area">
+    <div className="bud-grid-area" style={{ ...densityStyle, position: "relative" }}>
       <div className="bud-grid-toolbar">
         <div className="bud-grid-search">
           <IconSearch size={13} stroke={2} />
@@ -418,13 +546,36 @@ export function DataGrid() {
           </div>
         )}
         <span className="bud-grid-foot-spacer" />
-        <button className="bud-grid-action" onClick={() => setViewDialogOpen(true)}>
-          <IconBookmarkPlus size={14} stroke={1.8} /> Save view
+        <button
+          ref={displayButtonRef}
+          className="bud-grid-action"
+          aria-haspopup="dialog"
+          aria-expanded={displayAnchor != null}
+          aria-label={`Display options, ${visibleColumns.length} of ${result.columns.length} columns shown`}
+          onClick={(event) => {
+            if (displayAnchor) {
+              setDisplayAnchor(null);
+              return;
+            }
+            const rect = event.currentTarget.getBoundingClientRect();
+            setDisplayAnchor({ bottom: rect.bottom, right: rect.right });
+          }}
+        >
+          <IconAdjustmentsHorizontal size={14} stroke={1.8} />
+          <span className="bud-grid-action-label">Display{hiddenColumnNames.length > 0 ? ` ${visibleColumns.length}/${result.columns.length}` : ""}</span>
+        </button>
+        <button className="bud-grid-action" aria-label="Save view" onClick={() => setViewDialogOpen(true)}>
+          <IconBookmarkPlus size={14} stroke={1.8} /> <span className="bud-grid-action-label">Save view</span>
         </button>
         <ExportMenu result={result} rows={exportOrder.map((index) => result.rows[index])} table={table} />
       </div>
-      <div className="bud-grid-wrap">
-        <table className="bud-grid">
+      <div ref={gridWrapRef} className="bud-grid-wrap">
+        <table
+          className="bud-grid"
+          aria-label={`${table} data`}
+          aria-rowcount={filteredOrder.length}
+          aria-colcount={visibleColumns.length + 2}
+        >
         <thead>
           <tr>
             <th className="bud-checkcol">
@@ -442,7 +593,7 @@ export function DataGrid() {
               />
             </th>
             <th className="bud-rownum" />
-            {result.columns.map((c, i) => (
+            {visibleColumns.map(({ column: c, index: i }) => (
               <th
                 key={i}
                 className={sort?.col === i ? "sorted" : ""}
@@ -483,13 +634,13 @@ export function DataGrid() {
               <td className="bud-rownum bud-newrow-num">
                 <IconPlus size={13} stroke={2} />
               </td>
-              {result.columns.map((c, i) => (
+              {visibleColumns.map(({ column: c, index: i }, visibleIndex) => (
                 <td key={i}>
                   <input
                     className="bud-cell-input"
                     placeholder={c.name}
                     value={newRow[i]}
-                    autoFocus={i === 0}
+                    autoFocus={visibleIndex === 0}
                     disabled={addingRow}
                     onChange={(e) => setNewRow((nr) => (nr ? nr.map((v, j) => (j === i ? e.target.value : v)) : nr))}
                     onKeyDown={(e) => {
@@ -506,15 +657,6 @@ export function DataGrid() {
                 <button title="Cancel" aria-label="Cancel new row" onClick={() => setNewRow(null)} disabled={addingRow}>
                   <IconX size={13} stroke={2} />
                 </button>
-              </td>
-            </tr>
-          )}
-          {filteredOrder.length === 0 && !newRow && (
-            <tr className="bud-empty-row">
-              <td className="bud-checkcol" />
-              <td className="bud-rownum" />
-              <td className="bud-empty-cell" colSpan={result.columns.length + 1}>
-                {hasFilters ? "No rows match the filters." : "This table is empty — add a row below."}
               </td>
             </tr>
           )}
@@ -545,14 +687,21 @@ export function DataGrid() {
                     ⤢
                   </button>
                 </td>
-                {row.map((cell, ci) => {
+                {visibleColumns.map(({ index: ci }, visibleIndex) => {
+                  const cell = row[ci];
                   const fk = cell != null ? fks[result.columns[ci].name] : undefined;
                   return (
                     <td
                       key={ci}
+                      data-grid-cell={`${ri}:${ci}`}
+                      tabIndex={selCell ? (selCell.r === ri && selCell.c === ci ? 0 : -1) : (pos === 0 && visibleIndex === 0 ? 0 : -1)}
                       className={`${cell == null ? "bud-null" : ""} ${fk ? "bud-fk-cell" : ""} ${selCell?.r === ri && selCell?.c === ci ? "sel" : ""}`}
                       title={cell == null ? "" : String(cell)}
-                      onClick={() => {
+                      aria-label={`${result.columns[ci].name}, row ${curPage * pageSize + pos + 1}: ${cell == null ? "NULL" : String(cell)}`}
+                      onFocus={() => setSelCell({ r: ri, c: ci })}
+                      onKeyDown={(event) => moveGridCell(event, ri, ci)}
+                      onClick={(event) => {
+                        event.currentTarget.focus();
                         setSelCell({ r: ri, c: ci });
                         const sv = cell == null ? "" : String(cell);
                         if (!editing && sv && isExpandable(sv)) setCellView({ value: sv, column: result.columns[ci].name });
@@ -614,11 +763,40 @@ export function DataGrid() {
               <kbd>⌘</kbd>
               <kbd>↵</kbd>
             </td>
-            <td colSpan={result.columns.length + 1} />
+            <td colSpan={visibleColumns.length + 1} />
           </tr>
         </tbody>
       </table>
       </div>
+      {filteredOrder.length === 0 && !newRow && (
+          <div
+            role="status"
+            style={{
+              position: "absolute",
+              zIndex: 4,
+              inset: "calc(44px + var(--bud-grid-header-height, 40px)) 0 0",
+              display: "grid",
+              placeItems: "center",
+              padding: 16,
+              background: "var(--bg)",
+              color: "var(--faint)",
+              fontSize: 13,
+              textAlign: "center",
+            }}
+          >
+            {hasFilters ? (
+              <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                No rows match “{gridFilter.trim()}”.
+                <button className="bud-grid-action" onClick={() => setGridFilter("")}><IconX size={13} /> Clear filter</button>
+              </span>
+            ) : (
+              <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                This table has no rows yet.
+                {!readOnly && <button className="bud-grid-action" onClick={() => setNewRow(result.columns.map(() => ""))}><IconPlus size={13} /> Add first row</button>}
+              </span>
+            )}
+          </div>
+        )}
       {filteredOrder.length > 0 && (
         <div className="bud-grid-foot">
           <span className="bud-grid-foot-info">
@@ -668,6 +846,19 @@ export function DataGrid() {
             columns={result.columns}
             initialFilter={activeView?.filter}
             onClose={() => setViewDialogOpen(false)}
+          />
+        </Suspense>
+      )}
+      {displayAnchor && (
+        <Suspense fallback={null}>
+          <GridDisplayMenu
+            anchor={displayAnchor}
+            columns={columnNames}
+            hiddenColumns={hiddenColumnNames}
+            density={density}
+            onChangeHidden={changeHiddenColumns}
+            onChangeDensity={changeDensity}
+            onClose={closeDisplayMenu}
           />
         </Suspense>
       )}

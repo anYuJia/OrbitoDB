@@ -2421,15 +2421,6 @@ select.bud-cb-select {
 .bud-results-tabs button:hover { color: var(--text); background: var(--panel-2); }
 .bud-results-tabs button.on { background: var(--bg); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
 
-.bud-grid thead th { background: var(--bg-2); border-bottom: 1px solid var(--border-strong); color: var(--text); font-weight: 600; }
-.bud-grid th, .bud-grid td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-.bud-grid tbody td { color: var(--text); }
-.bud-grid tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.018); }
-.bud-grid tbody tr:hover td { background: var(--accent-soft); }
-.bud-checkcol, .bud-rownum, .bud-addcol { background: var(--bg-2); color: var(--faint); }
-.bud-grid tbody tr:hover .bud-rownum { color: var(--text); }
-.bud-null { color: var(--faint); font-style: italic; }
-.bud-th-ic { color: var(--faint) !important; }
 /* DbVisualizer renders plain cell text — neutralize the colored value pills */
 .bud-app .bud-pill { background: none !important; color: var(--text) !important; padding: 0 !important; font-weight: 400 !important; border: none !important; letter-spacing: 0 !important; }
 
@@ -2881,21 +2872,6 @@ select.bud-cb-select {
 
 /* Tree objects feel like soft cards (Plasma File-Check style) */
 .bud-table, .bud-objgroup-head, .bud-src, .bud-ds-empty, .bud-hist-item { border-radius: 8px; }
-
-/* Subtle dotted "canvas" texture on empty states (the Plasma signature) */
-.bud-empty {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-  background-size: 22px 22px;
-  background-position: center;
-}
-
-/* Violet selection / active accents throughout */
-.bud-grid tbody tr.selected, .bud-grid tbody tr.row-open { background: var(--accent-soft); }
-.bud-table.active { background: var(--accent-soft); }
-.bud-grid tbody td.sel { box-shadow: inset 0 0 0 2px var(--accent); }
-.bud-qtab .bud-qtab-ic.sql { color: var(--accent); }
-.bud-qtab-new:hover { color: var(--accent); }
-::selection { background: rgba(114, 95, 232, 0.32); }
 
 /* ===================================================================== */
 /* Framer Motion pass (kept last on purpose).                            */
